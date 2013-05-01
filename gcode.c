@@ -31,6 +31,7 @@
 #include "sense_control.h"
 #include "planner.h"
 #include "stepper.h"
+#include "temperature.h"
 
 #define MM_PER_INCH (25.4)
 
@@ -44,10 +45,8 @@
 #define NEXT_ACTION_AIR_ASSIST_DISABLE 7
 #define NEXT_ACTION_AUX1_ASSIST_ENABLE 8
 #define NEXT_ACTION_AUX1_ASSIST_DISABLE 9
-#ifdef DRIVEBOARD
-  #define NEXT_ACTION_AUX2_ASSIST_ENABLE 10
-  #define NEXT_ACTION_AUX2_ASSIST_DISABLE 11
-#endif
+#define NEXT_ACTION_AUX2_ASSIST_ENABLE 10
+#define NEXT_ACTION_AUX2_ASSIST_DISABLE 11
 
 #define OFFSET_G54 0
 #define OFFSET_G55 1
@@ -108,16 +107,15 @@ void gcode_process_line() {
   uint8_t chr = '\0';
   int numChars = 0;
   int status_code = STATUS_OK;
-  uint8_t skip_line = false;
-  uint8_t print_extended_status = false;
+  uint8_t skip_line = 0;
+  uint8_t print_extended_status = 0;
 
-  while ((numChars==0) || (chr != '\n')) {
-    chr = serial_read();  // blocks until there is data
-    if (numChars + 1 >= BUFFER_LINE_SIZE) {  // +1 for \0
+  while ((numChars==0) || ((chr != 0x0A) && (chr != 0x0D)) ) {
+    if (serial_read(&chr, 1) != 1 || (numChars + 1 >= BUFFER_LINE_SIZE)) {  // +1 for \0
       // reached line size, other side sent too long lines
       stepper_request_stop(STATUS_LINE_BUFFER_OVERFLOW);
       break;
-    } else if (chr <= ' ') { 
+    } else if (chr <= 0x20) {
       // ignore control characters and space
     } else {
       // add to line, as char which is signed
@@ -243,38 +241,39 @@ void gcode_process_line() {
       if (SENSE_CHILLER_OFF) {
         printString("C");  // Warning: Chiller is off
       }
-      #ifndef DRIVEBOARD
-        // power
-        if (SENSE_POWER_OFF) {
-          printString("P"); // Power Off
-        } 
-      #endif
       // limit
       if (SENSE_LIMITS) {
-        if (SENSE_X1_LIMIT) {
-          printString("L1");  // Limit X1 Hit
+        if (SENSE_X_LIMIT) {
+          printString("L1");  // Limit X Hit
         }
-        if (SENSE_X2_LIMIT) {
-          printString("L2");  // Limit X2 Hit
+        if (SENSE_Y_LIMIT) {
+          printString("L2");  // Limit Y Hit
         }
-        if (SENSE_Y1_LIMIT) {
-          printString("L3");  // Limit Y1 Hit
+        if (SENSE_Z_LIMIT) {
+          printString("L3");  // Limit Z Hit
         }
-        if (SENSE_Y2_LIMIT) {
-          printString("L4");  // Limit Y21 Hit
+        if (SENSE_E_LIMIT) {
+          printString("L4");  // E Stop Hit
         }
       } 
     #endif
 
     //
-    if (print_extended_status) {   
+    if (print_extended_status) {
+    	int n;
       // position
       printString("X");
       printFloat(stepper_get_position_x());
       printString("Y");
       printFloat(stepper_get_position_y());       
       // version
-      printPgmString(PSTR("V" LASAURGRBL_VERSION));
+      printPgmString("V" LASAURGRBL_VERSION);
+
+      for (n=0; n<temperature_num_sensors(); ++n) {
+          printString("T");
+          printInteger(n+1);
+          printFloat(temperature_read(n) / 16);
+      }
     }
     printString("\n");
   }
@@ -317,7 +316,7 @@ uint8_t gcode_execute_line(char *line) {
           case 55: gc.offselect = OFFSET_G55; break;
           case 90: gc.absolute_mode = true; break;
           case 91: gc.absolute_mode = false; break;
-          default: FAIL(STATUS_UNSUPPORTED_STATEMENT);
+          default: FAIL(STATUS_UNSUPPORTED_STATEMENT); break;
         }
         break;
       case 'M':
@@ -326,11 +325,9 @@ uint8_t gcode_execute_line(char *line) {
           case 81: next_action = NEXT_ACTION_AIR_ASSIST_DISABLE;break;
           case 82: next_action = NEXT_ACTION_AUX1_ASSIST_ENABLE;break;
           case 83: next_action = NEXT_ACTION_AUX1_ASSIST_DISABLE;break;
-          #ifdef DRIVEBOARD
-            case 84: next_action = NEXT_ACTION_AUX2_ASSIST_ENABLE;break;
-            case 85: next_action = NEXT_ACTION_AUX2_ASSIST_DISABLE;break;
-          #endif
-          default: FAIL(STATUS_UNSUPPORTED_STATEMENT);
+		case 84: next_action = NEXT_ACTION_AUX2_ASSIST_ENABLE;break;
+		case 85: next_action = NEXT_ACTION_AUX2_ASSIST_DISABLE;break;
+          default: FAIL(STATUS_UNSUPPORTED_STATEMENT); break;
         }            
         break;
     }
@@ -474,14 +471,12 @@ uint8_t gcode_execute_line(char *line) {
     case NEXT_ACTION_AUX1_ASSIST_DISABLE:
       planner_control_aux1_assist_disable();
       break;
-    #ifdef DRIVEBOARD
       case NEXT_ACTION_AUX2_ASSIST_ENABLE:
         planner_control_aux2_assist_enable();
         break;
       case NEXT_ACTION_AUX2_ASSIST_DISABLE:
         planner_control_aux2_assist_disable();
         break;
-    #endif
   }
   
   // As far as the parser is concerned, the position is now == target. In reality the

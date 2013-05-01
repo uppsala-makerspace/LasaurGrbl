@@ -20,26 +20,29 @@
 #ifndef config_h
 #define config_h
 
+#include <inc/hw_types.h>
+#include <inc/hw_memmap.h>
+#include <inc/hw_timer.h>
+#include <inc/hw_ints.h>
+#include <inc/hw_gpio.h>
+
+#include <driverlib/gpio.h>
+#include "driverlib/rom.h"
+#include <driverlib/sysctl.h>
+#include <driverlib/timer.h>
+
 #include <inttypes.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
 // Version number
 // (must not contain capital letters)
 #define LASAURGRBL_VERSION "13.04"
-// build for new driveboard hardware
-#define DRIVEBOARD
-// build for 0.9 deg steppers
-// #define NANOTEC_STEPPER_09
-#define BAUD_RATE 57600
-// #define DEBUG_IGNORE_SENSORS  // set for debugging
-
+//#define DEBUG_IGNORE_SENSORS  // set for debugging
 
 #define CONFIG_X_STEPS_PER_MM 32.80839895 //microsteps/mm
-#ifndef NANOTEC_STEPPER_09
-  #define CONFIG_Y_STEPS_PER_MM 32.80839895 //microsteps/mm
-#else
-  #define CONFIG_Y_STEPS_PER_MM 65.6167979 //microsteps/mm
-#endif
+#define CONFIG_Y_STEPS_PER_MM 32.80839895 //microsteps/mm
 #define CONFIG_Z_STEPS_PER_MM 32.80839895 //microsteps/mm
 #define CONFIG_PULSE_MICROSECONDS 5
 #define CONFIG_FEEDRATE 8000.0 // in millimeters per minute
@@ -50,95 +53,58 @@
 #define CONFIG_Y_ORIGIN_OFFSET 5.0  // mm, y-offset of table origin from physical home
 #define CONFIG_Z_ORIGIN_OFFSET 0.0   // mm, z-offset of table origin from physical home
 #define CONFIG_INVERT_X_AXIS 1  // 0 is regular, 1 inverts the x direction
-#ifndef NANOTEC_STEPPER_09
-  #define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
-#else
-  #define CONFIG_INVERT_Y_AXIS 0  // 0 is regular, 1 inverts the y direction
-#endif
+#define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
 #define CONFIG_INVERT_Z_AXIS 1  // 0 is regular, 1 inverts the y direction
 
+#define SENSE_PORT              GPIO_PORTE_BASE
+#define CHILLER_BIT             0
+#define DOOR_BIT                1
+#define SENSE_MASK 				((1<<CHILLER_BIT)|(1<<DOOR_BIT))
 
-#define SENSE_DDR               DDRD
-#define SENSE_PORT              PORTD
-#define SENSE_PIN               PIND
-#ifndef DRIVEBOARD
-  #define POWER_BIT             2
-#endif
-#define CHILLER_BIT             3
-#define DOOR_BIT                2
+#define SENSE_TIMER				TIMER2_BASE
 
-#ifdef DRIVEBOARD
-  #define ASSIST_DDR            DDRD
-  #define ASSIST_PORT           PORTD
-  #define AIR_ASSIST_BIT        4
-  #define AUX1_ASSIST_BIT       7
-  #define AUX2_ASSIST_BIT       5
-#else
-  #define LIMITS_OVERWRITE_DDR  DDRD
-  #define LIMITS_OVERWRITE_PORT PORTD
-  #define LIMITS_OVERWRITE_BIT  7  
-#endif
+#define OW_PORT					GPIO_PORTE_BASE
+#define OW_BIT             		5
+
+#define ASSIST_PORT           	GPIO_PORTD_BASE
+#define AIR_ASSIST_BIT        	2
+#define AUX1_ASSIST_BIT       	3
+#define AUX2_ASSIST_BIT       	6
+#define ASSIST_MASK				(1 << AIR_ASSIST_BIT) | (1<< AUX1_ASSIST_BIT) | (1<< AUX2_ASSIST_BIT)
   
-#define LIMIT_DDR               DDRC
-#define LIMIT_PORT              PORTC
-#define LIMIT_PIN               PINC
-#define X1_LIMIT_BIT            0
-#define X2_LIMIT_BIT            1
-#define Y1_LIMIT_BIT            2
-#define Y2_LIMIT_BIT            3
-#ifdef DRIVEBOARD
-  #define Z1_LIMIT_BIT          4
-  #define Z2_LIMIT_BIT          5
-#else
-  #define ASSIST_DDR            DDRC
-  #define ASSIST_PORT           PORTC
-  #define AIR_ASSIST_BIT        4
-  #define AUX1_ASSIST_BIT       5
-#endif
-
-#define STEPPING_DDR            DDRB
-#define STEPPING_PORT           PORTB
-#define X_STEP_BIT              0
-#define Y_STEP_BIT              1
-#define Z_STEP_BIT              2
-#define X_DIRECTION_BIT         3
-#define Y_DIRECTION_BIT         4
-#define Z_DIRECTION_BIT         5
+#define LIMIT_PORT              GPIO_PORTC_BASE
+#define X_LIMIT_BIT             4
+#define Y_LIMIT_BIT             5
+#define Z_LIMIT_BIT             6
+#define E_LIMIT_BIT             7
+#define LIMIT_MASK 				((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<E_LIMIT_BIT))
 
 
+#define STEPPING_TIMER			TIMER1_BASE
 
-#ifdef DRIVEBOARD
-  #define SENSE_MASK ((1<<CHILLER_BIT)|(1<<DOOR_BIT))
-  #define LIMIT_MASK ((1<<X1_LIMIT_BIT)|(1<<X2_LIMIT_BIT)|(1<<Y1_LIMIT_BIT)|(1<<Y2_LIMIT_BIT)|(1<<Z1_LIMIT_BIT)|(1<<Z2_LIMIT_BIT))
-#else
-  #define SENSE_MASK ((1<<POWER_BIT)|(1<<CHILLER_BIT)|(1<<DOOR_BIT))
-  #define LIMIT_MASK ((1<<X1_LIMIT_BIT)|(1<<X2_LIMIT_BIT)|(1<<Y1_LIMIT_BIT)|(1<<Y2_LIMIT_BIT))
-#endif
-#define STEPPING_MASK ((1<<X_STEP_BIT)|(1<<Y_STEP_BIT)|(1<<Z_STEP_BIT))
-#define DIRECTION_MASK ((1<<X_DIRECTION_BIT)|(1<<Y_DIRECTION_BIT)|(1<<Z_DIRECTION_BIT))
+#define STEP_EN_PORT         	GPIO_PORTB_BASE
+#define STEP_X_EN           	0
+#define STEP_Y_EN           	1
+#define STEP_Z_EN           	2
+#define STEP_EN_MASK			((1 << STEP_X_EN) | (1 << STEP_Y_EN) | (1 << STEP_Z_EN))
 
-// figure out INVERT_MASK
-// careful! direction pins hardcoded here#if DRIVEBOARD
-// (1<<X_DIRECTION_BIT) | (1<<Y_DIRECTION_BIT) | (1<<Y_DIRECTION_BIT)
-#if CONFIG_INVERT_X_AXIS && CONFIG_INVERT_Y_AXIS && CONFIG_INVERT_Z_AXIS
-  #define INVERT_MASK 56U
-#elif CONFIG_INVERT_X_AXIS && CONFIG_INVERT_Y_AXIS
-  #define INVERT_MASK 24U
-#elif CONFIG_INVERT_Y_AXIS && CONFIG_INVERT_Z_AXIS
-  #define INVERT_MASK 48U
-#elif CONFIG_INVERT_X_AXIS && CONFIG_INVERT_Z_AXIS
-  #define INVERT_MASK 40U
-#elif CONFIG_INVERT_X_AXIS
-  #define INVERT_MASK 8U
-#elif CONFIG_INVERT_Y_AXIS
-  #define INVERT_MASK 16U
-#elif CONFIG_INVERT_Z_AXIS
-  #define INVERT_MASK 32U
-#else
-  #define INVERT_MASK 0U
-#endif
+#define STEP_DIR_PORT         	GPIO_PORTB_BASE
+#define STEP_X_DIR           	3
+#define STEP_Y_DIR           	4
+#define STEP_Z_DIR           	5
+#define STEP_DIR_MASK			((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) | (1 << STEP_Z_DIR))
+#define STEP_DIR_INVERT			((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR))
 
+#define STEP_PORT           	GPIO_PORTE_BASE
+#define STEP_X_BIT              2
+#define STEP_Y_BIT              3
+#define STEP_Z_BIT              4
+#define STEP_MASK				((1 << STEP_X_BIT) | (1 << STEP_Y_BIT) | (1 << STEP_Z_BIT))
 
+#define LASER_PORT           	GPIO_PORTB_BASE
+#define LASER_BIT        		6
+#define LASER_TIMER				TIMER0_BASE
+#define LASER_PWM_FREQ			40000
 
 // The temporal resolution of the acceleration management subsystem. Higher number give smoother
 // acceleration but may impact performance.
@@ -195,3 +161,4 @@
 //
 // x = ~x; // toggles ALL the bits in x.
 
+void __delay_us(uint32_t delay);

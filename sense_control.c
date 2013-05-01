@@ -15,26 +15,25 @@
   GNU General Public License for more details.
 */
 
-#include <avr/io.h>
-#include <util/delay.h>
 #include <math.h>
 #include <stdlib.h>
+#include "config.h"
 #include "sense_control.h"
 #include "stepper.h"
 #include "planner.h"
 
-
+static uint32_t laser_cycles;
+static uint32_t laser_divider;
 
 void sense_init() {
-  //// chiller, door, (power)
-  SENSE_DDR &= ~(SENSE_MASK);  // set as input pins 
-  // SENSE_PORT |= SENSE_MASK;    //activate pull-up resistors 
-  
-  //// x1_lmit, x2_limit, y1_limit, y2_limit, z1_limit, z2_limit
-  LIMIT_DDR &= ~(LIMIT_MASK);  // set as input pins
-  // LIMIT_PORT |= LIMIT_MASK;    //activate pull-up resistors   
-}
+	//// chiller, door, (power)
+	GPIOPinTypeGPIOInput(SENSE_PORT, SENSE_MASK);
+	GPIOPadConfigSet(SENSE_PORT, SENSE_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
 
+	//// x1_lmit, x2_limit, y1_limit, y2_limit, z1_limit, z2_limit
+	GPIOPinTypeGPIOInput(LIMIT_PORT, LIMIT_MASK);
+	GPIOPadConfigSet(LIMIT_PORT, LIMIT_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
+}
 
 void control_init() {
   //// laser control
@@ -44,73 +43,70 @@ void control_init() {
   // see chapter "8-bit Timer/Counter0 with PWM" in Atmga328 specs
   // OCR0A sets the duty cycle 0-255 corresponding to 0-100%
   // also see: http://arduino.cc/en/Tutorial/SecretsOfArduinoPWM
-  DDRD |= (1 << DDD6);      // set PD6 as an output
-  OCR0A = 0;              // set PWM to a 0% duty cycle
-  TCCR0A = _BV(COM0A1) | _BV(WGM00);   // phase correct PWM mode
-  // TCCR0A = _BV(COM0A1) | _BV(WGM01) | _BV(WGM00);  // fast PWM mode
-  // prescaler: PWMfreq = 16000/(2*256*prescaler)
-  // TCCR0B = _BV(CS00);                // 1 => 31.3kHz
-  // TCCR0B = _BV(CS01);                // 8 => 3.9kHz
-  TCCR0B = _BV(CS01) | _BV(CS00);    // 64 => 489Hz
-  // TCCR0B = _BV(CS02);                // 256 => 122Hz
-  // TCCR0B = _BV(CS02) | _BV(CS00);    // 1024 => 31Hz
-  // NOTES:
-  // PPI = PWMfreq/(feedrate/25.4/60)
 
-  //// air and aux assist control
-  ASSIST_DDR |= (1 << AIR_ASSIST_BIT);   // set as output pin
-  ASSIST_DDR |= (1 << AUX1_ASSIST_BIT);  // set as output pin
-  control_air_assist(false);
-  control_aux1_assist(false);
-  #ifdef DRIVEBOARD
-    ASSIST_DDR |= (1 << AUX2_ASSIST_BIT);  // set as output pin
-    control_aux2_assist(false);
-  #else  
-    //// limits overwrite control
-    LIMITS_OVERWRITE_DDR |= 1<<LIMITS_OVERWRITE_BIT; // define as output pin
-    control_limits_overwrite(true); // do not use hardware logic to stop steppers 
-  #endif  
+	// set refresh rate
+	laser_cycles = SysCtlClockGet() / LASER_PWM_FREQ; /*Hz*/
+	laser_divider = laser_cycles >> 16;
+
+	laser_cycles /= (laser_divider + 1);
+
+	// ToDo: Map the timer ccp pin sensibly
+	GPIOPinConfigure(GPIO_PB6_T0CCP0);
+	GPIOPinTypeTimer(LASER_PORT, (1 << LASER_BIT));
+
+	// Configure timer
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+	TimerConfigure(LASER_TIMER, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_PWM|TIMER_CFG_B_PWM);
+	HWREG(LASER_TIMER + TIMER_O_CTL) |= (TIMER_CTL_TAPWML|TIMER_CTL_TBPWML);
+
+	// PPI = PWMfreq/(feedrate/25.4/60)
+
+	// Setup Timer
+	TimerPrescaleSet(LASER_TIMER, TIMER_BOTH, laser_divider);
+	TimerLoadSet(LASER_TIMER, TIMER_A, laser_cycles);
+	TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
+
+	// Set default value
+	TimerMatchSet(LASER_TIMER, TIMER_A, 0);
+
+	TimerEnable(LASER_TIMER, TIMER_A);
+
+	//// air and aux assist control
+	GPIOPinTypeGPIOOutput(ASSIST_PORT, ASSIST_MASK);
+	control_air_assist(false);
+	control_aux1_assist(false);
+	control_aux2_assist(false);
+
+
 }
 
 
 void control_laser_intensity(uint8_t intensity) {
-  OCR0A = intensity;
+	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles * intensity / 255);
 }
 
 
 
 void control_air_assist(bool enable) {
   if (enable) {
-    ASSIST_PORT |= (1 << AIR_ASSIST_BIT);
+    GPIOPinWrite(ASSIST_PORT, (1 << AIR_ASSIST_BIT), (1 << AIR_ASSIST_BIT));
   } else {
-    ASSIST_PORT &= ~(1 << AIR_ASSIST_BIT);
+    GPIOPinWrite(ASSIST_PORT, (1 << AIR_ASSIST_BIT), 0);
   }
 }
 
 void control_aux1_assist(bool enable) {
   if (enable) {
-    ASSIST_PORT |= (1 << AUX1_ASSIST_BIT);
+    GPIOPinWrite(ASSIST_PORT, (1 << AUX1_ASSIST_BIT), (1 << AUX1_ASSIST_BIT));
   } else {
-    ASSIST_PORT &= ~(1 << AUX1_ASSIST_BIT);
+    GPIOPinWrite(ASSIST_PORT, (1 << AUX1_ASSIST_BIT), 0);
   }  
 }
 
-#ifdef DRIVEBOARD
-  void control_aux2_assist(bool enable) {
-    if (enable) {
-      ASSIST_PORT |= (1 << AUX2_ASSIST_BIT);
-    } else {
-      ASSIST_PORT &= ~(1 << AUX2_ASSIST_BIT);
-    }  
-  }
-#else
-  void control_limits_overwrite(bool enable) {
-    if (enable) {
-      // sinking the pin overwrites the limit stop hard logic
-      LIMITS_OVERWRITE_PORT &= ~(1<<LIMITS_OVERWRITE_BIT);
-    } else {
-      LIMITS_OVERWRITE_PORT |= (1<<LIMITS_OVERWRITE_BIT);
-    }
-  }
-#endif
-
+void control_aux2_assist(bool enable) {
+	if (enable) {
+		GPIOPinWrite(ASSIST_PORT, (1 << AUX2_ASSIST_BIT), (1 << AUX2_ASSIST_BIT));
+	} else {
+		GPIOPinWrite(ASSIST_PORT, (1 << AUX2_ASSIST_BIT), 0);
+	}
+}

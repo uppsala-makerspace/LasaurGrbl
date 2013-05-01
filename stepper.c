@@ -41,11 +41,9 @@
 */
 
 #define __DELAY_BACKWARD_COMPATIBLE__  // _delay_us() make backward compatible see delay.h
-  
+
 #include <math.h>
 #include <stdlib.h>
-#include <util/delay.h>
-#include <avr/interrupt.h>
 #include <string.h>
 #include "stepper.h"
 #include "config.h"
@@ -55,15 +53,24 @@
 #include "serial.h"  //for debug
 
 
-#define CYCLES_PER_MICROSECOND (F_CPU/1000000)  //16000000/1000000 = 16
-#define CYCLES_PER_ACCELERATION_TICK (F_CPU/ACCELERATION_TICKS_PER_SECOND)  // 16MHz/100 = 160000
+#define CYCLES_PER_MICROSECOND (SysCtlClockGet()/1000000)  // 80MHz = 80
+#define CYCLES_PER_ACCELERATION_TICK (SysCtlClockGet()/ACCELERATION_TICKS_PER_SECOND)  // 80MHz/100 = 800000
 
+typedef enum
+{
+	STEP_AXIS_X = 0,
+	STEP_AXIS_Y = 1,
+	STEP_AXIS_Z = 2,
+	STEP_NUM_AXIS
+} STEP_AXIS;
 
-static int32_t stepper_position[3];  // real-time position in absolute steps
+static int32_t stepper_position[STEP_NUM_AXIS];  // real-time position in absolute steps
 static block_t *current_block;  // A pointer to the block currently being traced
 
 // Variables used by The Stepper Driver Interrupt
-static uint8_t out_bits;       // The next stepping-bits to be output
+static uint8_t out_dir_bits;      // The next direction-bits to be output
+static uint8_t out_step_bits;     // The next stepping-bits to be output
+
 static int32_t counter_x,       // Counter variables for the bresenham line tracer
                counter_y,
                counter_z;
@@ -79,49 +86,57 @@ static bool processing_flag;                  // indicates if blocks are being p
 static volatile bool stop_requested;          // when set to true stepper interrupt will go idle on next entry
 static volatile uint8_t stop_status;          // yields the reason for a stop request
 
+static uint16_t timer_prescaler = 0;
+static uint16_t timer_preload = 0xffff;
+
 
 // prototypes for static functions (non-accesible from other files)
 static bool acceleration_tick();
 static void adjust_speed( uint32_t steps_per_minute );
 static uint32_t config_step_timer(uint32_t cycles);
 
+void pulse_isr(void);
+void stepper_isr(void);
 
 
 // Initialize and start the stepper motor subsystem
 void stepper_init() {  
-  // Configure directions of interface pins
-  STEPPING_DDR |= (STEPPING_MASK | DIRECTION_MASK);
-  STEPPING_PORT = (STEPPING_PORT & ~(STEPPING_MASK | DIRECTION_MASK)) | INVERT_MASK;
-  
-  // waveform generation = 0100 = CTC
-  TCCR1B &= ~(1<<WGM13);
-  TCCR1B |= (1<<WGM12);
-  TCCR1A &= ~(1<<WGM11);
-  TCCR1A &= ~(1<<WGM10);
+	// Configure directions of interface pins
+	GPIOPinTypeGPIOOutput(STEP_EN_PORT, STEP_EN_MASK);
+	GPIOPinTypeGPIOOutput(STEP_DIR_PORT, STEP_DIR_MASK);
+	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
 
-  // output mode = 00 (disconnected)
-  TCCR1A &= ~(3<<COM1A0);
-  TCCR1A &= ~(3<<COM1B0);
+	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
+	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
+	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, 0);
 
-  // Configure Timer 2
-  TCCR2A = 0; // Normal operation
-  TCCR2B = 0; // Disable timer until needed.
-  TIMSK2 |= (1<<TOIE2); // Enable Timer2 interrupt flag
+	// Configure timer
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
+	TimerConfigure(STEPPING_TIMER, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_PERIODIC | TIMER_CFG_B_ONE_SHOT);
+
+	TimerIntRegister(STEPPING_TIMER, TIMER_A, stepper_isr);
+	TimerIntRegister(STEPPING_TIMER, TIMER_B, pulse_isr);
+
+	ROM_IntEnable(INT_TIMER1A);
+	ROM_IntEnable(INT_TIMER1B);
+	TimerIntEnable(STEPPING_TIMER, TIMER_TIMA_TIMEOUT);
+	TimerIntEnable(STEPPING_TIMER, TIMER_TIMB_TIMEOUT);
+
+	adjust_speed(MINIMUM_STEPS_PER_MINUTE);
+	clear_vector(stepper_position);
+	stepper_set_position( CONFIG_X_ORIGIN_OFFSET,
+                          CONFIG_Y_ORIGIN_OFFSET,
+                          CONFIG_Z_ORIGIN_OFFSET );
+
+	acceleration_tick_counter = 0;
+	current_block = NULL;
+	stop_requested = false;
+	stop_status = STATUS_OK;
+	busy = false;
   
-  adjust_speed(MINIMUM_STEPS_PER_MINUTE);
-  clear_vector(stepper_position);
-  stepper_set_position( CONFIG_X_ORIGIN_OFFSET, 
-                        CONFIG_Y_ORIGIN_OFFSET, 
-                        CONFIG_Z_ORIGIN_OFFSET );
-  acceleration_tick_counter = 0;
-  current_block = NULL;
-  stop_requested = false;
-  stop_status = STATUS_OK;
-  busy = false;
-  
-  // start in the idle state
-  // The stepper interrupt gets started when blocks are being added.
-  stepper_go_idle();  
+	// start in the idle state
+	// The stepper interrupt gets started when blocks are being added.
+	stepper_go_idle();
 }
 
 
@@ -137,10 +152,14 @@ void stepper_synchronize() {
 void stepper_wake_up() {
   if (!processing_flag) {
     processing_flag = true;
+
     // Initialize stepper output bits
-    out_bits = INVERT_MASK;
+	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
+	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
+	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK);
+
     // Enable stepper driver interrupt
-    TIMSK1 |= (1<<OCIE1A);
+    TimerEnable(STEPPING_TIMER, TIMER_A);
   }
 }
 
@@ -150,7 +169,7 @@ void stepper_go_idle() {
   processing_flag = false;
   current_block = NULL;
   // Disable stepper driver interrupt
-  TIMSK1 &= ~(1<<OCIE1A);
+  TimerDisable(STEPPING_TIMER, TIMER_A);
   control_laser_intensity(0);
 }
 
@@ -198,10 +217,12 @@ void stepper_set_position(double x, double y, double z) {
 // It resets the motor port after a short period completing one step cycle.
 // TODO: It is possible for the serial interrupts to delay this interrupt by a few microseconds, if
 // they execute right before this interrupt. Not a big deal, but could use some TLC at some point.
-ISR(TIMER2_OVF_vect) {
-  // reset step pins
-  STEPPING_PORT = (STEPPING_PORT & ~STEPPING_MASK) | (INVERT_MASK & STEPPING_MASK);
-  TCCR2B = 0; // Disable Timer2 to prevent re-entering this interrupt when it's not needed. 
+void pulse_isr (void) {
+	// reset step pins
+	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
+
+	// This is a one-shot timer, so just ACK the IRQ.
+	TimerIntClear(TIMER1_BASE, TIMER_TIMB_TIMEOUT);
 }
   
 
@@ -209,8 +230,9 @@ ISR(TIMER2_OVF_vect) {
 // This is the workhorse of LasaurGrbl. It is executed at the rate set with
 // config_step_timer. It pops blocks from the block_buffer and executes them by pulsing the stepper pins appropriately.
 // The bresenham line tracer algorithm controls all three stepper outputs simultaneously.
-ISR(TIMER1_COMPA_vect) {
-  if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
+void stepper_isr (void) {
+
+	if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
   busy = true;
   if (stop_requested) {
     // go idle and absorb any blocks
@@ -222,6 +244,10 @@ ISR(TIMER1_COMPA_vect) {
     return;
   }
 
+	// Reset the timer
+	TimerLoadSet(STEPPING_TIMER, TIMER_A, timer_preload);
+	TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+
   #ifndef DEBUG_IGNORE_SENSORS
     // stop program when any limit is hit or the e-stop turned the power off
     if (SENSE_LIMITS) {
@@ -229,27 +255,17 @@ ISR(TIMER1_COMPA_vect) {
       busy = false;
       return;    
     }
-    #ifndef DRIVEBOARD
-      else if (SENSE_POWER_OFF) {
-        stepper_request_stop(STATUS_POWER_OFF);
-        busy = false;
-        return;
-      }
-    #endif
   #endif
   
-  // pulse steppers
-  STEPPING_PORT = (STEPPING_PORT & ~DIRECTION_MASK) | (out_bits & DIRECTION_MASK);
-  STEPPING_PORT = (STEPPING_PORT & ~STEPPING_MASK) | out_bits;
-  // prime for reset pulse in CONFIG_PULSE_MICROSECONDS
-  TCNT2 = -(((CONFIG_PULSE_MICROSECONDS-2)*CYCLES_PER_MICROSECOND) >> 3); // Reload timer counter
-  TCCR2B = (1<<CS21); // Begin timer2. Full speed, 1/8 prescaler
+	// pulse steppers
+	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
+	GPIOPinWrite(STEP_PORT, STEP_MASK, out_step_bits);
+	// prime for reset pulse in CONFIG_PULSE_MICROSECONDS
+	//set period
+	TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
+	TimerLoadSet(STEPPING_TIMER, TIMER_B, (CONFIG_PULSE_MICROSECONDS - 3) * CYCLES_PER_MICROSECOND);
+	TimerEnable(STEPPING_TIMER, TIMER_B);
 
-  // Enable nested interrupts.
-  // By default nested interrupts are disabled but can be enabled with sei()
-  // This allows the reset interrupt and serial ISRs to jump in.
-  // See: http://avr-libc.nongnu.org/user-manual/group__avr__interrupts.html
-  sei();
 
   // If there is no current block, attempt to pop one from the buffer
   if (current_block == NULL) {
@@ -276,13 +292,13 @@ ISR(TIMER1_COMPA_vect) {
   switch (current_block->type) {
     case TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
-      out_bits = current_block->direction_bits;
+      out_dir_bits = current_block->direction_bits;
       counter_x += current_block->steps_x;
       if (counter_x > 0) {
-        out_bits |= (1<<X_STEP_BIT);
+        out_step_bits |= (1<<STEP_X_BIT);
         counter_x -= current_block->step_event_count;
         // also keep track of absolute position
-        if ((out_bits >> X_DIRECTION_BIT) & 1 ) {
+        if ((out_dir_bits >> STEP_X_DIR) & 1 ) {
           stepper_position[X_AXIS] -= 1;
         } else {
           stepper_position[X_AXIS] += 1;
@@ -290,10 +306,10 @@ ISR(TIMER1_COMPA_vect) {
       }
       counter_y += current_block->steps_y;
       if (counter_y > 0) {
-        out_bits |= (1<<Y_STEP_BIT);
+        out_step_bits |= (1<<STEP_Y_BIT);
         counter_y -= current_block->step_event_count;
         // also keep track of absolute position
-        if ((out_bits >> Y_DIRECTION_BIT) & 1 ) {
+        if ((out_dir_bits >> STEP_Y_DIR) & 1 ) {
           stepper_position[Y_AXIS] -= 1;
         } else {
           stepper_position[Y_AXIS] += 1;
@@ -301,10 +317,10 @@ ISR(TIMER1_COMPA_vect) {
       }
       counter_z += current_block->steps_z;
       if (counter_z > 0) {
-        out_bits |= (1<<Z_STEP_BIT);
+        out_step_bits |= (1<<STEP_Z_BIT);
         counter_z -= current_block->step_event_count;
         // also keep track of absolute position        
-        if ((out_bits >> Z_DIRECTION_BIT) & 1 ) {
+        if ((out_step_bits >> STEP_Z_DIR) & 1 ) {
           stepper_position[Z_AXIS] -= 1;
         } else {
           stepper_position[Z_AXIS] += 1;
@@ -315,7 +331,7 @@ ISR(TIMER1_COMPA_vect) {
       step_events_completed++;  // increment step count
       
       // apply stepper invert mask
-      out_bits ^= INVERT_MASK;
+      out_dir_bits ^= STEP_DIR_INVERT;
 
       ////////// SPEED ADJUSTMENT
       if (step_events_completed < current_block->step_event_count) {  // block not finished
@@ -335,7 +351,7 @@ ISR(TIMER1_COMPA_vect) {
             // reset counter, midpoint rule
             // makes sure deceleration is performed the same every time
             acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2;
-                 
+
         // decelerating
         } else if (step_events_completed >= current_block->decelerate_after) {
           if ( acceleration_tick() ) {  // scheduled speed change
@@ -386,7 +402,6 @@ ISR(TIMER1_COMPA_vect) {
       planner_discard_current_block();  
       break;    
 
-    #ifdef DRIVEBOARD
       case TYPE_AUX2_ASSIST_ENABLE:
         control_aux2_assist(true);
         current_block = NULL;
@@ -398,7 +413,6 @@ ISR(TIMER1_COMPA_vect) {
         current_block = NULL;
         planner_discard_current_block();  
         break;    
-    #endif
   }
   
   busy = false;
@@ -422,42 +436,31 @@ static bool acceleration_tick() {
 
 
 // Configures the prescaler and ceiling of timer 1 to produce the given rate as accurately as possible.
-// Returns the actual number of cycles per interrupt
+// Returns the actual number of cycles per interrupt.
 static uint32_t config_step_timer(uint32_t cycles) {
-  uint16_t ceiling;
-  uint16_t prescaler;
-  uint32_t actual_cycles;
-  if (cycles <= 0xffffL) {
-    ceiling = cycles;
-    prescaler = 0; // prescaler: 0
-    actual_cycles = ceiling;
-  } else if (cycles <= 0x7ffffL) {
-    ceiling = cycles >> 3;
-    prescaler = 1; // prescaler: 8
-    actual_cycles = ceiling * 8L;
-  } else if (cycles <= 0x3fffffL) {
-    ceiling = cycles >> 6;
-    prescaler = 2; // prescaler: 64
-    actual_cycles = ceiling * 64L;
-  } else if (cycles <= 0xffffffL) {
-    ceiling = (cycles >> 8);
-    prescaler = 3; // prescaler: 256
-    actual_cycles = ceiling * 256L;
-  } else if (cycles <= 0x3ffffffL) {
-    ceiling = (cycles >> 10);
-    prescaler = 4; // prescaler: 1024
-    actual_cycles = ceiling * 1024L;
-  } else {
-    // Okay, that was slower than we actually go. Just set the slowest speed
-    ceiling = 0xffff;
-    prescaler = 4;
-    actual_cycles = 0xffff * 1024;
-  }
-  // Set prescaler
-  TCCR1B = (TCCR1B & ~(0x07<<CS10)) | ((prescaler+1)<<CS10);
-  // Set ceiling
-  OCR1A = ceiling;
-  return(actual_cycles);
+	uint32_t prescaled_cycles = cycles;
+
+	// Temporarily disable the timer
+	ROM_IntDisable(INT_TIMER1A);
+
+	timer_prescaler = 0;
+
+	while (prescaled_cycles > 65535)
+	{
+		timer_prescaler++;
+		prescaled_cycles /= 2;
+	}
+
+	timer_preload = prescaled_cycles;
+
+	//set period
+	TimerPrescaleSet(STEPPING_TIMER, TIMER_A, timer_prescaler);
+	TimerLoadSet(STEPPING_TIMER, TIMER_A, timer_preload);
+
+	// Re-Enable the Timer
+	ROM_IntEnable(INT_TIMER1A);
+
+	return(timer_preload * (1 + timer_prescaler));
 }
 
 
@@ -470,19 +473,6 @@ static void adjust_speed( uint32_t steps_per_minute ) {
                                ((float)steps_per_minute/(float)current_block->nominal_rate);
   uint8_t constrained_intensity = max(adjusted_intensity, 0);
   control_laser_intensity(constrained_intensity);
-
-  // depending on intensity adapt PWM freq
-  // assuming: TCCR0A = _BV(COM0A1) | _BV(WGM00);  // phase correct PWM mode
-  if (constrained_intensity > 40) {
-    // set PWM freq to 3.9kHz
-    TCCR0B = _BV(CS01);
-  } else if (constrained_intensity > 10) {
-    // set PWM freq to 489Hz
-    TCCR0B = _BV(CS01) | _BV(CS00);
-  } else {
-    // set PWM freq to 122Hz
-    TCCR0B = _BV(CS02); 
-  }
 }
 
 
@@ -492,62 +482,63 @@ static void adjust_speed( uint32_t steps_per_minute ) {
 static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_direction, uint32_t microseconds_per_pulse) {
   
   uint32_t step_delay = microseconds_per_pulse - CONFIG_PULSE_MICROSECONDS;
-  uint8_t out_bits = DIRECTION_MASK;
+  uint8_t out_dir_bits = STEP_DIR_MASK;
   uint8_t limit_bits;
   uint8_t x_overshoot_count = 6;
   uint8_t y_overshoot_count = 6;
+  uint8_t z_overshoot_count = 6;
   
-  if (x_axis) { out_bits |= (1<<X_STEP_BIT); }
-  if (y_axis) { out_bits |= (1<<Y_STEP_BIT); }
-  if (z_axis) { out_bits |= (1<<Z_STEP_BIT); }
+  if (x_axis) { out_step_bits |= (1<<STEP_X_BIT); }
+  if (y_axis) { out_step_bits |= (1<<STEP_Y_BIT); }
+  if (z_axis) { out_step_bits |= (1<<STEP_Z_BIT); }
   
   // Invert direction bits if this is a reverse homing_cycle
   if (reverse_direction) {
-    out_bits ^= DIRECTION_MASK;
+    out_dir_bits ^= STEP_DIR_MASK;
   }
   
   // Apply the global invert mask
-  out_bits ^= INVERT_MASK;
+  out_dir_bits ^= STEP_DIR_INVERT;
   
   // Set direction pins
-  STEPPING_PORT = (STEPPING_PORT & ~DIRECTION_MASK) | (out_bits & DIRECTION_MASK);
+	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
   
   for(;;) {
-    limit_bits = LIMIT_PIN;
+    limit_bits = GPIOPinRead(LIMIT_PORT, LIMIT_MASK);
     if (reverse_direction) {         
       // Invert limit_bits if this is a reverse homing_cycle
       limit_bits ^= LIMIT_MASK;
     }
-    if (x_axis && !(limit_bits & (1<<X1_LIMIT_BIT))) {
+    if (x_axis && !(limit_bits & (1<<X_LIMIT_BIT))) {
       if(x_overshoot_count == 0) {
         x_axis = false;
-        out_bits ^= (1<<X_STEP_BIT);
+        out_step_bits ^= (1<<STEP_X_BIT);
       } else {
         x_overshoot_count--;
       }     
     } 
-    if (y_axis && !(limit_bits & (1<<Y1_LIMIT_BIT))) {
+    if (y_axis && !(limit_bits & (1<<Y_LIMIT_BIT))) {
       if(y_overshoot_count == 0) {
         y_axis = false;
-        out_bits ^= (1<<Y_STEP_BIT);
+        out_step_bits ^= (1<<STEP_Y_BIT);
       } else {
         y_overshoot_count--;
       }        
     }
-    // if (z_axis && !(limit_bits & (1<<Z1_LIMIT_BIT))) {
-    //   if(z_overshoot_count == 0) {
-    //     z_axis = false;
-    //     out_bits ^= (1<<Z_STEP_BIT);
-    //   } else {
-    //     z_overshoot_count--;
-    //   }        
-    // }
+    if (z_axis && !(limit_bits & (1<<Z_LIMIT_BIT))) {
+      if(z_overshoot_count == 0) {
+        z_axis = false;
+        out_step_bits ^= (1<<STEP_Z_BIT);
+      } else {
+        z_overshoot_count--;
+      }
+    }
     if(x_axis || y_axis || z_axis) {
         // step all axes still in out_bits
-        STEPPING_PORT |= out_bits & STEPPING_MASK;
-        _delay_us(CONFIG_PULSE_MICROSECONDS);
-        STEPPING_PORT ^= out_bits & STEPPING_MASK;
-        _delay_us(step_delay);
+    	GPIOPinWrite(STEP_PORT, STEP_MASK, out_step_bits);
+        __delay_us(CONFIG_PULSE_MICROSECONDS);
+    	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
+        __delay_us(step_delay);
     } else { 
         break;
     }

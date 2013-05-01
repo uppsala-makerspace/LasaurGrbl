@@ -22,9 +22,6 @@
 #ifndef gcode_h
 #define gcode_h
 
-#include <avr/io.h>
-#include <avr/pgmspace.h>
-
 #define STATUS_OK 0
 #define STATUS_RX_BUFFER_OVERFLOW 1
 #define STATUS_LINE_BUFFER_OVERFLOW 2

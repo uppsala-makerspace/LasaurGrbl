@@ -20,7 +20,6 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
-#include <util/delay.h>
 #include <string.h>
 #include "planner.h"
 #include "stepper.h"
@@ -100,9 +99,9 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
 
   // compute direction bits for this block
   block->direction_bits = 0;
-  if (target[X_AXIS] < position[X_AXIS]) { block->direction_bits |= (1<<X_DIRECTION_BIT); }
-  if (target[Y_AXIS] < position[Y_AXIS]) { block->direction_bits |= (1<<Y_DIRECTION_BIT); }
-  if (target[Z_AXIS] < position[Z_AXIS]) { block->direction_bits |= (1<<Z_DIRECTION_BIT); }
+  if (target[X_AXIS] < position[X_AXIS]) { block->direction_bits |= (1<<STEP_X_DIR); }
+  if (target[Y_AXIS] < position[Y_AXIS]) { block->direction_bits |= (1<<STEP_Y_DIR); }
+  if (target[Z_AXIS] < position[Z_AXIS]) { block->direction_bits |= (1<<STEP_Z_DIR); }
   
   // number of steps for each axis
   block->steps_x = labs(target[X_AXIS]-position[X_AXIS]);
