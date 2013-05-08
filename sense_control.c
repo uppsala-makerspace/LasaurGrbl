@@ -44,20 +44,18 @@ void control_init() {
   // OCR0A sets the duty cycle 0-255 corresponding to 0-100%
   // also see: http://arduino.cc/en/Tutorial/SecretsOfArduinoPWM
 
+	GPIOPinTypeGPIOOutput(LASER_EN_PORT, LASER_EN_MASK);
+	GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
+
 	// set refresh rate
 	laser_cycles = SysCtlClockGet() / LASER_PWM_FREQ; /*Hz*/
 	laser_divider = laser_cycles >> 16;
-
 	laser_cycles /= (laser_divider + 1);
-
-	// ToDo: Map the timer ccp pin sensibly
-	GPIOPinConfigure(GPIO_PB6_T0CCP0);
-	GPIOPinTypeTimer(LASER_PORT, (1 << LASER_BIT));
 
 	// Configure timer
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
 	TimerConfigure(LASER_TIMER, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_PWM|TIMER_CFG_B_PWM);
-	HWREG(LASER_TIMER + TIMER_O_CTL) |= (TIMER_CTL_TAPWML|TIMER_CTL_TBPWML);
+	TimerControlLevel(LASER_TIMER, TIMER_BOTH, 1);
 
 	// PPI = PWMfreq/(feedrate/25.4/60)
 
@@ -67,22 +65,28 @@ void control_init() {
 	TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
 
 	// Set default value
-	TimerMatchSet(LASER_TIMER, TIMER_A, 0);
+	control_laser_intensity(0);
 
 	TimerEnable(LASER_TIMER, TIMER_A);
+
+	// ToDo: Map the timer ccp pin sensibly
+	GPIOPinConfigure(GPIO_PB6_T0CCP0);
+	GPIOPinTypeTimer(LASER_PORT, (1 << LASER_BIT));
 
 	//// air and aux assist control
 	GPIOPinTypeGPIOOutput(ASSIST_PORT, ASSIST_MASK);
 	control_air_assist(false);
 	control_aux1_assist(false);
-	control_aux2_assist(false);
-
-
 }
 
 
 void control_laser_intensity(uint8_t intensity) {
-	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles * intensity / 255);
+	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles - (laser_cycles * intensity / 255));
+
+	if (intensity > 5)
+		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
+	else
+		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
 }
 
 
@@ -101,12 +105,4 @@ void control_aux1_assist(bool enable) {
   } else {
     GPIOPinWrite(ASSIST_PORT, (1 << AUX1_ASSIST_BIT), 0);
   }  
-}
-
-void control_aux2_assist(bool enable) {
-	if (enable) {
-		GPIOPinWrite(ASSIST_PORT, (1 << AUX2_ASSIST_BIT), (1 << AUX2_ASSIST_BIT));
-	} else {
-		GPIOPinWrite(ASSIST_PORT, (1 << AUX2_ASSIST_BIT), 0);
-	}
 }

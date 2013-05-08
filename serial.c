@@ -31,7 +31,19 @@
 #include "gcode.h"
 
 void serial_init() {
-	printPgmString("# LasaurGrbl " LASAURGRBL_VERSION "\n");
+    //
+    // Configure the required pins for USB operation.
+    //
+    GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_5 | GPIO_PIN_4);
+
+    /* Enable the USB peripheral and PLL */
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_USB0);
+    SysCtlUSBPLLEnable();
+
+    /* Setup pins for USB operation */
+    GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_4 | GPIO_PIN_5);
+
+    USBCDCD_init();
 }
 
 

@@ -70,6 +70,15 @@ void planner_init() {
 void planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity) {    
   // calculate target position in absolute steps
   int32_t target[3];
+
+  // Make sure we stay within our limits
+  x=max(x, CONFIG_X_MIN);
+  x=min(x, CONFIG_X_MAX);
+  y=max(x, CONFIG_X_MIN);
+  y=min(x, CONFIG_X_MAX);
+  z=max(x, CONFIG_X_MIN);
+  z=min(x, CONFIG_X_MAX);
+
   target[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
   target[Y_AXIS] = lround(y*CONFIG_Y_STEPS_PER_MM);
   target[Z_AXIS] = lround(z*CONFIG_Z_STEPS_PER_MM); 

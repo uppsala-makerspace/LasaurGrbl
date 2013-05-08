@@ -45,8 +45,6 @@
 #define NEXT_ACTION_AIR_ASSIST_DISABLE 7
 #define NEXT_ACTION_AUX1_ASSIST_ENABLE 8
 #define NEXT_ACTION_AUX1_ASSIST_DISABLE 9
-#define NEXT_ACTION_AUX2_ASSIST_ENABLE 10
-#define NEXT_ACTION_AUX2_ASSIST_DISABLE 11
 
 #define OFFSET_G54 0
 #define OFFSET_G55 1
@@ -115,6 +113,12 @@ void gcode_process_line() {
       // reached line size, other side sent too long lines
       stepper_request_stop(STATUS_LINE_BUFFER_OVERFLOW);
       break;
+    } else if (chr == 0x14) {
+    	stepper_synchronize();
+    	if (stepper_active() == 0) {
+    		char tmp[2] = {0x12, 0};
+    		printString(tmp);
+    	}
     } else if (chr <= 0x20) {
       // ignore control characters and space
     } else {
@@ -238,8 +242,8 @@ void gcode_process_line() {
       if (SENSE_DOOR_OPEN) {
         printString("D");  // Warning: Door is open
       }
-      if (SENSE_CHILLER_OFF) {
-        printString("C");  // Warning: Chiller is off
+      if (temperature_read(0) > (20 * 16)) {
+          printString("C");  // Warning: Chiller is off
       }
       // limit
       if (SENSE_LIMITS) {
@@ -260,7 +264,6 @@ void gcode_process_line() {
 
     //
     if (print_extended_status) {
-    	int n;
       // position
       printString("X");
       printFloat(stepper_get_position_x());
@@ -268,12 +271,6 @@ void gcode_process_line() {
       printFloat(stepper_get_position_y());       
       // version
       printPgmString("V" LASAURGRBL_VERSION);
-
-      for (n=0; n<temperature_num_sensors(); ++n) {
-          printString("T");
-          printInteger(n+1);
-          printFloat(temperature_read(n) / 16);
-      }
     }
     printString("\n");
   }
@@ -321,12 +318,16 @@ uint8_t gcode_execute_line(char *line) {
         break;
       case 'M':
         switch(int_value) {
+          case 17: stepper_wake_up();break;
+          case 18: stepper_request_stop(STATUS_SERIAL_STOP_REQUEST);break;
           case 80: next_action = NEXT_ACTION_AIR_ASSIST_ENABLE;break;
           case 81: next_action = NEXT_ACTION_AIR_ASSIST_DISABLE;break;
           case 82: next_action = NEXT_ACTION_AUX1_ASSIST_ENABLE;break;
           case 83: next_action = NEXT_ACTION_AUX1_ASSIST_DISABLE;break;
-		case 84: next_action = NEXT_ACTION_AUX2_ASSIST_ENABLE;break;
-		case 85: next_action = NEXT_ACTION_AUX2_ASSIST_DISABLE;break;
+          case 105: printString("ok T:"); printFloat(temperature_read(0)/16.0);printString(" B:"); printFloat(temperature_read(1)/16.0); printString("\n");break;
+          case 106: next_action = NEXT_ACTION_AIR_ASSIST_ENABLE;break;
+          case 107: next_action = NEXT_ACTION_AIR_ASSIST_DISABLE;break;
+          case 114: printString("ok C: X:"); printFloat(stepper_get_position_x()); printString(" Y:"); printFloat(stepper_get_position_y()); printString(" Z:"); printFloat(stepper_get_position_z()); printString("\n"); break;
           default: FAIL(STATUS_UNSUPPORTED_STATEMENT); break;
         }            
         break;
@@ -471,12 +472,6 @@ uint8_t gcode_execute_line(char *line) {
     case NEXT_ACTION_AUX1_ASSIST_DISABLE:
       planner_control_aux1_assist_disable();
       break;
-      case NEXT_ACTION_AUX2_ASSIST_ENABLE:
-        planner_control_aux2_assist_enable();
-        break;
-      case NEXT_ACTION_AUX2_ASSIST_DISABLE:
-        planner_control_aux2_assist_disable();
-        break;
   }
   
   // As far as the parser is concerned, the position is now == target. In reality the

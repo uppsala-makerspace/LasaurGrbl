@@ -5,15 +5,16 @@
 #define OW_DELAY_B 64
 #define OW_DELAY_C 60
 #define OW_DELAY_D 10
-#define OW_DELAY_E 9
+#define OW_DELAY_E 7
 #define OW_DELAY_F 55
-#define OW_DELAY_G 0
+#define OW_DELAY_G 1
 #define OW_DELAY_H 480
 #define OW_DELAY_I 70
 #define OW_DELAY_J 410
 
 // Sensor ROM Codes
 static uint8_t sensor_rom[3][8];
+static uint8_t scratch_pad[9] = {0};
 static uint8_t num_sensors = 0;
 static uint16_t temperature[3] = {0};
 static uint64_t timer_load;
@@ -79,6 +80,7 @@ static OW_BYTE_STATE ow_byte_state = OW_BYTE_RESET;
 
 static uint8_t cur_rom = 0;
 static uint8_t cur_rom_byte = 0;
+static uint8_t cur_scratch_byte = 0;
 static uint8_t cur_state = 0;
 
 void temperature_update_isr(void) {
@@ -117,6 +119,8 @@ void temperature_update_isr(void) {
 	// One Wire Byte State Machine
 	if (bit_delay == 0)
 	{
+		// Make sure we are scheduled again.
+		bit_delay = 1;
 		ow_bit_index = 0;
 
 		switch(ow_byte_state)
@@ -126,12 +130,13 @@ void temperature_update_isr(void) {
 			break;
 
 			case OW_BYTE_READ:
-				if (ow_bit)
-					ow_byte |= 0x80;
-				ow_byte >>= 1;
+				if (ow_bit != 0)
+					ow_byte |= 0x80; //(1 << ow_bit_count);
 				ow_bit_count++;
-				if (ow_bit_count > 8)
+				if (ow_bit_count > 7)
 					ow_bit_state = 0;
+				else
+					ow_byte >>= 1;
 			break;
 
 			case OW_BYTE_WRITE:
@@ -163,6 +168,7 @@ void temperature_update_isr(void) {
 		{
 			case 0:
 				// Send a reset
+				ow_byte_state = OW_BYTE_RESET;
 				ow_bit_state = ow_reset_timings;
 				if (cur_rom >= num_sensors)
 				{
@@ -178,6 +184,13 @@ void temperature_update_isr(void) {
 			break;
 
 			case 1:
+				if (ow_bit != 0)
+				{
+					cur_state = 0;
+					bit_delay = 0;
+					break;
+				}
+
 				// Send the Match ROM Command
 				ow_byte_state = OW_BYTE_WRITE;
 				ow_byte = 0x55;
@@ -211,21 +224,32 @@ void temperature_update_isr(void) {
 			break;
 
 			case 5:
-				temperature[cur_rom] = ow_byte;
-				// Read a byte
-				ow_byte_state = OW_BYTE_READ;
-				ow_byte = 0x00;
-				cur_state++;
-			break;
+				scratch_pad[cur_scratch_byte++] = ow_byte;
 
-			case 6:
-				temperature[cur_rom] |= ow_byte << 8;
+				if (cur_scratch_byte < 9)
+				{
+					// Read a byte
+					ow_bit_state = ow_read_timings;
+					ow_byte_state = OW_BYTE_READ;
+					ow_byte = 0x00;
+					break;
+				}
+
+				if (scratch_pad[5] == 0xFF && scratch_pad[7] == 0x10 && scratch_pad[1] < 7)
+				{
+					temperature[cur_rom] = scratch_pad[0] | (scratch_pad[1] << 8);
+				}
+
+				cur_scratch_byte = 0;
 				cur_rom++;
 				cur_state = 0;
 			break;
 
+			case 6:
+			break;
+
 			case 7:
-				// Send the No-Match ROM Command
+				// Send the Skip ROM Command
 				ow_byte_state = OW_BYTE_WRITE;
 				ow_byte = 0xCC;
 				cur_state++;
@@ -252,7 +276,7 @@ void temperature_update_isr(void) {
 	// Schedule timer to go off
 	if (bit_delay > 0)
 	{
-		TimerLoadSet64(SENSE_TIMER, SysCtlClockGet() / 1000000 * (bit_delay & 0xFFF));
+		TimerLoadSet64(SENSE_TIMER, (SysCtlClockGet() / 1000000) * bit_delay);
 	}
 	else
 	{

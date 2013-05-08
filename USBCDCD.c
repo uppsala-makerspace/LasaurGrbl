@@ -64,10 +64,6 @@
 /* Defines */
 #define USBBUFFERSIZE   256
 
-#ifndef NULL
-#define NULL                    ((void *)0)
-#endif
-
 #ifndef USB_VID_TI
 #define USB_VID_TI      USB_VID_STELLARIS
 #endif
@@ -123,8 +119,8 @@ const uint8_t productString[] =
 {
     2 + (16 * 2),
     USB_DTYPE_STRING,
-    'V', 0, 'i', 0, 'r', 0, 't', 0, 'u', 0, 'a', 0, 'l', 0, ' ', 0,
-    'C', 0, 'O', 0, 'M', 0, ' ', 0, 'P', 0, 'o', 0, 'r', 0, 't', 0
+    'L', 0, 'a', 0, 's', 0, 'e', 0, 'r', 0, 'S', 0, 'a', 0, 'u', 0,
+    'r', 0, ' ', 0, 'S', 0, 'e', 0, 'r', 0, 'i', 0, 'a', 0, 'l', 0
 };
 
 /* The serial number string. */
@@ -132,7 +128,7 @@ const uint8_t serialNumberString[] =
 {
     (8 + 1) * 2,
     USB_DTYPE_STRING,
-    '1', 0, '2', 0, '3', 0, '4', 0, '5', 0, '6', 0, '7', 0, '8', 0
+    '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '1', 0
 };
 
 /* The interface description string. */
@@ -178,7 +174,7 @@ const tUSBDCDCDevice serialDevice =
     USB_CONF_ATTR_SELF_PWR,
 
     cbSerialHandler,
-    NULL,
+    0,
 
     USBBufferEventCallback,
     (void *)&rxBuffer,
@@ -218,7 +214,7 @@ const tUSBBuffer txBuffer =
     transmitBufferWorkspace     /* pvWorkspace */
 };
 
-static tLineCoding g_sLineCoding=
+static tLineCoding g_sLineCoding =
 {
     115200,                     /* 115200 baud rate. */
     1,                          /* 1 Stop Bit. */
@@ -418,13 +414,6 @@ static uint32_t txData(const uint8_t *pStr, uint32_t length)
 
         /* Place the contents into the USB BUffer */
         bufferedCount += USBBufferWrite(&txBuffer, sendPtr, sendCount);
-
-#if 0
-        /* Pend until some data was sent through the USB*/
-        if (!Semaphore_pend(semTxSerial, timeout)) {
-            break;
-        }
-#endif
     }
 
     return (bufferedCount);

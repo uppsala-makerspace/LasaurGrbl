@@ -61,32 +61,21 @@ int main(void)
     GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_0, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
     HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_M;
 
-    //
-    // Configure the required pins for USB operation.
-    //
-    GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_5 | GPIO_PIN_4);
-
-    /* Enable the USB peripheral and PLL */
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_USB0);
-    SysCtlUSBPLLEnable();
-
-    /* Setup pins for USB operation */
-    GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_4 | GPIO_PIN_5);
-
     /* Turn on user LED */
     GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1, 0);
     //GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
 
-    temperature_init();
-
-	USBCDCD_init();
-
     /* Initialize GRBL */
+
+    init_joystick();
+
+    // This needs to be done before the USB interrupts start firing
+    temperature_init();
     serial_init();
     gcode_init();
-    planner_init();
     sense_init();
     control_init();
+    planner_init();
     stepper_init();
 
     while (true) {

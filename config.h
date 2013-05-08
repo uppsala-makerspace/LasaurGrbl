@@ -41,25 +41,31 @@
 #define LASAURGRBL_VERSION "13.04"
 //#define DEBUG_IGNORE_SENSORS  // set for debugging
 
-#define CONFIG_X_STEPS_PER_MM 32.80839895 //microsteps/mm
-#define CONFIG_Y_STEPS_PER_MM 32.80839895 //microsteps/mm
-#define CONFIG_Z_STEPS_PER_MM 32.80839895 //microsteps/mm
+#define CONFIG_X_STEPS_PER_MM 157.48 //microsteps/mm
+#define CONFIG_Y_STEPS_PER_MM 157.48 //microsteps/mm
+#define CONFIG_Z_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_PULSE_MICROSECONDS 5
 #define CONFIG_FEEDRATE 8000.0 // in millimeters per minute
 #define CONFIG_SEEKRATE 8000.0
-#define CONFIG_ACCELERATION 1200000.0 // mm/min^2, typically 1000000-8000000, divide by (60*60) to get mm/sec^2
+#define CONFIG_ACCELERATION 4800000.0 // mm/min^2, typically 1000000-8000000, divide by (60*60) to get mm/sec^2
 #define CONFIG_JUNCTION_DEVIATION 0.006 // mm
 #define CONFIG_X_ORIGIN_OFFSET 5.0  // mm, x-offset of table origin from physical home
-#define CONFIG_Y_ORIGIN_OFFSET 5.0  // mm, y-offset of table origin from physical home
+#define CONFIG_Y_ORIGIN_OFFSET 15.0  // mm, y-offset of table origin from physical home
 #define CONFIG_Z_ORIGIN_OFFSET 0.0   // mm, z-offset of table origin from physical home
+#define CONFIG_X_MIN 0.0
+#define CONFIG_Y_MIN 0.0
+#define CONFIG_Z_MIN 0.0
+#define CONFIG_X_MAX 325.0
+#define CONFIG_Y_MAX 215.0
+#define CONFIG_Z_MAX 50.0
+
 #define CONFIG_INVERT_X_AXIS 1  // 0 is regular, 1 inverts the x direction
 #define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
-#define CONFIG_INVERT_Z_AXIS 1  // 0 is regular, 1 inverts the y direction
+#define CONFIG_INVERT_Z_AXIS 0  // 0 is regular, 1 inverts the y direction
 
 #define SENSE_PORT              GPIO_PORTE_BASE
-#define CHILLER_BIT             0
 #define DOOR_BIT                1
-#define SENSE_MASK 				((1<<CHILLER_BIT)|(1<<DOOR_BIT))
+#define SENSE_MASK 				(1<<DOOR_BIT)
 
 #define SENSE_TIMER				TIMER2_BASE
 
@@ -68,13 +74,12 @@
 
 #define ASSIST_PORT           	GPIO_PORTD_BASE
 #define AIR_ASSIST_BIT        	2
-#define AUX1_ASSIST_BIT       	3
-#define AUX2_ASSIST_BIT       	6
-#define ASSIST_MASK				(1 << AIR_ASSIST_BIT) | (1<< AUX1_ASSIST_BIT) | (1<< AUX2_ASSIST_BIT)
+#define AUX1_ASSIST_BIT       	6
+#define ASSIST_MASK				(1 << AIR_ASSIST_BIT) | (1<< AUX1_ASSIST_BIT)
   
 #define LIMIT_PORT              GPIO_PORTC_BASE
-#define X_LIMIT_BIT             4
-#define Y_LIMIT_BIT             5
+#define X_LIMIT_BIT             5
+#define Y_LIMIT_BIT             4
 #define Z_LIMIT_BIT             6
 #define E_LIMIT_BIT             7
 #define LIMIT_MASK 				((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<E_LIMIT_BIT))
@@ -83,10 +88,11 @@
 #define STEPPING_TIMER			TIMER1_BASE
 
 #define STEP_EN_PORT         	GPIO_PORTB_BASE
-#define STEP_X_EN           	0
-#define STEP_Y_EN           	1
-#define STEP_Z_EN           	2
-#define STEP_EN_MASK			((1 << STEP_X_EN) | (1 << STEP_Y_EN) | (1 << STEP_Z_EN))
+#define STEP_X_EN          		0
+//#define STEP_Y_EN           	1
+//#define STEP_Z_EN           	2
+#define STEP_EN_MASK			((1 << STEP_X_EN))// | (1 << STEP_Y_EN) | (1 << STEP_Z_EN))
+#define STEP_EN_INVERT			(1 << STEP_X_EN)
 
 #define STEP_DIR_PORT         	GPIO_PORTB_BASE
 #define STEP_X_DIR           	3
@@ -106,6 +112,17 @@
 #define LASER_TIMER				TIMER0_BASE
 #define LASER_PWM_FREQ			40000
 
+#define LASER_EN_PORT         	GPIO_PORTB_BASE
+#define LASER_EN_BIT       		1
+#define LASER_EN_MASK			(1 << LASER_EN_BIT)
+#define LASER_EN_INVERT			(1 << LASER_EN_BIT)
+
+#define STATUS_PORT         	GPIO_PORTB_BASE
+#define STATUS_BIT       		2
+#define STATUS_MASK				(1 << STATUS_BIT)
+#define STATUS_INVERT			(1 << STATUS_BIT)
+
+
 // The temporal resolution of the acceleration management subsystem. Higher number give smoother
 // acceleration but may impact performance.
 // NOTE: Increasing this parameter will help any resolution related issues, especially with machines 
@@ -115,7 +132,7 @@
 // round-off can be great enough to cause problems and/or it's too fast for the Arduino. The correct
 // value for this parameter is machine dependent, so it's advised to set this only as high as needed.
 // Approximate successful values can range from 30L to 100L or more.
-#define ACCELERATION_TICKS_PER_SECOND 200L
+#define ACCELERATION_TICKS_PER_SECOND 400L
 
 // Minimum planner junction speed. Sets the default minimum speed the planner plans for at the end
 // of the buffer and all stops. This should not be much greater than zero and should only be changed

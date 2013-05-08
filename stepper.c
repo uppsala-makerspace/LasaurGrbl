@@ -64,7 +64,7 @@ typedef enum
 	STEP_NUM_AXIS
 } STEP_AXIS;
 
-static int32_t stepper_position[STEP_NUM_AXIS];  // real-time position in absolute steps
+static int64_t stepper_position[STEP_NUM_AXIS];  // real-time position in absolute steps
 static block_t *current_block;  // A pointer to the block currently being traced
 
 // Variables used by The Stepper Driver Interrupt
@@ -105,10 +105,12 @@ void stepper_init() {
 	GPIOPinTypeGPIOOutput(STEP_EN_PORT, STEP_EN_MASK);
 	GPIOPinTypeGPIOOutput(STEP_DIR_PORT, STEP_DIR_MASK);
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
+	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
+	GPIOPinTypeGPIOOutput(STATUS_PORT, STATUS_MASK);
 
 	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
-	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, 0);
+	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK ^ STEP_EN_INVERT);
 
 	// Configure timer
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
@@ -137,6 +139,9 @@ void stepper_init() {
 	// start in the idle state
 	// The stepper interrupt gets started when blocks are being added.
 	stepper_go_idle();
+
+	// Go Home
+	stepper_homing_cycle();
 }
 
 
@@ -156,10 +161,13 @@ void stepper_wake_up() {
     // Initialize stepper output bits
 	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
-	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK);
+	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK ^ STEP_EN_INVERT);
 
     // Enable stepper driver interrupt
     TimerEnable(STEPPING_TIMER, TIMER_A);
+
+    // Turn off Green LED
+    GPIOPinWrite(STATUS_PORT, STATUS_MASK, STATUS_INVERT);
   }
 }
 
@@ -171,12 +179,16 @@ void stepper_go_idle() {
   // Disable stepper driver interrupt
   TimerDisable(STEPPING_TIMER, TIMER_A);
   control_laser_intensity(0);
+
+  // Turn on Green LED
+  GPIOPinWrite(STATUS_PORT, STATUS_MASK, STATUS_MASK ^ STATUS_INVERT);
 }
 
 // stop event handling
 void stepper_request_stop(uint8_t status) {
   stop_status = status;
   stop_requested = true;
+  GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_INVERT);
 }
 
 uint8_t stepper_stop_status() {
@@ -189,6 +201,7 @@ bool stepper_stop_requested() {
 
 void stepper_stop_resume() {
   stop_requested = false;
+  GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK ^ STEP_EN_INVERT);
 }
 
 
@@ -260,6 +273,7 @@ void stepper_isr (void) {
 	// pulse steppers
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
 	GPIOPinWrite(STEP_PORT, STEP_MASK, out_step_bits);
+	out_step_bits = 0;
 	// prime for reset pulse in CONFIG_PULSE_MICROSECONDS
 	//set period
 	TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
@@ -355,7 +369,10 @@ void stepper_isr (void) {
         // decelerating
         } else if (step_events_completed >= current_block->decelerate_after) {
           if ( acceleration_tick() ) {  // scheduled speed change
-            adjusted_rate -= current_block->rate_delta;
+        	  if (adjusted_rate > current_block->rate_delta)
+        		  adjusted_rate -= current_block->rate_delta;
+        	  else
+        		  adjusted_rate = 0;
             if (adjusted_rate < current_block->final_rate) {  // overshot
               adjusted_rate = current_block->final_rate;
             }
@@ -401,18 +418,6 @@ void stepper_isr (void) {
       current_block = NULL;
       planner_discard_current_block();  
       break;    
-
-      case TYPE_AUX2_ASSIST_ENABLE:
-        control_aux2_assist(true);
-        current_block = NULL;
-        planner_discard_current_block();  
-        break;
-
-      case TYPE_AUX2_ASSIST_DISABLE:
-        control_aux2_assist(false);
-        current_block = NULL;
-        planner_discard_current_block();  
-        break;    
   }
   
   busy = false;
@@ -467,12 +472,22 @@ static uint32_t config_step_timer(uint32_t cycles) {
 static void adjust_speed( uint32_t steps_per_minute ) {
   // steps_per_minute is typicaly just adjusted_rate
   if (steps_per_minute < MINIMUM_STEPS_PER_MINUTE) { steps_per_minute = MINIMUM_STEPS_PER_MINUTE; }
-  cycles_per_step_event = config_step_timer((CYCLES_PER_MICROSECOND*1000000*60)/steps_per_minute);
-  // beam dynamics
-  uint8_t adjusted_intensity = current_block->nominal_laser_intensity * 
-                               ((float)steps_per_minute/(float)current_block->nominal_rate);
-  uint8_t constrained_intensity = max(adjusted_intensity, 0);
-  control_laser_intensity(constrained_intensity);
+  cycles_per_step_event = config_step_timer( (CYCLES_PER_MICROSECOND*1000000/steps_per_minute) * 60 );
+
+  if (cycles_per_step_event == 0)
+  {
+	  stepper_request_stop(STATUS_LIMIT_HIT);
+  }
+
+  // This can be called from init, so make sure we don't dereference a NULL block.
+  if (current_block != NULL)
+  {
+	  // beam dynamics
+	  uint8_t adjusted_intensity = current_block->nominal_laser_intensity *
+								   ((float)steps_per_minute/(float)current_block->nominal_rate);
+	  uint8_t constrained_intensity = max(adjusted_intensity, 0);
+	  control_laser_intensity(constrained_intensity);
+  }
 }
 
 
@@ -548,11 +563,11 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
 }
 
 static void approach_limit_switch(bool x, bool y, bool z) {
-  homing_cycle(x, y, z,false, 600);
+  homing_cycle(x, y, z,false, 200);
 }
 
 static void leave_limit_switch(bool x, bool y, bool z) {
-  homing_cycle(x, y, z, true, 10000);
+  homing_cycle(x, y, z, true, 100);
 }
 
 void stepper_homing_cycle() {
@@ -563,3 +578,6 @@ void stepper_homing_cycle() {
 }
 
 
+uint8_t stepper_active(void) {
+	return processing_flag;
+}

@@ -30,12 +30,12 @@
 							<option id="com.codesourcery.arm_none_eabi.exe.debug.general.fpu.1658042244" name="FPU" superClass="com.codesourcery.arm_none_eabi.exe.debug.general.fpu" value="com.codesourcery.arm_none_eabi.exe.debug.general.fpu.vfpv4-d16" valueType="enumerated"/>
 							<option id="com.codesourcery.arm_none_eabi.exe.debug.general.multilib.1751229020" name="Selected libraries" superClass="com.codesourcery.arm_none_eabi.exe.debug.general.multilib" value="com.codesourcery.arm_none_eabi.exe.debug.general.multilib.multilib-armv7_m" valueHandlerExtraArgument="com.codesourcery.arm_none_eabi.exe.debug.general.multilib.multilib-armv7_m" valueType="enumerated"/>
 							<targetPlatform binaryParser="org.eclipse.cdt.core.ELF" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.platform.exe.debug.1049810700" name="Debug Platform" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.platform.exe.debug"/>
-							<builder buildPath="${workspace_loc:/grbl2/Debug}" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug.33611363" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Gnu Make Builder" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug"/>
+							<builder buildPath="${workspace_loc:/grbl/Debug}" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug.33611363" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Gnu Make Builder" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug"/>
 							<tool id="com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.debug.1050901447" name="Sourcery CodeBench C Compiler" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.debug">
 								<option defaultValue="gnu.c.optimization.level.none" id="gnu.c.compiler.exe.debug.option.optimization.level.86669177" name="Optimization Level" superClass="gnu.c.compiler.exe.debug.option.optimization.level" valueType="enumerated"/>
 								<option id="gnu.c.compiler.exe.debug.option.debugging.level.1947942736" name="Debug Level" superClass="gnu.c.compiler.exe.debug.option.debugging.level" value="gnu.c.debugging.level.max" valueType="enumerated"/>
 								<option id="gnu.c.compiler.option.include.paths.64898571" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/grbl2}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/grbl/}&quot;"/>
 								</option>
 								<option id="gnu.c.compiler.option.preprocessor.def.symbols.261285178" name="Defined symbols (-D)" superClass="gnu.c.compiler.option.preprocessor.def.symbols" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="sourcerygxx"/>
@@ -113,10 +113,10 @@
 							<option id="com.codesourcery.arm_none_eabi.exe.debug.general.fpu.468951649" name="FPU" superClass="com.codesourcery.arm_none_eabi.exe.debug.general.fpu"/>
 							<option id="com.codesourcery.arm_none_eabi.exe.debug.general.multilib.539268774" name="Selected libraries" superClass="com.codesourcery.arm_none_eabi.exe.debug.general.multilib" value="com.codesourcery.arm_none_eabi.exe.debug.general.multilib.multilib-armv7_m" valueHandlerExtraArgument="com.codesourcery.arm_none_eabi.exe.debug.general.multilib.multilib-armv7_m" valueType="enumerated"/>
 							<targetPlatform binaryParser="org.eclipse.cdt.core.ELF" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.platform.exe.debug.1605271499" name="Debug Platform" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.platform.exe.debug"/>
-							<builder buildPath="${workspace_loc:/grbl2/Release}" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug.2010854195" keepEnvironmentInBuildfile="false" name="Gnu Make Builder" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug"/>
+							<builder buildPath="${workspace_loc:/grbl/Release}" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug.2010854195" keepEnvironmentInBuildfile="false" name="Gnu Make Builder" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.gnu.builder.exe.debug"/>
 							<tool command="arm-none-eabi-gcc" commandLinePattern="${COMMAND} ${FLAGS} ${OUTPUT_FLAG} ${OUTPUT_PREFIX}${OUTPUT} ${INPUTS}" id="com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.debug.1638762036" name="Sourcery CodeBench C Compiler" superClass="com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.debug">
 								<option id="gnu.c.compiler.option.include.paths.838266627" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/grbl2}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/grbl/}&quot;"/>
 								</option>
 								<option id="gnu.c.compiler.option.preprocessor.def.symbols.1802359690" name="Defined symbols (-D)" superClass="gnu.c.compiler.option.preprocessor.def.symbols" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="sourcerygxx"/>
@@ -162,24 +162,27 @@
 		</cconfiguration>
 	</storageModule>
 	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
-		<project id="grbl2.com.codesourcery.arm_none_eabi.cdt.managedbuild.target.exe.1539238287" name="Executable (Sourcery CodeBench for ARM EABI)" projectType="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.exe"/>
+		<project id="grbl.com.codesourcery.arm_none_eabi.cdt.managedbuild.target.exe.1539238287" name="Executable (Sourcery CodeBench for ARM EABI)" projectType="com.codesourcery.arm_none_eabi.cdt.managedbuild.target.exe"/>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
+	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="Release">
+			<resource resourceType="PROJECT" workspacePath="/grbl"/>
+		</configuration>
+		<configuration configurationName="Debug">
+			<resource resourceType="PROJECT" workspacePath="/grbl"/>
+		</configuration>
 	</storageModule>
 	<storageModule moduleId="scannerConfiguration">
 		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
 		<scannerConfigBuildInfo instanceId="com.codesourcery.arm_none_eabi.cdt.managedbuild.config.gnu.exe.debug.2052878624;com.codesourcery.arm_none_eabi.cdt.managedbuild.config.gnu.exe.debug.2052878624.;com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.debug.1050901447;com.codesourcery.target.data.arm_none_eabi.c.compiler.exe.debug.input.1119674423">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.codesourcery.target.data.arm_none_eabi.SGPPManagedMakePerProjectProfileC"/>
 		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="com.codesourcery.arm_none_eabi.cdt.managedbuild.config.gnu.exe.release.1980375761;com.codesourcery.arm_none_eabi.cdt.managedbuild.config.gnu.exe.release.1980375761.;com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.debug.1638762036;com.codesourcery.target.data.arm_none_eabi.c.compiler.exe.debug.input.622950799">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.codesourcery.target.data.arm_none_eabi.SGPPManagedMakePerProjectProfileC"/>
+		</scannerConfigBuildInfo>
 		<scannerConfigBuildInfo instanceId="com.codesourcery.arm_none_eabi.cdt.managedbuild.config.gnu.exe.release.1980375761;com.codesourcery.arm_none_eabi.cdt.managedbuild.config.gnu.exe.release.1980375761.;com.codesourcery.arm_none_eabi.cdt.managedbuild.tool.gnu.c.compiler.exe.release.1569029265;com.codesourcery.target.data.arm_none_eabi.c.compiler.exe.release.input.394085462">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.codesourcery.target.data.arm_none_eabi.SGPPManagedMakePerProjectProfileC"/>
 		</scannerConfigBuildInfo>
-	</storageModule>
-	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
-	<storageModule moduleId="refreshScope" versionNumber="2">
-		<configuration configurationName="Release">
-			<resource resourceType="PROJECT" workspacePath="/grbl2"/>
-		</configuration>
-		<configuration configurationName="Debug">
-			<resource resourceType="PROJECT" workspacePath="/grbl2"/>
-		</configuration>
 	</storageModule>
 </cproject>

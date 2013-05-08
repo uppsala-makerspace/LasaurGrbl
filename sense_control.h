@@ -27,7 +27,6 @@ void sense_init();
 #define SENSE_Y_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << Y_LIMIT_BIT)) == 0)
 #define SENSE_Z_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << Z_LIMIT_BIT)) == 0)
 #define SENSE_E_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << E_LIMIT_BIT)) == 0)
-#define SENSE_CHILLER_OFF (GPIOPinRead(SENSE_PORT, (1 << CHILLER_BIT)) == 0)
 #define SENSE_DOOR_OPEN (GPIOPinRead(SENSE_PORT, (1 << DOOR_BIT)) == 0)
 // invert door, remove power, add z_limits
 #define SENSE_LIMITS (SENSE_X_LIMIT || SENSE_Y_LIMIT || SENSE_Z_LIMIT || SENSE_E_LIMIT)
@@ -39,6 +38,5 @@ void control_laser_intensity(uint8_t intensity);  //0-255 is 0-100%
 
 void control_air_assist(bool enable);
 void control_aux1_assist(bool enable);
-void control_aux2_assist(bool enable);
 
 #endif
