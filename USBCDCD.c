@@ -61,8 +61,11 @@
 /* Example/Board Header files */
 #include "USBCDCD.h"
 
+#include "gcode.h"
+
 /* Defines */
-#define USBBUFFERSIZE   256
+#define TX_BUFFERSIZE   128
+#define RX_BUFFERSIZE   256
 
 #ifndef USB_VID_TI
 #define USB_VID_TI      USB_VID_STELLARIS
@@ -78,9 +81,9 @@ typedef volatile enum {
 /* Static variables and handles */
 static volatile USBCDCD_USBState state = USBCDCD_STATE_UNCONFIGURED;
 
-static uint8_t receiveBuffer[USBBUFFERSIZE];
+static uint8_t receiveBuffer[RX_BUFFERSIZE];
 static uint8_t receiveBufferWorkspace[USB_BUFFER_WORKSPACE_SIZE];
-static uint8_t transmitBuffer[USBBUFFERSIZE];
+static uint8_t transmitBuffer[TX_BUFFERSIZE];
 static uint8_t transmitBufferWorkspace[USB_BUFFER_WORKSPACE_SIZE];
 const tUSBBuffer txBuffer;
 const tUSBBuffer rxBuffer;
@@ -94,7 +97,6 @@ static unsigned long cbSerialHandler(void *cbData, unsigned long event,
 static unsigned long cbTxHandler(void *cbData, unsigned long event,
                          unsigned long eventMsg, void *eventMsgPtr);
 
-static uint32_t rxData(uint8_t *pStr, uint32_t length);
 static uint32_t txData(const uint8_t *pStr, uint32_t length);
 
 /* The languages supported by this device. */
@@ -197,7 +199,7 @@ const tUSBBuffer rxBuffer =
     USBDCDCRxPacketAvailable,   /* pfnAvailable */
     (void *)&serialDevice,      /* pvHandle */
     receiveBuffer,              /* pcBuffer */
-    USBBUFFERSIZE,              /* ulBufferSize */
+    RX_BUFFERSIZE,              /* ulBufferSize */
     receiveBufferWorkspace      /* pvWorkspace */
 };
 
@@ -210,7 +212,7 @@ const tUSBBuffer txBuffer =
     USBDCDCTxPacketAvailable,   /* pfnAvailable */
     (void *)&serialDevice,      /* pvHandle */
     transmitBuffer,             /* pcBuffer */
-    USBBUFFERSIZE,              /* ulBufferSize */
+    TX_BUFFERSIZE,              /* ulBufferSize */
     transmitBufferWorkspace     /* pvWorkspace */
 };
 
@@ -245,6 +247,8 @@ static unsigned long cbRxHandler(void *cbData, unsigned long event,
     switch (event) {
         case USB_EVENT_RX_AVAILABLE:
             GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
+            gcode_process_data(&rxBuffer);
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
             break;
 
         case USB_EVENT_DATA_REMAINING:
@@ -374,20 +378,6 @@ static unsigned long cbTxHandler(void *cbData, unsigned long event,
 }
 
 /*
- *  ======== rxData ========
- */
-static uint32_t rxData(uint8_t *pStr, uint32_t length)
-{
-    uint32_t read = 0;
-
-    if (length) {
-    	read = USBBufferRead(&rxBuffer, pStr, length);
-    }
-
-    return (read);
-}
-
-/*
  *  ======== txData ========
  */
 static uint32_t txData(const uint8_t *pStr, uint32_t length)
@@ -441,36 +431,6 @@ uint8_t USBCDCD_init(void)
         return -1;
     }
     return 0;
-}
-
-/*
- *  ======== USBCDCD_receiveData ========
- */
-uint32_t USBCDCD_receiveData(uint8_t *pStr, uint32_t length)
-{
-    uint32_t retValue = 0;
-
-    switch (state) {
-        case USBCDCD_STATE_UNCONFIGURED:
-            USBCDCD_waitForConnect();
-            break;
-
-        case USBCDCD_STATE_INIT:
-            state = USBCDCD_STATE_IDLE;
-            retValue = rxData(pStr, length);
-            break;
-
-        case USBCDCD_STATE_IDLE:
-            retValue = rxData(pStr, length);
-            break;
-
-        default:
-            break;
-    }
-
-    GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
-
-    return (retValue);
 }
 
 /*

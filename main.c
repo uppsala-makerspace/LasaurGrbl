@@ -15,12 +15,18 @@
   GNU General Public License for more details.
 */
 
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <inc/hw_types.h>
+#include <inc/hw_memmap.h>
+#include <inc/hw_gpio.h>
+
+#include <driverlib/gpio.h>
+#include "driverlib/rom.h"
+#include <driverlib/sysctl.h>
+
 #include "config.h"
-
-#include "driverlib/uart.h"
-
-#include <stdio.h>
-#include <stdlib.h>
 
 #include "USBCDCD.h"
 
@@ -30,6 +36,7 @@
 #include "temperature.h"
 #include "gcode.h"
 #include "serial.h"
+#include "joystick.h"
 
 /* Main */
 int main(void)
@@ -79,8 +86,17 @@ int main(void)
     stepper_init();
 
     while (true) {
-        /* Process incoming GCode (blocks until error) */
-        gcode_process_line();
+    	// Respond to the ready request
+    	if (gcode_ready_wait != 0) {
+    		while (planner_blocks_available() < 2);
+			//stepper_synchronize();
+			//if (stepper_active() == 0)
+			{
+				char tmp[2] = {0x12, 0};
+				printString(tmp);
+			}
+			gcode_ready_wait = 0;
+    	}
     }
 
     return (0);

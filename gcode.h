@@ -22,6 +22,9 @@
 #ifndef gcode_h
 #define gcode_h
 
+#include <inc/hw_types.h>
+#include <usblib/usblib.h>
+
 #define STATUS_OK 0
 #define STATUS_RX_BUFFER_OVERFLOW 1
 #define STATUS_LINE_BUFFER_OVERFLOW 2
@@ -35,12 +38,15 @@
 // #define STATUS_DOOR_OPEN 10
 // #define STATUS_CHILLER_OFF 11
 
+extern uint8_t gcode_ready_wait;
 
 // Initialize the parser
 void gcode_init();
 
-// read chars from serial
-// blocks until a whole line has been received
+// Process a USB buffer and execute line(s) when complete.
+void gcode_process_data(const tUSBBuffer *psBuffer);
+
+// process a line of gcode
 void gcode_process_line();
 
 // Execute one line of rs275/ngc/g-code
@@ -50,5 +56,13 @@ uint8_t gcode_execute_line(char *line);
 // update to stepper position when steppers have been stopped
 // called from the stepper code that executes the stop
 void gcode_request_position_update();
+
+// Manually moves the machine by these offsets
+void gcode_manual_move(double x, double y);
+
+// Set the offsets to the current location
+void gcode_set_offset_to_current_position(void);
+
+void gcode_do_home(void);
 
 #endif

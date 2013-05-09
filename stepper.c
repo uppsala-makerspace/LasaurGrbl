@@ -45,12 +45,24 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include "stepper.h"
+
+#include <inc/hw_types.h>
+#include <inc/hw_memmap.h>
+#include <inc/hw_timer.h>
+#include <inc/hw_ints.h>
+#include <inc/hw_gpio.h>
+
+#include <driverlib/gpio.h>
+#include "driverlib/rom.h"
+#include <driverlib/sysctl.h>
+#include <driverlib/timer.h>
+
 #include "config.h"
+#include "stepper.h"
 #include "gcode.h"
 #include "planner.h"
 #include "sense_control.h"
-#include "serial.h"  //for debug
+#include "temperature.h"
 
 
 #define CYCLES_PER_MICROSECOND (SysCtlClockGet()/1000000)  // 80MHz = 80
@@ -108,6 +120,8 @@ void stepper_init() {
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
 	GPIOPinTypeGPIOOutput(STATUS_PORT, STATUS_MASK);
 
+	GPIOPadConfigSet(STEP_PORT, STEP_MASK, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
+
 	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
 	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK ^ STEP_EN_INVERT);
@@ -141,7 +155,7 @@ void stepper_init() {
 	stepper_go_idle();
 
 	// Go Home
-	stepper_homing_cycle();
+	gcode_do_home();
 }
 
 
@@ -267,6 +281,14 @@ void stepper_isr (void) {
       stepper_request_stop(STATUS_LIMIT_HIT);
       busy = false;
       return;    
+    }
+
+    // Pause if we have a safety issue, will be abrupt and may skip steps...
+    if (SENSE_SAFETY) {
+    	control_laser_intensity(0);
+    	adjusted_rate = 0;
+    	busy = false;
+    	return;
     }
   #endif
   
@@ -499,10 +521,10 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
   uint32_t step_delay = microseconds_per_pulse - CONFIG_PULSE_MICROSECONDS;
   uint8_t out_dir_bits = STEP_DIR_MASK;
   uint8_t limit_bits;
-  uint8_t x_overshoot_count = 6;
-  uint8_t y_overshoot_count = 6;
-  uint8_t z_overshoot_count = 6;
-  
+  uint8_t x_overshoot_count = 12;
+  uint8_t y_overshoot_count = 12;
+  uint8_t z_overshoot_count = 12;
+
   if (x_axis) { out_step_bits |= (1<<STEP_X_BIT); }
   if (y_axis) { out_step_bits |= (1<<STEP_Y_BIT); }
   if (z_axis) { out_step_bits |= (1<<STEP_Z_BIT); }
@@ -563,11 +585,11 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
 }
 
 static void approach_limit_switch(bool x, bool y, bool z) {
-  homing_cycle(x, y, z,false, 200);
+  homing_cycle(x, y, z, false, 50);
 }
 
 static void leave_limit_switch(bool x, bool y, bool z) {
-  homing_cycle(x, y, z, true, 100);
+  homing_cycle(x, y, z, true, 50);
 }
 
 void stepper_homing_cycle() {

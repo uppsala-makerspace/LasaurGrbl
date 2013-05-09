@@ -27,8 +27,6 @@
 
 void serial_init();
 void serial_write(uint8_t data);
-uint8_t serial_read(uint8_t *data, uint32_t length);
-
 
 void printString(const char *s);
 void printPgmString(const char *s);

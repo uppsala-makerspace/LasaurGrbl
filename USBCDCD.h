@@ -64,27 +64,6 @@ extern uint8_t USBCDCD_init(void);
 extern uint32_t USBCDCD_sendData(const uint8_t *pStr, uint32_t length);
 
 /*!
- *  ======== USBCDCD_receiveData ========
- *  A blocking function to read from the USB Buffer
- *
- *  Function reads up to size number of bytes from the USB Buffer. The return
- *  value will indicate how many bytes were read from the USB Buffer. If there
- *  is no data in the USB Buffer, this function will block timeout number of
- *  ticks. Note: The BIOS_WAIT_FOREVER macro can be used to block indefinitely.
- *
- *  @param(pStr)    Pointer to a buffer to which data is written to.
- *
- *  @param(size)    Maximum number of bytes to be read
- *
- *  @param(timeout) Number of tick to block if no data is currently available in
- *                  the USB Buffer. 
- *
- *  @return         Returns the number of bytes actually read from the USB
- *                  Buffer. 
- */
-extern uint32_t USBCDCD_receiveData(uint8_t *pStr, uint32_t length);
-
-/*!
  *  ======== USBCDCD_waitForConnect ========
  *  This function blocks while the USB is not connected
  */

@@ -22,11 +22,20 @@
 
 #include <string.h>
 #include <math.h>
-#include "errno.h"
+#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "gcode.h"
+
+#include <inc/hw_types.h>
+#include <inc/hw_memmap.h>
+#include <inc/hw_ints.h>
+#include <inc/hw_gpio.h>
+
+#include <driverlib/gpio.h>
+
 #include "config.h"
+
+#include "gcode.h"
 #include "serial.h"
 #include "sense_control.h"
 #include "planner.h"
@@ -35,25 +44,32 @@
 
 #define MM_PER_INCH (25.4)
 
-#define NEXT_ACTION_NONE 0
-#define NEXT_ACTION_SEEK 1 
-#define NEXT_ACTION_FEED 2
-#define NEXT_ACTION_DWELL 3
-#define NEXT_ACTION_HOMING_CYCLE 4
-#define NEXT_ACTION_SET_COORDINATE_OFFSET 5
-#define NEXT_ACTION_AIR_ASSIST_ENABLE 6
-#define NEXT_ACTION_AIR_ASSIST_DISABLE 7
-#define NEXT_ACTION_AUX1_ASSIST_ENABLE 8
-#define NEXT_ACTION_AUX1_ASSIST_DISABLE 9
+enum {
+	NEXT_ACTION_NONE = 0,
+	NEXT_ACTION_SEEK,
+	NEXT_ACTION_FEED,
+	NEXT_ACTION_DWELL,
+	NEXT_ACTION_HOMING_CYCLE,
+	NEXT_ACTION_SET_COORDINATE_OFFSET,
+	NEXT_ACTION_AIR_ASSIST_ENABLE,
+	NEXT_ACTION_AIR_ASSIST_DISABLE,
+	NEXT_ACTION_AUX1_ASSIST_ENABLE,
+	NEXT_ACTION_AUX1_ASSIST_DISABLE,
+	NEXT_ACTION_SET_ACCELERATION,
+};
 
 #define OFFSET_G54 0
 #define OFFSET_G55 1
 
 #define BUFFER_LINE_SIZE 80
-char rx_line[BUFFER_LINE_SIZE];
-char *rx_line_cursor;
 
-uint8_t line_checksum_ok_already;
+uint8_t gcode_ready_wait = 0;
+
+static char rx_line[BUFFER_LINE_SIZE];
+static int rx_chars = 0;
+static char *rx_line_cursor;
+
+static uint8_t line_checksum_ok_already;
 
 #define FAIL(status) gc.status_code = status;
 
@@ -68,6 +84,7 @@ typedef struct {
   double offsets[6];               // coord system offsets {G54_X,G54_Y,G54_Z,G55_X,G55_Y,G55_Z}
   uint8_t offselect;               // currently active offset, 0 -> G54, 1 -> G55
   uint8_t nominal_laser_intensity; // 0-255 percentage
+  double acceleration;			   // mm/min/min
 } parser_state_t;
 static parser_state_t gc;
 
@@ -80,8 +97,9 @@ static int read_double(char *line, uint8_t *char_counter, double *double_ptr);
 
 void gcode_init() {
   memset(&gc, 0, sizeof(gc));
-  gc.feed_rate = CONFIG_FEEDRATE;
-  gc.seek_rate = CONFIG_SEEKRATE;
+  gc.feed_rate = CONFIG_MAX_FEEDRATE;
+  gc.seek_rate = CONFIG_MAX_SEEKRATE;
+  gc.acceleration = CONFIG_DEFAULT_ACCELERATION;
   gc.absolute_mode = true;
   gc.nominal_laser_intensity = 0U;   
   gc.offselect = OFFSET_G54;
@@ -100,37 +118,57 @@ void gcode_init() {
   line_checksum_ok_already = false; 
 }
 
+void gcode_process_data(const tUSBBuffer *psBuffer)
+{
+	uint8_t chr = '\0';
 
-void gcode_process_line() {
-  uint8_t chr = '\0';
-  int numChars = 0;
+	if (planner_blocks_available() < 2) {
+		//gcode_ready_wait = 1;
+		return;
+	}
+
+	// Read all data available...
+	while (USBBufferRead(psBuffer, &chr, 1) == 1)
+	{
+		if ((chr == 0x0A) || (chr == 0x0D)) {
+			//// process line
+			if (rx_chars > 0) {          // Line is complete. Then execute!
+				rx_line[rx_chars] = '\0';  // terminate string
+				gcode_process_line(rx_line, rx_chars);
+				rx_chars = 0;
+			}
+		}
+		else if (rx_chars + 1 >= BUFFER_LINE_SIZE) {
+			// reached line size, other side sent too long lines
+			stepper_request_stop(STATUS_LINE_BUFFER_OVERFLOW);
+			break;
+		}
+		else if (chr == 0x14) {
+			// Respond to Lasersaur's ready request
+    		if (planner_blocks_available() >= 2) {
+				char tmp[2] = {0x12, 0};
+				printString(tmp);
+			}
+    		else {
+    			// We can't wait here (ISR context) set a flag so that the main thread
+    			// sends a response when planner blocks become free.
+    			gcode_ready_wait = 1;
+    		}
+		} else if (chr <= 0x20) {
+			// ignore control characters and space
+		} else {
+			// add to line, as char which is signed
+			rx_line[rx_chars++] = (char)chr;
+		}
+	}
+}
+
+
+void gcode_process_line(char *buffer, int length) {
   int status_code = STATUS_OK;
   uint8_t skip_line = 0;
   uint8_t print_extended_status = 0;
 
-  while ((numChars==0) || ((chr != 0x0A) && (chr != 0x0D)) ) {
-    if (serial_read(&chr, 1) != 1 || (numChars + 1 >= BUFFER_LINE_SIZE)) {  // +1 for \0
-      // reached line size, other side sent too long lines
-      stepper_request_stop(STATUS_LINE_BUFFER_OVERFLOW);
-      break;
-    } else if (chr == 0x14) {
-    	stepper_synchronize();
-    	if (stepper_active() == 0) {
-    		char tmp[2] = {0x12, 0};
-    		printString(tmp);
-    	}
-    } else if (chr <= 0x20) {
-      // ignore control characters and space
-    } else {
-      // add to line, as char which is signed
-      rx_line[numChars++] = (char)chr;
-    }
-  }
-  
-  //// process line
-  if (numChars > 0) {          // Line is complete. Then execute!
-    rx_line[numChars] = '\0';  // terminate string
-    
     // handle position update after a stop
     if (position_update_requested) {
       gc.position[X_AXIS] = stepper_get_position_x();
@@ -148,6 +186,8 @@ void gcode_process_line() {
         printString("P");  // Stop: Power Off
       } else if (status_code == STATUS_LIMIT_HIT) {
         printString("L");  // Stop: Limit Hit
+        stepper_stop_resume();
+        gcode_do_home();
       } else if (status_code == STATUS_SERIAL_STOP_REQUEST) {
         printString("R");  // Stop: Serial Request   
       } else if (status_code == STATUS_RX_BUFFER_OVERFLOW) {
@@ -161,15 +201,15 @@ void gcode_process_line() {
         printInteger(status_code);        
       }
     } else {
-      if (rx_line[0] == '*' || rx_line[0] == '^') {
+      if (buffer[0] == '*' || buffer[0] == '^') {
         // receiving a line with checksum
         // expecting 0-n redundant lines starting with '^'
         // followed by a final line prepended by '*'
         if (!line_checksum_ok_already) {
-          rx_line_cursor = rx_line+2;  // set line offset
-          uint8_t rx_checksum = (uint8_t)rx_line[1];
+          rx_line_cursor = buffer+2;  // set line offset
+          uint8_t rx_checksum = (uint8_t)buffer[1];
           if (rx_checksum < 128) {
-            printString(rx_line);
+            printString(buffer);
             printString(" -> checksum outside [128,255]");
             stepper_request_stop(STATUS_TRANSMISSION_ERROR);
           }
@@ -188,17 +228,17 @@ void gcode_process_line() {
           // printInteger(checksum);
           // printString(")");        
           if (checksum != rx_checksum) {
-            if (rx_line[0] == '^') {
+            if (buffer[0] == '^') {
               skip_line = true;
               printString("^");
             } else {  // '*'
-              printString(rx_line);
+              printString(buffer);
               stepper_request_stop(STATUS_TRANSMISSION_ERROR);
               // line_checksum_ok_already = false;
             }
           } else {  // we got a good line
             // printString("$");
-            if (rx_line[0] == '^') {
+            if (buffer[0] == '^') {
               line_checksum_ok_already = true;
             }            
             skip_line = false;
@@ -206,12 +246,12 @@ void gcode_process_line() {
         } else {  // we already got a correct line
           // printString("&");
           skip_line = true;
-          if (rx_line[0] == '*') {  // last redundant line
+          if (buffer[0] == '*') {  // last redundant line
             line_checksum_ok_already = false;
           }
         }
       } else {
-        rx_line_cursor = rx_line;
+        rx_line_cursor = buffer;
       }
       
       if (!skip_line) {
@@ -242,7 +282,7 @@ void gcode_process_line() {
       if (SENSE_DOOR_OPEN) {
         printString("D");  // Warning: Door is open
       }
-      if (temperature_read(0) > (20 * 16)) {
+      if (SENSE_CHILLER_OFF) {
           printString("C");  // Warning: Chiller is off
       }
       // limit
@@ -273,8 +313,6 @@ void gcode_process_line() {
       printPgmString("V" LASAURGRBL_VERSION);
     }
     printString("\n");
-  }
-
 }
 
 
@@ -308,6 +346,7 @@ uint8_t gcode_execute_line(char *line) {
           case 10: next_action = NEXT_ACTION_SET_COORDINATE_OFFSET; break;
           case 20: gc.inches_mode = true; break;
           case 21: gc.inches_mode = false; break;
+          case 28: next_action = NEXT_ACTION_HOMING_CYCLE; break;
           case 30: next_action = NEXT_ACTION_HOMING_CYCLE; break;
           case 54: gc.offselect = OFFSET_G54; break;
           case 55: gc.offselect = OFFSET_G55; break;
@@ -328,6 +367,7 @@ uint8_t gcode_execute_line(char *line) {
           case 106: next_action = NEXT_ACTION_AIR_ASSIST_ENABLE;break;
           case 107: next_action = NEXT_ACTION_AIR_ASSIST_DISABLE;break;
           case 114: printString("ok C: X:"); printFloat(stepper_get_position_x()); printString(" Y:"); printFloat(stepper_get_position_y()); printString(" Z:"); printFloat(stepper_get_position_z()); printString("\n"); break;
+          case 204: next_action = NEXT_ACTION_SET_ACCELERATION; break;
           default: FAIL(STATUS_UNSUPPORTED_STATEMENT); break;
         }            
         break;
@@ -352,9 +392,9 @@ uint8_t gcode_execute_line(char *line) {
       case 'F':
         if (unit_converted_value <= 0) { FAIL(STATUS_BAD_NUMBER_FORMAT); }
         if (gc.motion_mode == NEXT_ACTION_SEEK) {
-          gc.seek_rate = unit_converted_value;
+          gc.seek_rate = min(CONFIG_MAX_SEEKRATE, unit_converted_value);
         } else {
-          gc.feed_rate = unit_converted_value;
+          gc.feed_rate = min(CONFIG_MAX_FEEDRATE, unit_converted_value);
         }
         break;
       case 'X': case 'Y': case 'Z':
@@ -373,7 +413,10 @@ uint8_t gcode_execute_line(char *line) {
         }
         break;
       case 'S':
-        gc.nominal_laser_intensity = value;
+    	  if (next_action == NEXT_ACTION_SET_ACCELERATION)
+    		  gc.acceleration = value * 3600;
+    	  else
+    		  gc.nominal_laser_intensity = value;
         break; 
       case 'L':  // G10 qualifier 
       l = trunc(value);
@@ -391,7 +434,7 @@ uint8_t gcode_execute_line(char *line) {
         planner_line( target[X_AXIS] + gc.offsets[3*gc.offselect+X_AXIS], 
                       target[Y_AXIS] + gc.offsets[3*gc.offselect+Y_AXIS], 
                       target[Z_AXIS] + gc.offsets[3*gc.offselect+Z_AXIS], 
-                      gc.seek_rate, 0 );
+                      gc.seek_rate, gc.acceleration, 0 );
       }
       break;   
     case NEXT_ACTION_FEED:
@@ -399,7 +442,7 @@ uint8_t gcode_execute_line(char *line) {
         planner_line( target[X_AXIS] + gc.offsets[3*gc.offselect+X_AXIS], 
                       target[Y_AXIS] + gc.offsets[3*gc.offselect+Y_AXIS], 
                       target[Z_AXIS] + gc.offsets[3*gc.offselect+Z_AXIS], 
-                      gc.feed_rate, gc.nominal_laser_intensity );                   
+                      gc.feed_rate, gc.acceleration, gc.nominal_laser_intensity );
       }
       break; 
     case NEXT_ACTION_DWELL:
@@ -412,30 +455,15 @@ uint8_t gcode_execute_line(char *line) {
     //   gc.position[Z_AXIS] = stepper_get_position_z();
     //   planner_set_position(gc.position[X_AXIS], gc.position[Y_AXIS], gc.position[Z_AXIS]);
     //   // move to table origin
-    //   target[X_AXIS] = 0;
-    //   target[Y_AXIS] = 0;
-    //   target[Z_AXIS] = 0;         
+    //	 clear_vector(target);
     //   planner_line( target[X_AXIS] + gc.offsets[3*gc.offselect+X_AXIS], 
     //                 target[Y_AXIS] + gc.offsets[3*gc.offselect+Y_AXIS], 
     //                 target[Z_AXIS] + gc.offsets[3*gc.offselect+Z_AXIS], 
     //                 gc.seek_rate, 0 );
     //   break;
     case NEXT_ACTION_HOMING_CYCLE:
-      stepper_homing_cycle();
-      // now that we are at the physical home
-      // zero all the position vectors
-      clear_vector(gc.position);
-      clear_vector(target);
-      planner_set_position(0.0, 0.0, 0.0);
-      // move head to g54 offset
-      gc.offselect = OFFSET_G54;
-      target[X_AXIS] = 0;
-      target[Y_AXIS] = 0;
-      target[Z_AXIS] = 0;         
-      planner_line( target[X_AXIS] + gc.offsets[3*gc.offselect+X_AXIS], 
-                    target[Y_AXIS] + gc.offsets[3*gc.offselect+Y_AXIS], 
-                    target[Z_AXIS] + gc.offsets[3*gc.offselect+Z_AXIS], 
-                    gc.seek_rate, 0 );
+        clear_vector(target);
+    	gcode_do_home();
       break;
     case NEXT_ACTION_SET_COORDINATE_OFFSET:
       if (cs == OFFSET_G54 || cs == OFFSET_G55) {
@@ -486,6 +514,49 @@ void gcode_request_position_update() {
   position_update_requested = true;
 }
 
+// Move by the supplied offset(s).
+// Used by the joystick to move the head manually.
+void gcode_manual_move(double x, double y) {
+	gc.position[X_AXIS] += x;
+	gc.position[Y_AXIS] += y;
+
+	//gc.position[X_AXIS]=max(gc.position[X_AXIS], CONFIG_X_MIN);
+	//gc.position[X_AXIS]=min(gc.position[X_AXIS], CONFIG_X_MAX);
+	//gc.position[Y_AXIS]=max(gc.position[Y_AXIS], CONFIG_Y_MIN);
+	//gc.position[Y_AXIS]=min(gc.position[Y_AXIS], CONFIG_Y_MAX);
+
+    planner_line( gc.position[X_AXIS] + gc.offsets[3*gc.offselect+X_AXIS],
+    				gc.position[Y_AXIS] + gc.offsets[3*gc.offselect+Y_AXIS],
+    				gc.position[Z_AXIS] + gc.offsets[3*gc.offselect+Z_AXIS],
+    				CONFIG_MAX_SEEKRATE, gc.acceleration, 0 );
+}
+
+// Set the offset to the current position.
+// Used by the joystick to set 0,0 to to the piece location.
+void gcode_set_offset_to_current_position(void) {
+	int cs = 0;
+    // set offset to current pos, eg: G10 L20 P2
+    gc.offsets[3*cs+X_AXIS] = gc.position[X_AXIS] + gc.offsets[3*gc.offselect+X_AXIS];
+    gc.offsets[3*cs+Y_AXIS] = gc.position[Y_AXIS] + gc.offsets[3*gc.offselect+Y_AXIS];
+    gc.offsets[3*cs+Z_AXIS] = gc.position[Z_AXIS] + gc.offsets[3*gc.offselect+Z_AXIS];
+
+    clear_vector(gc.position);
+}
+
+void gcode_do_home(void) {
+    stepper_homing_cycle();
+    // now that we are at the physical home
+    // zero all the position vectors
+    clear_vector(gc.position);
+    planner_set_position(0.0, 0.0, 0.0);
+
+    // move head to g54 offset
+    gc.offselect = OFFSET_G54;
+    planner_line( gc.offsets[3*gc.offselect+X_AXIS],
+                  gc.offsets[3*gc.offselect+Y_AXIS],
+                  gc.offsets[3*gc.offselect+Z_AXIS],
+                  gc.seek_rate, gc.acceleration, 0 );
+}
 
 // Parses the next statement and leaves the counter on the first character following
 // the statement. Returns 1 if there was a statements, 0 if end of string was reached

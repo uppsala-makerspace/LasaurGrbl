@@ -1,8 +1,44 @@
-#include "inc/hw_memmap.h"
-#include "inc/hw_types.h"
+/*
+  joystick.c - Sample a 2-axis analog input (joystick)
+  Part of LasaurGrbl
+
+  Copyright (c) 2013 Richard Taylor
+
+  LasaurGrbl is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  LasaurGrbl is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+*/
+
+#include <math.h>
+#include <stdint.h>
+#include <inc/hw_types.h>
+#include <inc/hw_memmap.h>
+#include <inc/hw_timer.h>
+#include <inc/hw_gpio.h>
 #include "driverlib/adc.h"
 #include "driverlib/gpio.h"
 #include "driverlib/sysctl.h"
+#include <driverlib/timer.h>
+
+#include "config.h"
+
+#include "gcode.h"
+#include "stepper.h"
+#include "planner.h"
+#include "joystick.h"
+
+// The joystick has no effect when the position is central +/- threshold.
+#define ZERO_THRESHOLD	0x50
+
+#define STATUS_CH0_IDLE	0x01
+#define STATUS_CH1_IDLE	0x02
+#define STATUS_XHAIR_ON	0x04
 
 //
 // This array is used for storing the data read from the ADC FIFO. It
@@ -10,11 +46,13 @@
 // uses sequence 3 which has a FIFO depth of 1.  If another sequence
 // was used with a deeper FIFO, then the array size must be changed.
 //
-static unsigned long joystick_x[1];
-static unsigned long joystick_y[1];
+static unsigned long joystick_x[1] = {0};
+static unsigned long joystick_y[1] = {0};
+static unsigned long joystick_center[2] = {0};
+static unsigned long status = STATUS_CH0_IDLE | STATUS_CH1_IDLE;
 
-static void x_handler(void)
-{
+
+static void x_handler(void) {
     //
     // Clear the ADC interrupt flag.
     //
@@ -24,10 +62,15 @@ static void x_handler(void)
     // Read ADC Value.
     //
     ADCSequenceDataGet(ADC0_BASE, 0, joystick_x);
+
+    // Set the center position
+    if (joystick_center[0] == 0)
+    	joystick_center[0] = joystick_x[0];
+
+    status |= STATUS_CH0_IDLE;
 }
 
-static void y_handler(void)
-{
+static void y_handler(void) {
     //
     // Clear the ADC interrupt flag.
     //
@@ -37,11 +80,87 @@ static void y_handler(void)
     // Read ADC Value.
     //
     ADCSequenceDataGet(ADC0_BASE, 1, joystick_y);
+
+    // Set the center position
+    if (joystick_center[1] == 0)
+    	joystick_center[1] = joystick_y[0];
+
+    status |= STATUS_CH1_IDLE;
 }
 
+static void button_handler(void) {
+	GPIOPinIntClear(JOY_PORT, JOY_MASK);
 
-void init_joystick(void)
-{
+	if (stepper_active() == 0) {
+
+		// Toggle the cross hair
+		status &= ~STATUS_XHAIR_ON;
+		if (GPIOPinRead(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT)) > 0)
+			status |= STATUS_XHAIR_ON;
+
+		status ^= STATUS_XHAIR_ON;
+
+		if (status & STATUS_XHAIR_ON) {
+			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), (1<< AUX1_ASSIST_BIT));
+		} else {
+			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
+			gcode_set_offset_to_current_position();
+		}
+	}
+}
+
+static void joystick_isr(void) {
+
+	TimerIntClear(JOY_TIMER, TIMER_TIMA_TIMEOUT);
+
+	// Only allow the joystick when AUX1 (Crosshair) is enabled
+	if (GPIOPinRead(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT)) > 0) {
+
+		unsigned long x = joystick_x[0];
+		unsigned long y = joystick_y[0];
+		double x_off = 0;
+		double y_off = 0;
+
+		if (x > joystick_center[0] + ZERO_THRESHOLD) {
+			x_off = (double)(x - joystick_center[0]) / 0x800;
+		} else if (x < joystick_center[0] - ZERO_THRESHOLD) {
+			x_off = -(double)(joystick_center[0] - x) / 0x800;
+		}
+
+		if (y > joystick_center[1] + ZERO_THRESHOLD) {
+			y_off = (double)(y - joystick_center[1]) / 0x800;
+		} else if (y < joystick_center[1] - ZERO_THRESHOLD) {
+			y_off = -(double)(joystick_center[1] - y) / 0x800;
+		}
+
+		// Have two speed levels for accuracy and speed when wanted.
+		if (fabs(y_off) < 0.75)
+			y_off /= 10.0;
+		if (fabs(x_off) < 0.75)
+			x_off /= 10.0;
+
+		if (planner_blocks_available() >= 2)
+			gcode_manual_move(-x_off, y_off);
+
+		//
+	    // Trigger the next ADC conversion.
+	    //
+		if (status & STATUS_CH0_IDLE)
+			ADCProcessorTrigger(ADC0_BASE, 0);
+		if (status & STATUS_CH1_IDLE)
+			ADCProcessorTrigger(ADC0_BASE, 1);
+	}
+}
+
+void init_joystick(void) {
+
+	// Register Joystick button isr
+	GPIOPinTypeGPIOInput(JOY_PORT, JOY_MASK);
+	GPIOPadConfigSet(JOY_PORT, JOY_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
+	GPIOIntTypeSet(JOY_PORT, JOY_MASK, GPIO_FALLING_EDGE);
+	GPIOPortIntRegister(JOY_PORT, button_handler);
+	GPIOPinIntEnable(JOY_PORT, JOY_MASK);
+
     //
     // The ADC0 peripheral must be enabled for use.
     //
@@ -68,27 +187,20 @@ void init_joystick(void)
     // Register ISRs.
     ADCIntRegister(ADC0_BASE, 0, x_handler);
     ADCIntRegister(ADC0_BASE, 1, y_handler);
-
     ADCIntEnable(ADC0_BASE, 0);
     ADCIntEnable(ADC0_BASE, 1);
-}
 
-void trigger_joystick(void)
-{
-    //
-    // Trigger the ADC conversion.
-    //
-    ADCProcessorTrigger(ADC0_BASE, 0);
-    ADCProcessorTrigger(ADC0_BASE, 1);
-}
+    // Trigger the first conversion (auto-center)
+	ADCProcessorTrigger(ADC0_BASE, 0);
+	ADCProcessorTrigger(ADC0_BASE, 1);
 
-unsigned long joystick_x_get(void)
-{
-	return joystick_x[0];
-}
+	// Configure timer
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER3);
+	TimerConfigure(JOY_TIMER, TIMER_CFG_PERIODIC);
 
-unsigned long joystick_y_get(void)
-{
-	return joystick_y[0];
+	// Create a 10ms timer callback
+	TimerLoadSet64(JOY_TIMER, SysCtlClockGet() / 100);
+	TimerIntRegister(JOY_TIMER, TIMER_A, joystick_isr);
+	TimerIntEnable(JOY_TIMER, TIMER_TIMA_TIMEOUT);
+	TimerEnable(JOY_TIMER, TIMER_A);
 }
-

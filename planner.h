@@ -21,8 +21,9 @@
 #ifndef planner_h
 #define planner_h
                  
-#include "config.h"
+#include <stdbool.h>
 
+#include "config.h"
 
 // Command types the planner and stepper can schedule for execution 
 #define TYPE_LINE 0
@@ -59,6 +60,7 @@ typedef struct {
   int32_t rate_delta;                 // The steps/minute to add or subtract when changing speed (must be positive)
   uint32_t accelerate_until;          // The index of the step event on which to stop acceleration
   uint32_t decelerate_after;          // The index of the step event on which to start decelerating
+  double acceleration;          	  // Acceleration speed (mm/min/min)
 
 } block_t;
       
@@ -68,7 +70,7 @@ void planner_init();
 // Add a new linear movement to the buffer.
 // x, y and z is the signed, absolute target position in millimaters.
 // Feed rate specifies the speed of the motion.
-void planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity);
+void planner_line(double x, double y, double z, double feed_rate, double acceleration, uint8_t nominal_laser_intensity);
 
 // Add a new piercing action, lasing at one spot.
 void planner_dwell(double seconds, uint8_t nominal_laser_intensity);
@@ -79,7 +81,7 @@ void planner_dwell(double seconds, uint8_t nominal_laser_intensity);
 void planner_command(uint8_t type);
 
 
-bool planner_blocks_available();
+int planner_blocks_available(void);
 
 // Gets the current block. Returns NULL if buffer empty
 block_t *planner_get_current_block();

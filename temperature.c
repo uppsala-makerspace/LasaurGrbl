@@ -1,4 +1,35 @@
+/*
+  temperature.c - 1-wire temperature sensor access
+  Configures and periodically reads temperature value from up to
+  3 DS sensors attached to the 1-wire bus.
+
+  Copyright (c) 2013 Richard Taylor
+
+  LasaurGrbl is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  LasaurGrbl is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  ---
+*/
+
+#include <string.h>
+
+#include <inc/hw_types.h>
+#include <inc/hw_memmap.h>
+#include <inc/hw_timer.h>
+#include <inc/hw_gpio.h>
+
+#include <driverlib/gpio.h>
+#include <driverlib/sysctl.h>
+#include <driverlib/timer.h>
+
 #include "config.h"
+
 #include "temperature.h"
 
 #define OW_DELAY_A 6

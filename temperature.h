@@ -15,6 +15,7 @@
   GNU General Public License for more details.
 */
 #ifndef _temperature_h
+#define _temperature_h
 
 void temperature_init(void);
 uint8_t temperature_num_sensors(void);

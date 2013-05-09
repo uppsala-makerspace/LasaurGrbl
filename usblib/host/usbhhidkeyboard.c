@@ -53,6 +53,7 @@ static unsigned long USBHKeyboardCallback(void *pvCBData,
 //
 //*****************************************************************************
 #define USBHKEYB_REPORT_SIZE    8
+#define USBHKEYB_CODE_LIST_SIZE 6
 
 //*****************************************************************************
 //
@@ -96,7 +97,7 @@ typedef struct
     //
     // This holds the keyboard usage codes for keys that are being held down.
     //
-    unsigned char pucKeyState[6];
+    unsigned char pucKeyState[USBHKEYB_CODE_LIST_SIZE];
 
     //
     // This is a local buffer to hold the current HID report that comes up
@@ -517,7 +518,7 @@ UpdateKeyboardState(tUSBHKeyboard *pUSBHKeyboard)
     // This loop checks for keys that have been released to make room for new
     // ones that may have been pressed.
     //
-    for(lOldKey = 2; lOldKey < 8; lOldKey++)
+    for(lOldKey = 2; lOldKey < USBHKEYB_CODE_LIST_SIZE; lOldKey++)
     {
         //
         // If there is no old key pressed in this entry go to the next one.
@@ -531,7 +532,7 @@ UpdateKeyboardState(tUSBHKeyboard *pUSBHKeyboard)
         // Check if this old key is still in the list of currently pressed
         // keys.
         //
-        for(lNewKey = 2; lNewKey < 8; lNewKey++)
+        for(lNewKey = 2; lNewKey < USBHKEYB_CODE_LIST_SIZE; lNewKey++)
         {
             //
             // Break out if the key is still present.
@@ -546,7 +547,7 @@ UpdateKeyboardState(tUSBHKeyboard *pUSBHKeyboard)
         // If the old key was no longer in the list of pressed keys then
         // notify the application of the key release.
         //
-        if(lNewKey == 8)
+        if(lNewKey == USBHKEYB_CODE_LIST_SIZE)
         {
             //
             // Send the key release notification to the application.
@@ -566,7 +567,7 @@ UpdateKeyboardState(tUSBHKeyboard *pUSBHKeyboard)
     //
     // This loop checks for new keys that have been pressed.
     //
-    for(lNewKey = 2; lNewKey < 8; lNewKey++)
+    for(lNewKey = 2; lNewKey < USBHKEYB_CODE_LIST_SIZE; lNewKey++)
     {
         //
         // The new list is empty so no new keys are pressed.
@@ -579,7 +580,7 @@ UpdateKeyboardState(tUSBHKeyboard *pUSBHKeyboard)
         //
         // This loop checks if the current key was already pressed.
         //
-        for(lOldKey = 2; lOldKey < 8; lOldKey++)
+        for(lOldKey = 2; lOldKey < USBHKEYB_CODE_LIST_SIZE; lOldKey++)
         {
             //
             // If it is in both lists then it was already pressed so ignore it.
@@ -593,12 +594,12 @@ UpdateKeyboardState(tUSBHKeyboard *pUSBHKeyboard)
         //
         // The key in the new list was not found so it is new.
         //
-        if(lOldKey == 8)
+        if(lOldKey == USBHKEYB_CODE_LIST_SIZE)
         {
             //
             // Look for a free location to store this key usage code.
             //
-            for(lOldKey = 2; lOldKey < 8; lOldKey++)
+            for(lOldKey = 2; lOldKey < USBHKEYB_CODE_LIST_SIZE; lOldKey++)
             {
                 //
                 // If an empty location is found, store it and notify the

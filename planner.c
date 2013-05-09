@@ -27,11 +27,13 @@
 
 
 // The number of linear motions that can be in the plan at any give time
-#define BLOCK_BUFFER_SIZE 16  // do not make bigger than uint8_t
+#define BLOCK_BUFFER_SIZE 32  // do not make bigger than uint8_t
 
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // ring buffer for motion instructions
 static volatile uint8_t block_buffer_head;       // index of the next block to be pushed
 static volatile uint8_t block_buffer_tail;       // index of the block to process now
+static volatile uint8_t block_buffers_used;
+
 
 static int32_t position[3];             // The current position of the tool in absolute steps
 static volatile bool position_update_requested;  // make sure to update to stepper position on next occasion
@@ -67,17 +69,17 @@ void planner_init() {
 
 // Add a new linear movement to the buffer. x, y and z is 
 // the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
-void planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity) {    
+void planner_line(double x, double y, double z, double feed_rate, double acceleration, uint8_t nominal_laser_intensity) {
   // calculate target position in absolute steps
   int32_t target[3];
 
   // Make sure we stay within our limits
   x=max(x, CONFIG_X_MIN);
   x=min(x, CONFIG_X_MAX);
-  y=max(x, CONFIG_X_MIN);
-  y=min(x, CONFIG_X_MAX);
-  z=max(x, CONFIG_X_MIN);
-  z=min(x, CONFIG_X_MAX);
+  y=max(y, CONFIG_Y_MIN);
+  y=min(y, CONFIG_Y_MAX);
+  z=max(z, CONFIG_Z_MIN);
+  z=min(z, CONFIG_Z_MAX);
 
   target[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
   target[Y_AXIS] = lround(y*CONFIG_Y_STEPS_PER_MM);
@@ -90,6 +92,8 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
     // sleep_mode();
   }
   
+  block_buffers_used++;
+
   // handle position update after a stop
   if (position_update_requested) {
     planner_set_position(stepper_get_position_x(), stepper_get_position_y(), stepper_get_position_z());
@@ -134,10 +138,11 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
   double inverse_minute = feed_rate * inverse_millimeters;
   block->nominal_speed = block->millimeters * inverse_minute; // always > 0
   block->nominal_rate = ceil(block->step_event_count * inverse_minute); // always > 0
-  
+
+  block->acceleration = acceleration;
   // compute the acceleration rate for this block. (step/min/acceleration_tick)
   block->rate_delta = ceil( block->step_event_count * inverse_millimeters 
-                            * CONFIG_ACCELERATION / (60 * ACCELERATION_TICKS_PER_SECOND) );
+                            * block->acceleration / (60 * ACCELERATION_TICKS_PER_SECOND) );
 
 
   //// acceleeration manager calculations
@@ -169,7 +174,7 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
       if (cos_theta > -0.95) {
         // any junction not close to neither 0 and 180 degree -> compute vmax
         double sin_theta_d2 = sqrt(0.5*(1.0-cos_theta)); // Trig half angle identity. Always positive.
-        vmax_junction = min( vmax_junction, sqrt( CONFIG_ACCELERATION * CONFIG_JUNCTION_DEVIATION 
+        vmax_junction = min( vmax_junction, sqrt( block->acceleration * CONFIG_JUNCTION_DEVIATION
                                                   * sin_theta_d2/(1.0-sin_theta_d2) ) );
       }
     }
@@ -178,7 +183,7 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
   
   // Initialize entry_speed. Compute based on deceleration to zero.
   // This will be updated in the forward and reverse planner passes.
-  double v_allowable = max_allowable_speed(-CONFIG_ACCELERATION, ZERO_SPEED, block->millimeters);
+  double v_allowable = max_allowable_speed(-block->acceleration, ZERO_SPEED, block->millimeters);
   block->entry_speed = min(vmax_junction, v_allowable);
 
   // Set nominal_length_flag for more efficiency.
@@ -242,10 +247,20 @@ void planner_command(uint8_t type) {
 }
 
 
-
-bool planner_blocks_available() {
-  return block_buffer_head != block_buffer_tail;
+int planner_blocks_available(void) {
+	int next_buffer_head = next_block_index( block_buffer_head );
+	if (next_buffer_head == block_buffer_tail)
+		return 0;
+	else if (next_buffer_head >= block_buffer_tail)
+		return BLOCK_BUFFER_SIZE - (next_buffer_head - block_buffer_tail);
+	else
+		return block_buffer_tail - next_buffer_head;
 }
+
+/*
+----T****H-----
+**H---------T**
+*/
 
 block_t *planner_get_current_block() {
   if (block_buffer_head == block_buffer_tail) { return(NULL); }
@@ -261,6 +276,7 @@ void planner_discard_current_block() {
 void planner_reset_block_buffer() {
   block_buffer_head = 0;
   block_buffer_tail = 0;
+  block_buffers_used = 0;
 }
 
 
@@ -398,7 +414,7 @@ static void reduce_entry_speed_reverse(block_t *current, block_t *next) {
   // Skip if we already flagged the block as plateauing or vmax <= next entry_speed. 
   if ((!current->nominal_length_flag) && (current->vmax_junction > next->entry_speed)) {
     current->entry_speed = min( current->vmax_junction, max_allowable_speed(
-                  -CONFIG_ACCELERATION, next->entry_speed, current->millimeters) );
+                  -next->acceleration, next->entry_speed, current->millimeters) );
   } else {
     current->entry_speed = current->vmax_junction;
   } 
@@ -419,7 +435,7 @@ static void reduce_entry_speed_forward(block_t *previous, block_t *current) {
   if (!previous->nominal_length_flag) {
     if (previous->entry_speed < current->entry_speed) {
       double entry_speed = min( current->entry_speed,
-        max_allowable_speed(-CONFIG_ACCELERATION, previous->entry_speed, previous->millimeters) );
+        max_allowable_speed(-current->acceleration, previous->entry_speed, previous->millimeters) );
       // Check for junction speed change
       if (current->entry_speed != entry_speed) {
         current->entry_speed = entry_speed;
