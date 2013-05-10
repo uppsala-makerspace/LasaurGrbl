@@ -17,6 +17,8 @@
 #include <sys/unistd.h>
 #include "driverlib/uart.h"
 
+#include "USBCDCD.h"
+
 #ifndef STDOUT_USART
 #define STDOUT_USART 1
 #endif
@@ -54,11 +56,15 @@ int _write(int file, char *ptr, int len) {
 
     switch (file) {
     case STDOUT_FILENO: /*stdout*/
+    	USBCDCD_sendData(ptr, len);
+    	break;
+
     case STDERR_FILENO:
         for (n = 0; n < len; n++) {
           UARTCharPut(UART0_BASE, ptr[n]);
         }
         break;
+
     default:
         errno = EBADF;
         return -1;

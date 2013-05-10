@@ -40,7 +40,7 @@
 // This struct is used when buffering the setup for each linear movement "nominal" values are as specified in 
 // the source g-code and may never actually be reached if acceleration management is active.
 typedef struct {
-  uint8_t type;                       // Type of command, eg: TYPE_LINE, TYPE_AIR_ASSIST_ENABLE
+  uint8_t block_type;                       // Type of command, eg: TYPE_LINE, TYPE_AIR_ASSIST_ENABLE
   // Fields used by the bresenham algorithm for tracing the line
   uint32_t steps_x, steps_y, steps_z; // Step count along each axis
   uint8_t  direction_bits;            // The direction bit set for this block (refers to *_DIRECTION_BIT in config.h)

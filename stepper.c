@@ -120,7 +120,8 @@ void stepper_init() {
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
 	GPIOPinTypeGPIOOutput(STATUS_PORT, STATUS_MASK);
 
-	GPIOPadConfigSet(STEP_PORT, STEP_MASK, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
+	GPIOPadConfigSet(STEP_PORT, STEP_MASK, GPIO_STRENGTH_8MA_SC, GPIO_PIN_TYPE_STD);
+	GPIOPadConfigSet(STEP_DIR_PORT, STEP_DIR_MASK, GPIO_STRENGTH_8MA_SC, GPIO_PIN_TYPE_STD);
 
 	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
@@ -147,7 +148,7 @@ void stepper_init() {
 	acceleration_tick_counter = 0;
 	current_block = NULL;
 	stop_requested = false;
-	stop_status = STATUS_OK;
+	stop_status = GCODE_STATUS_OK;
 	busy = false;
   
 	// start in the idle state
@@ -214,6 +215,7 @@ bool stepper_stop_requested() {
 }
 
 void stepper_stop_resume() {
+  stop_status = 0;
   stop_requested = false;
   GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK ^ STEP_EN_INVERT);
 }
@@ -239,7 +241,6 @@ void stepper_set_position(double x, double y, double z) {
 
 
 
-
 // The Stepper Reset ISR
 // It resets the motor port after a short period completing one step cycle.
 // TODO: It is possible for the serial interrupts to delay this interrupt by a few microseconds, if
@@ -260,7 +261,13 @@ void pulse_isr (void) {
 void stepper_isr (void) {
 
 	if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
-  busy = true;
+
+	// Reset the timer
+	TimerLoadSet(STEPPING_TIMER, TIMER_A, timer_preload);
+	TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+
+
+	busy = true;
   if (stop_requested) {
     // go idle and absorb any blocks
     stepper_go_idle(); 
@@ -271,21 +278,19 @@ void stepper_isr (void) {
     return;
   }
 
-	// Reset the timer
-	TimerLoadSet(STEPPING_TIMER, TIMER_A, timer_preload);
-	TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
-
   #ifndef DEBUG_IGNORE_SENSORS
-    // stop program when any limit is hit or the e-stop turned the power off
-    if (SENSE_LIMITS) {
-      stepper_request_stop(STATUS_LIMIT_HIT);
-      busy = false;
-      return;    
-    }
+	// stop program when any limit is hit or the e-stop turned the power off
+	if (SENSE_LIMITS) {
+		stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
+		busy = false;
+		return;
+	}
 
-    // Pause if we have a safety issue, will be abrupt and may skip steps...
+    // Pause if we have a (transient) safety issue, will be abrupt and may skip steps...
     if (SENSE_SAFETY) {
+    	// Turn off the laser
     	control_laser_intensity(0);
+    	// Make sure that the rate (laser power) will be set when we resume
     	adjusted_rate = 0;
     	busy = false;
     	return;
@@ -298,6 +303,7 @@ void stepper_isr (void) {
 	out_step_bits = 0;
 	// prime for reset pulse in CONFIG_PULSE_MICROSECONDS
 	//set period
+
 	TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
 	TimerLoadSet(STEPPING_TIMER, TIMER_B, (CONFIG_PULSE_MICROSECONDS - 3) * CYCLES_PER_MICROSECOND);
 	TimerEnable(STEPPING_TIMER, TIMER_B);
@@ -313,7 +319,7 @@ void stepper_isr (void) {
       busy = false;
       return;       
     }      
-    if (current_block->type == TYPE_LINE) {  // starting on new line block
+    if (current_block->block_type == TYPE_LINE) {  // starting on new line block
       adjusted_rate = current_block->initial_rate;
       acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2; // start halfway, midpoint rule.
       adjust_speed( adjusted_rate ); // initialize cycles_per_step_event
@@ -325,7 +331,7 @@ void stepper_isr (void) {
   }
 
   // process current block, populate out_bits (or handle other commands)
-  switch (current_block->type) {
+  switch (current_block->block_type) {
     case TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
       out_dir_bits = current_block->direction_bits;
@@ -441,7 +447,8 @@ void stepper_isr (void) {
       planner_discard_current_block();  
       break;    
   }
-  
+
+  //GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
   busy = false;
 }
 
@@ -498,7 +505,7 @@ static void adjust_speed( uint32_t steps_per_minute ) {
 
   if (cycles_per_step_event == 0)
   {
-	  stepper_request_stop(STATUS_LIMIT_HIT);
+	  stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
   }
 
   // This can be called from init, so make sure we don't dereference a NULL block.

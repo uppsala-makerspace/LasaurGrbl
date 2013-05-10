@@ -105,7 +105,7 @@ void planner_line(double x, double y, double z, double feed_rate, double acceler
   block_t *block = &block_buffer[block_buffer_head];
   
   // set block type to line command
-  block->type = TYPE_LINE;
+  block->block_type = TYPE_LINE;
 
   // set nominal laser intensity
   block->nominal_laser_intensity = nominal_laser_intensity;
@@ -237,7 +237,7 @@ void planner_command(uint8_t type) {
   block_t *block = &block_buffer[block_buffer_head];
 
   // set block type command
-  block->type = type;
+  block->block_type = type;
 
   // Move buffer head
   block_buffer_head = next_buffer_head;

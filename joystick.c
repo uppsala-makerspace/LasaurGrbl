@@ -28,10 +28,8 @@
 
 #include "config.h"
 
-#include "gcode.h"
-#include "stepper.h"
-#include "planner.h"
 #include "joystick.h"
+#include "tasks.h"
 
 // The joystick has no effect when the position is central +/- threshold.
 #define ZERO_THRESHOLD	0x50
@@ -51,6 +49,9 @@ static unsigned long joystick_y[1] = {0};
 static unsigned long joystick_center[2] = {0};
 static unsigned long status = STATUS_CH0_IDLE | STATUS_CH1_IDLE;
 
+static struct task_manual_move_data task_data = {0.0};
+
+static uint8_t button_debounce = 0;
 
 static void x_handler(void) {
     //
@@ -68,6 +69,8 @@ static void x_handler(void) {
     	joystick_center[0] = joystick_x[0];
 
     status |= STATUS_CH0_IDLE;
+
+    button_debounce = 0;
 }
 
 static void y_handler(void) {
@@ -91,7 +94,8 @@ static void y_handler(void) {
 static void button_handler(void) {
 	GPIOPinIntClear(JOY_PORT, JOY_MASK);
 
-	if (stepper_active() == 0) {
+	if (button_debounce == 0) {
+		button_debounce = 1;
 
 		// Toggle the cross hair
 		status &= ~STATUS_XHAIR_ON;
@@ -104,8 +108,13 @@ static void button_handler(void) {
 			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), (1<< AUX1_ASSIST_BIT));
 		} else {
 			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
-			gcode_set_offset_to_current_position();
+			task_enable(TASK_SET_OFFSET, 0);
 		}
+
+		// Use this time as the debounce.
+		if (status & STATUS_CH0_IDLE)
+			ADCProcessorTrigger(ADC0_BASE, 0);
+
 	}
 }
 
@@ -134,13 +143,20 @@ static void joystick_isr(void) {
 		}
 
 		// Have two speed levels for accuracy and speed when wanted.
-		if (fabs(y_off) < 0.75)
+		if (fabs(y_off) < 0.5)
+			y_off /= 50.0;
+		else// if (fabs(y_off) < 1.0)
 			y_off /= 10.0;
-		if (fabs(x_off) < 0.75)
+
+		if (fabs(x_off) < 0.5)
+			x_off /= 50.0;
+		else// if (fabs(x_off) < 1.0)
 			x_off /= 10.0;
 
-		if (planner_blocks_available() >= 2)
-			gcode_manual_move(-x_off, y_off);
+		task_data.x_offset = -y_off;
+		task_data.y_offset = x_off;
+		task_data.rate = 20000;
+		task_enable(TASK_MANUAL_MOVE, &task_data);
 
 		//
 	    // Trigger the next ADC conversion.
@@ -199,7 +215,7 @@ void init_joystick(void) {
 	TimerConfigure(JOY_TIMER, TIMER_CFG_PERIODIC);
 
 	// Create a 10ms timer callback
-	TimerLoadSet64(JOY_TIMER, SysCtlClockGet() / 100);
+	TimerLoadSet64(JOY_TIMER, SysCtlClockGet() / 500);
 	TimerIntRegister(JOY_TIMER, TIMER_A, joystick_isr);
 	TimerIntEnable(JOY_TIMER, TIMER_TIMA_TIMEOUT);
 	TimerEnable(JOY_TIMER, TIMER_A);

@@ -37,6 +37,7 @@
 #include "gcode.h"
 #include "serial.h"
 #include "joystick.h"
+#include "tasks.h"
 
 /* Main */
 int main(void)
@@ -73,6 +74,7 @@ int main(void)
     //GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
 
     /* Initialize GRBL */
+    tasks_init();
 
     init_joystick();
 
@@ -86,17 +88,7 @@ int main(void)
     stepper_init();
 
     while (true) {
-    	// Respond to the ready request
-    	if (gcode_ready_wait != 0) {
-    		while (planner_blocks_available() < 2);
-			//stepper_synchronize();
-			//if (stepper_active() == 0)
-			{
-				char tmp[2] = {0x12, 0};
-				printString(tmp);
-			}
-			gcode_ready_wait = 0;
-    	}
+    	tasks_loop();
     }
 
     return (0);

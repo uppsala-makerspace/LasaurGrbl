@@ -30,10 +30,11 @@
 #define CONFIG_X_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_Y_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_Z_STEPS_PER_MM 157.48 //microsteps/mm
-#define CONFIG_PULSE_MICROSECONDS 5
-#define CONFIG_MAX_FEEDRATE 8000.0 // in millimeters per minute
-#define CONFIG_MAX_SEEKRATE 8000.0
-#define CONFIG_DEFAULT_ACCELERATION 4800000.0 // mm/min^2, typically 1000000-8000000, divide by (60*60) to get mm/sec^2
+#define CONFIG_PULSE_MICROSECONDS 10
+#define CONFIG_DEFAULT_RATE 8000.0
+#define CONFIG_MAX_FEEDRATE 20000.0 // in millimeters per minute
+#define CONFIG_MAX_SEEKRATE 20000.0
+#define CONFIG_DEFAULT_ACCELERATION 8000000.0 // mm/min^2, typically 1000000-8000000, divide by (60*60) to get mm/sec^2
 #define CONFIG_JUNCTION_DEVIATION 0.006 // mm
 #define CONFIG_X_ORIGIN_OFFSET 5.0  // mm, x-offset of table origin from physical home
 #define CONFIG_Y_ORIGIN_OFFSET 15.0  // mm, y-offset of table origin from physical home
@@ -151,8 +152,6 @@
 
 #endif
 
-
-
 // bit math
 // see: http://www.arduino.cc/playground/Code/BitMath
 // see: http://graphics.stanford.edu/~seander/bithacks.html
@@ -170,3 +169,4 @@
 // x = ~x; // toggles ALL the bits in x.
 
 void __delay_us(uint32_t delay);
+

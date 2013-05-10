@@ -38,7 +38,8 @@ SECTIONS {
      _sidata = _etext;
   } > FLASH
 
-  /* .ARM.exidx is sorted, so has to go in its own output section.  
+  /* .ARM.exidx is sorted, so has to go in its own output section. */
+  /*
   PROVIDE_HIDDEN (__exidx_start = .);
   .ARM.exidx :
   {

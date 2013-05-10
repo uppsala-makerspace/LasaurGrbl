@@ -102,13 +102,13 @@ void printFloat(double n) {
     n = -n;
   }
   n += 0.5/1000; // Add rounding factor
- 
+
   long integer_part;
   integer_part = (int)n;
   printIntegerInBase(integer_part,10);
-  
+
   serial_write('.');
-  
+
   n -= integer_part;
   int decimals = 3;
   uint8_t decimal_part;

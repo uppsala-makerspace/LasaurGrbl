@@ -61,7 +61,7 @@
 /* Example/Board Header files */
 #include "USBCDCD.h"
 
-#include "gcode.h"
+#include "tasks.h"
 
 /* Defines */
 #define TX_BUFFERSIZE   128
@@ -247,8 +247,7 @@ static unsigned long cbRxHandler(void *cbData, unsigned long event,
     switch (event) {
         case USB_EVENT_RX_AVAILABLE:
             GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
-            gcode_process_data(&rxBuffer);
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
+            task_enable(TASK_SERIAL_RX, (void*)&rxBuffer);
             break;
 
         case USB_EVENT_DATA_REMAINING:
