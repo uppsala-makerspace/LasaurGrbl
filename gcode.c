@@ -78,7 +78,7 @@ struct _raster {
 };
 static struct _raster raster;
 
-static char rx_line[BUFFER_LINE_SIZE];
+static char rx_line[BUFFER_LINE_SIZE] = {0};
 static int rx_chars = 0;
 static char *rx_line_cursor;
 
@@ -391,8 +391,17 @@ uint8_t gcode_execute_line(char *line) {
 			case 8:
 				// Special case to append raster data
 				if (line[char_counter] == 'D') {
+					uint32_t len;
 					char_counter++;
-					uint8_t len = strlen(line) - char_counter;
+
+					len = strlen(line) - char_counter;
+
+					if (raster.length + len >= RASTER_BUFFER || len > 70)
+					{
+						gc.status_code = GCODE_STATUS_RX_BUFFER_OVERFLOW;
+						stepper_request_stop(gc.status_code);
+					}
+
 					memcpy(&raster.buffer[raster.length], &line[char_counter], len);
 					raster.length += len;
 					return gc.status_code;

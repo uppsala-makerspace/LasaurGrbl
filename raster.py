@@ -23,7 +23,7 @@ target_width = float(args.width_str)
 
 im = Image.open(args.image_file)
 converted = im.convert("1")
-converted.show()
+#converted.show()
 
 # G8 P0.1
 # G8 X50
@@ -44,7 +44,7 @@ print "Dimensions: %.0fmm x %.0fmm, dot size = %f" % (target_width, target_heigh
 fw = file(args.outfile, "w")
 
 fw.write("G8 P%.4f\n" % (dot_size))
-fw.write("G8 X20\n")
+fw.write("G8 X5\n")
 fw.write("G8 N0\n")
 string="G8 D"
 for pixel in converted.getdata():
@@ -55,6 +55,8 @@ for pixel in converted.getdata():
 	if (pixel > 128): pixel = '0'
 	else: pixel = '1'
 
+    count=count+1
+    
     string = string + pixel
     if (count % 35 == 34):
 	fw.write(string + "\n")
@@ -65,8 +67,6 @@ for pixel in converted.getdata():
 	fw.write("G8 N0" + "\n")
 	string="G8 D"
 	count=0
-
-    count=count+1
 	
 fw.write(string + "\n")
 fw.write("G8 N0\n")

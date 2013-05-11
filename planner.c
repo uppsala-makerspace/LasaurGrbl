@@ -88,10 +88,7 @@ void planner_raster(double x, double y, double z, double x_off, double y_off, do
 		y_dir = 0.0;
 
 	// Consume any leading zeros.
-	for (; consumed < raster_len; consumed++) {
-		if (*raster != dot) {
-			break;
-		}
+	for (; (consumed < raster_len) && (*raster == dot); consumed++) {
 		raster++;
 		offset += dot_size;
 	}
@@ -104,14 +101,9 @@ void planner_raster(double x, double y, double z, double x_off, double y_off, do
 
 	// Loop through the raster.
 	while (consumed < raster_len) {
-		for (; consumed < raster_len; consumed++) {
-
+		for (; (consumed < raster_len) && (*raster == dot); consumed++) {
 			raster++;
 			offset += dot_size;
-
-			if (*raster != dot) {
-				break;
-			}
 		}
 
 		// Etch contiguous dots of the same value.
