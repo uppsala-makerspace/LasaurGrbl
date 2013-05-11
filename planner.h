@@ -25,22 +25,24 @@
 
 #include "config.h"
 
-// Command types the planner and stepper can schedule for execution 
-#define TYPE_LINE 0
-#define TYPE_AIR_ASSIST_ENABLE 1
-#define TYPE_AIR_ASSIST_DISABLE 2
-#define TYPE_AUX1_ASSIST_ENABLE 3
-#define TYPE_AUX1_ASSIST_DISABLE 4
+// Command types the planner and stepper can schedule for execution
+typedef enum {
+	BLOCK_TYPE_LINE,
+	BLOCK_TYPE_AIR_ASSIST_ENABLE,
+	BLOCK_TYPE_AIR_ASSIST_DISABLE,
+	BLOCK_TYPE_AUX1_ASSIST_ENABLE,
+	BLOCK_TYPE_AUX1_ASSIST_DISABLE,
+} BLOCK_TYPE;
 
-#define planner_control_air_assist_enable() planner_command(TYPE_AIR_ASSIST_ENABLE)
-#define planner_control_air_assist_disable() planner_command(TYPE_AIR_ASSIST_DISABLE)
-#define planner_control_aux1_assist_enable() planner_command(TYPE_AUX1_ASSIST_ENABLE)
-#define planner_control_aux1_assist_disable() planner_command(TYPE_AUX1_ASSIST_DISABLE)
+#define planner_control_air_assist_enable() planner_command(BLOCK_TYPE_AIR_ASSIST_ENABLE)
+#define planner_control_air_assist_disable() planner_command(BLOCK_TYPE_AIR_ASSIST_DISABLE)
+#define planner_control_aux1_assist_enable() planner_command(BLOCK_TYPE_AUX1_ASSIST_ENABLE)
+#define planner_control_aux1_assist_disable() planner_command(BLOCK_TYPE_AUX1_ASSIST_DISABLE)
 
 // This struct is used when buffering the setup for each linear movement "nominal" values are as specified in 
 // the source g-code and may never actually be reached if acceleration management is active.
 typedef struct {
-  uint8_t block_type;                       // Type of command, eg: TYPE_LINE, TYPE_AIR_ASSIST_ENABLE
+  BLOCK_TYPE block_type;                       // Type of command, eg: TYPE_LINE, TYPE_AIR_ASSIST_ENABLE
   // Fields used by the bresenham algorithm for tracing the line
   uint32_t steps_x, steps_y, steps_z; // Step count along each axis
   uint8_t  direction_bits;            // The direction bit set for this block (refers to *_DIRECTION_BIT in config.h)
@@ -66,6 +68,13 @@ typedef struct {
       
 // Initialize the motion plan subsystem      
 void planner_init();
+
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specifies the raster direction.
+// The value of x_off/y_off specifies the offset (acceleration margin) before the actual raster.
+// raster and raster_len contain the pointer and length of buffer containing 0-255 PWM values for each dot.
+void planner_raster(double x, double y, double z, double x_off, double y_off, double feed_rate, double seek_rate, double acceleration, double dot_size, uint8_t *raster, uint32_t raster_len);
 
 // Add a new linear movement to the buffer.
 // x, y and z is the signed, absolute target position in millimaters.

@@ -65,7 +65,64 @@ void planner_init() {
   previous_nominal_speed = 0.0;
 }
 
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specify the raster direction.
+// The value of x_off/y_off specify the offset (acceleration margin) before the actual raster.
+void planner_raster(double x, double y, double z, double x_off, double y_off, double feed_rate, double seek_rate, double acceleration, double dot_size, uint8_t *raster, uint32_t raster_len) {
 
+	double offset = 0.0;
+	double y_dir = 1.0;
+	double x_dir = 1.0;
+	uint8_t dot = '0';
+	uint32_t consumed = 0;
+
+	if (x_off < 0.0)
+		x_dir = -1.0;
+	else if (x_off == 0.0)
+		x_dir = 0.0;
+
+	if (y_off < 0.0)
+		y_dir = -1.0;
+	else if (y_off == 0.0)
+		y_dir = 0.0;
+
+	// Consume any leading zeros.
+	for (; consumed < raster_len; consumed++) {
+		if (*raster != dot) {
+			break;
+		}
+		raster++;
+		offset += dot_size;
+	}
+
+	// Move to the starting point. (Assumes we have space before the limits are hit)
+	planner_line(x + (offset - x_off) * x_dir, y  + (offset - y_off) * y_dir, z, seek_rate, acceleration, 0);
+
+	// Now lets get down to rastering speed.
+	planner_line(x + offset * x_dir, y  + offset * y_dir, z, feed_rate, acceleration, 0);
+
+	// Loop through the raster.
+	while (consumed < raster_len) {
+		for (; consumed < raster_len; consumed++) {
+
+			raster++;
+			offset += dot_size;
+
+			if (*raster != dot) {
+				break;
+			}
+		}
+
+		// Etch contiguous dots of the same value.
+		planner_line(x + offset * x_dir, y  + offset * y_dir, z, feed_rate, acceleration, (dot == '1')?255:0);
+
+		dot = *raster;
+	}
+
+	// Extend the raster
+	planner_line(x + (offset + x_off) * x_dir, y  + (offset + y_off) * y_dir, z, feed_rate, acceleration, 0);
+}
 
 // Add a new linear movement to the buffer. x, y and z is 
 // the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
@@ -105,7 +162,7 @@ void planner_line(double x, double y, double z, double feed_rate, double acceler
   block_t *block = &block_buffer[block_buffer_head];
   
   // set block type to line command
-  block->block_type = TYPE_LINE;
+  block->block_type = BLOCK_TYPE_LINE;
 
   // set nominal laser intensity
   block->nominal_laser_intensity = nominal_laser_intensity;

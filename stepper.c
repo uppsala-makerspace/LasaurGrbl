@@ -100,6 +100,7 @@ static volatile uint8_t stop_status;          // yields the reason for a stop re
 
 static uint16_t timer_prescaler = 0;
 static uint16_t timer_preload = 0xffff;
+static uint8_t pulse_active = 0;
 
 
 // prototypes for static functions (non-accesible from other files)
@@ -251,6 +252,8 @@ void pulse_isr (void) {
 
 	// This is a one-shot timer, so just ACK the IRQ.
 	TimerIntClear(TIMER1_BASE, TIMER_TIMB_TIMEOUT);
+
+	pulse_active = 0;
 }
   
 
@@ -266,6 +269,7 @@ void stepper_isr (void) {
 	TimerLoadSet(STEPPING_TIMER, TIMER_A, timer_preload);
 	TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
 
+	if (pulse_active) { return; }	// If the step pulse hasn't completed yet, try again later.
 
 	busy = true;
   if (stop_requested) {
@@ -301,6 +305,7 @@ void stepper_isr (void) {
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
 	GPIOPinWrite(STEP_PORT, STEP_MASK, out_step_bits);
 	out_step_bits = 0;
+	pulse_active = 1;
 	// prime for reset pulse in CONFIG_PULSE_MICROSECONDS
 	//set period
 
@@ -319,7 +324,7 @@ void stepper_isr (void) {
       busy = false;
       return;       
     }      
-    if (current_block->block_type == TYPE_LINE) {  // starting on new line block
+    if (current_block->block_type == BLOCK_TYPE_LINE) {  // starting on new line block
       adjusted_rate = current_block->initial_rate;
       acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2; // start halfway, midpoint rule.
       adjust_speed( adjusted_rate ); // initialize cycles_per_step_event
@@ -332,7 +337,7 @@ void stepper_isr (void) {
 
   // process current block, populate out_bits (or handle other commands)
   switch (current_block->block_type) {
-    case TYPE_LINE:
+    case BLOCK_TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
       out_dir_bits = current_block->direction_bits;
       counter_x += current_block->steps_x;
@@ -423,25 +428,25 @@ void stepper_isr (void) {
     
       break; 
 
-    case TYPE_AIR_ASSIST_ENABLE:
+    case BLOCK_TYPE_AIR_ASSIST_ENABLE:
       control_air_assist(true);
       current_block = NULL;
       planner_discard_current_block();  
       break;
 
-    case TYPE_AIR_ASSIST_DISABLE:
+    case BLOCK_TYPE_AIR_ASSIST_DISABLE:
       control_air_assist(false);
       current_block = NULL;
       planner_discard_current_block();  
       break;
 
-    case TYPE_AUX1_ASSIST_ENABLE:
+    case BLOCK_TYPE_AUX1_ASSIST_ENABLE:
       control_aux1_assist(true);
       current_block = NULL;
       planner_discard_current_block();  
       break;
 
-    case TYPE_AUX1_ASSIST_DISABLE:
+    case BLOCK_TYPE_AUX1_ASSIST_DISABLE:
       control_aux1_assist(false);
       current_block = NULL;
       planner_discard_current_block();  

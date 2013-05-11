@@ -49,6 +49,7 @@ enum {
 	NEXT_ACTION_NONE = 0,
 	NEXT_ACTION_SEEK,
 	NEXT_ACTION_FEED,
+	NEXT_ACTION_RASTER,
 	NEXT_ACTION_DWELL,
 	NEXT_ACTION_STOP,
 	NEXT_ACTION_HOMING_CYCLE,
@@ -64,6 +65,18 @@ enum {
 #define OFFSET_G55 1
 
 #define BUFFER_LINE_SIZE 80
+
+// This defines the maximum number of dots in a raster.
+#define RASTER_BUFFER	1024
+struct _raster {
+	double dot_size;
+	double x_off;
+	double y_off;
+	uint8_t appending;
+	uint32_t length;
+	uint8_t buffer[RASTER_BUFFER];
+};
+static struct _raster raster;
 
 static char rx_line[BUFFER_LINE_SIZE];
 static int rx_chars = 0;
@@ -352,7 +365,9 @@ uint8_t gcode_execute_line(char *line) {
 	double unit_converted_value;
 	uint8_t next_action = NEXT_ACTION_NONE;
 	double target[3];
+	double vector[3] = {0.0};
 	double p = 0.0;
+	double n = -1.0;
 	int cs = 0;
 	int l = 0;
 	bool got_actual_line_command = false;  // as opposed to just e.g. G1 F1200
@@ -372,6 +387,18 @@ uint8_t gcode_execute_line(char *line) {
 				break;
 			case 4:
 				next_action = NEXT_ACTION_DWELL;
+				break;
+			case 8:
+				// Special case to append raster data
+				if (line[char_counter] == 'D') {
+					char_counter++;
+					uint8_t len = strlen(line) - char_counter;
+					memcpy(&raster.buffer[raster.length], &line[char_counter], len);
+					raster.length += len;
+					return gc.status_code;
+				} else {
+					next_action = NEXT_ACTION_RASTER;
+				}
 				break;
 			case 10:
 				next_action = NEXT_ACTION_SET_COORDINATE_OFFSET;
@@ -477,42 +504,49 @@ uint8_t gcode_execute_line(char *line) {
 			unit_converted_value = value;
 		}
 		switch (letter) {
-		case 'F':
-			if (unit_converted_value <= 0) {
-				FAIL(GCODE_STATUS_BAD_NUMBER_FORMAT);
-			}
-			if (gc.motion_mode == NEXT_ACTION_SEEK) {
-				gc.seek_rate = min(CONFIG_MAX_SEEKRATE, unit_converted_value);
-			} else {
-				gc.feed_rate = min(CONFIG_MAX_FEEDRATE, unit_converted_value);
-			}
-			break;
-		case 'X':
-		case 'Y':
-		case 'Z':
-			if (gc.absolute_mode) {
-				target[letter - 'X'] = unit_converted_value;
-			} else {
-				target[letter - 'X'] += unit_converted_value;
-			}
-			got_actual_line_command = true;
-			break;
-		case 'P':  // dwelling seconds or CS selector
-			if (next_action == NEXT_ACTION_SET_COORDINATE_OFFSET) {
-				cs = trunc(value);
-			} else {
-				p = value;
-			}
-			break;
-		case 'S':
-			if (next_action == NEXT_ACTION_SET_ACCELERATION)
-				gc.acceleration = value * 3600;
-			else
-				gc.nominal_laser_intensity = value;
-			break;
-		case 'L':  // G10 qualifier
-			l = trunc(value);
-			break;
+			case 'F':
+				if (unit_converted_value <= 0) {
+					FAIL(GCODE_STATUS_BAD_NUMBER_FORMAT);
+				}
+				if (gc.motion_mode == NEXT_ACTION_SEEK) {
+					gc.seek_rate = min(CONFIG_MAX_SEEKRATE, unit_converted_value);
+				} else {
+					gc.feed_rate = min(CONFIG_MAX_FEEDRATE, unit_converted_value);
+				}
+				break;
+			case 'X':
+			case 'Y':
+			case 'Z':
+				// We don't want to update the target when setting the raster offset.
+				if (next_action != NEXT_ACTION_RASTER) {
+					if (gc.absolute_mode) {
+						target[letter - 'X'] = unit_converted_value;
+					} else {
+						target[letter - 'X'] += unit_converted_value;
+					}
+				}
+				vector[letter - 'X'] = unit_converted_value;
+				got_actual_line_command = true;
+				break;
+			case 'P':  // dwelling seconds or CS selector
+				if (next_action == NEXT_ACTION_SET_COORDINATE_OFFSET) {
+					cs = trunc(value);
+				} else {
+					p = value;
+				}
+				break;
+			case 'S':
+				if (next_action == NEXT_ACTION_SET_ACCELERATION)
+					gc.acceleration = value * 3600;
+				else
+					gc.nominal_laser_intensity = value;
+				break;
+			case 'L':  // G10 qualifier
+				l = trunc(value);
+				break;
+			case 'N':
+				n = value;
+				break;
 		}
 	}
 
@@ -537,6 +571,30 @@ uint8_t gcode_execute_line(char *line) {
 					target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 					target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
 					gc.feed_rate, gc.acceleration, gc.nominal_laser_intensity);
+		}
+		break;
+	case NEXT_ACTION_RASTER:
+		if (got_actual_line_command) {
+			raster.x_off = vector[X_AXIS];
+			raster.y_off = vector[Y_AXIS];
+		}
+		if (p > 0.0) {
+			raster.dot_size = p;
+		}
+		if (n >= 0.0) {
+			// Here we go...
+			if (raster.length > 0) {
+				planner_raster(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
+						target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
+						target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
+						raster.x_off, raster.y_off, gc.feed_rate, gc.seek_rate, gc.acceleration, raster.dot_size, raster.buffer, raster.length);
+				if (raster.x_off == 0.0)
+					target[X_AXIS] += raster.dot_size;
+				if (raster.y_off == 0.0)
+					target[Y_AXIS] += raster.dot_size;
+			}
+			// Reset the buffer.
+			raster.length = 0;
 		}
 		break;
 	case NEXT_ACTION_DWELL:
@@ -670,6 +728,7 @@ static int next_statement(char *letter, double *double_ptr, char *line,
 		return (0);
 	}
 	(*char_counter)++;
+
 	if (!read_double(line, char_counter, double_ptr)) {
 		FAIL(GCODE_STATUS_BAD_NUMBER_FORMAT);
 		return (0);
