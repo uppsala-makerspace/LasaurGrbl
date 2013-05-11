@@ -23,7 +23,7 @@ target_width = float(args.width_str)
 
 im = Image.open(args.image_file)
 converted = im.convert("1")
-#converted.show()
+converted.show()
 
 # G8 P0.1
 # G8 X50

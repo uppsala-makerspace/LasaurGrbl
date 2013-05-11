@@ -596,10 +596,10 @@ uint8_t gcode_execute_line(char *line) {
 				planner_raster(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 						target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 						target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-						raster.x_off, raster.y_off, gc.feed_rate, gc.seek_rate, gc.acceleration, raster.dot_size, raster.buffer, raster.length);
+						gc.feed_rate, gc.acceleration, gc.nominal_laser_intensity, raster.x_off, raster.y_off, raster.dot_size, raster.buffer, raster.length);
 				if (raster.x_off == 0.0)
 					target[X_AXIS] += raster.dot_size;
-				if (raster.y_off == 0.0)
+				else
 					target[Y_AXIS] += raster.dot_size;
 			}
 			// Reset the buffer.

@@ -262,6 +262,8 @@ void pulse_isr (void) {
 // config_step_timer. It pops blocks from the block_buffer and executes them by pulsing the stepper pins appropriately.
 // The bresenham line tracer algorithm controls all three stepper outputs simultaneously.
 void stepper_isr (void) {
+	uint32_t raster_index;
+	uint8_t intensity;
 
 	if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
 
@@ -324,7 +326,8 @@ void stepper_isr (void) {
       busy = false;
       return;       
     }      
-    if (current_block->block_type == BLOCK_TYPE_LINE) {  // starting on new line block
+    if (current_block->block_type == BLOCK_TYPE_LINE
+    	|| current_block->block_type == BLOCK_TYPE_RASTER_LINE) {  // starting on new line block
       adjusted_rate = current_block->initial_rate;
       acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2; // start halfway, midpoint rule.
       adjust_speed( adjusted_rate ); // initialize cycles_per_step_event
@@ -337,6 +340,13 @@ void stepper_isr (void) {
 
   // process current block, populate out_bits (or handle other commands)
   switch (current_block->block_type) {
+  	case BLOCK_TYPE_RASTER_LINE:
+ 	  raster_index = (step_events_completed * current_block->raster_buffer_len) / current_block->steps_x;
+ 	  intensity = (current_block->raster_buffer[raster_index] == '1')?current_block->raster_intensity:0;
+ 	  if (intensity != current_block->nominal_laser_intensity) {
+ 		  current_block->nominal_laser_intensity = intensity;
+ 		  adjusted_rate = 0;
+ 	  }
     case BLOCK_TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
       out_dir_bits = current_block->direction_bits;
