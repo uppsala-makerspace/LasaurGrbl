@@ -345,8 +345,9 @@ void stepper_isr (void) {
  	  intensity = (current_block->raster_buffer[raster_index] == '1')?current_block->raster_intensity:0;
  	  if (intensity != current_block->nominal_laser_intensity) {
  		  current_block->nominal_laser_intensity = intensity;
- 		  adjusted_rate = 0;
+ 		  control_laser_intensity(intensity);
  	  }
+ 	  //break;
     case BLOCK_TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
       out_dir_bits = current_block->direction_bits;

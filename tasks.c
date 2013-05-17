@@ -31,7 +31,7 @@
 
 
 static volatile task_t task_status = 0;
-static void *task_data[sizeof(task_t)];
+static void *task_data[sizeof(task_t)*8];
 
 void tasks_init(void) {
 	task_status = 0;

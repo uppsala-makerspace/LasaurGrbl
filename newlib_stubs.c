@@ -56,7 +56,7 @@ int _write(int file, char *ptr, int len) {
 
     switch (file) {
     case STDOUT_FILENO: /*stdout*/
-    	USBCDCD_sendData(ptr, len);
+    	USBCDCD_sendData((const uint8_t*)ptr, len);
     	break;
 
     case STDERR_FILENO:
