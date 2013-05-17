@@ -32,6 +32,7 @@
 #define TYPE_AUX1_ASSIST_DISABLE 4
 #define TYPE_AUX2_ASSIST_ENABLE 5
 #define TYPE_AUX2_ASSIST_DISABLE 6
+#define TYPE_RASTER_LINE 7
 
 #define planner_control_air_assist_enable() planner_command(TYPE_AIR_ASSIST_ENABLE)
 #define planner_control_air_assist_disable() planner_command(TYPE_AIR_ASSIST_DISABLE)
@@ -65,16 +66,26 @@ typedef struct {
   int32_t rate_delta;                 // The steps/minute to add or subtract when changing speed (must be positive)
   uint32_t accelerate_until;          // The index of the step event on which to stop acceleration
   uint32_t decelerate_after;          // The index of the step event on which to start decelerating
+  uint8_t *raster_buffer;	          // Raster data buffer
+  uint32_t raster_buffer_len;
+  uint8_t raster_intensity;
 
 } block_t;
       
 // Initialize the motion plan subsystem      
 void planner_init();
 
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specifies the raster direction.
+// The value of x_off/y_off specifies the offset (acceleration margin) before the actual raster.
+// raster and raster_len contain the pointer and length of buffer containing 0-255 PWM values for each dot.
+void planner_raster(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity, double x_off, double y_off, double dot_size, uint8_t *raster, uint32_t raster_len);
+
 // Add a new linear movement to the buffer.
 // x, y and z is the signed, absolute target position in millimaters.
 // Feed rate specifies the speed of the motion.
-void planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity);
+block_t *planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity);
 
 // Add a new piercing action, lasing at one spot.
 void planner_dwell(double seconds, uint8_t nominal_laser_intensity);

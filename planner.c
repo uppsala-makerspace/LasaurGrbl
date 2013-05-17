@@ -64,11 +64,35 @@ void planner_init() {
   previous_nominal_speed = 0.0;
 }
 
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specify the raster direction.
+// The value of x_off/y_off specify the offset (acceleration margin) before the actual raster.
+void planner_raster(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity, double x_off, double y_off, double dot_size, uint8_t *raster, uint32_t raster_len) {
+	block_t *block;
 
+	// Move to the starting point. (Assumes we have space before the limits are hit)
+	planner_line(x - x_off, y - y_off, z, feed_rate, 0);
+	planner_line(x , y, z, feed_rate, 0);
+
+	// Etch contiguous dots of the same value.
+	block = planner_line(x + dot_size * raster_len, y, z, feed_rate, nominal_laser_intensity);
+	block->type = TYPE_RASTER_LINE;
+	block->raster_buffer = raster;
+	block->raster_buffer_len = raster_len;
+	block->raster_intensity = nominal_laser_intensity;
+
+	planner_line(x + dot_size * raster_len + x_off, y + y_off, z, feed_rate, 0);
+
+	stepper_synchronize();
+
+	// Move to the starting point. (Assumes we have space before the limits are hit)
+	planner_line(x - x_off, y - y_off, z, feed_rate, 0);
+}
 
 // Add a new linear movement to the buffer. x, y and z is 
 // the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
-void planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity) {    
+block_t *planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity) {    
   // calculate target position in absolute steps
   int32_t target[3];
   target[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
@@ -195,6 +219,8 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
 
   // make sure the stepper interrupt is processing
   stepper_wake_up();
+
+  return block;
 }
 
 

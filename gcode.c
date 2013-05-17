@@ -53,6 +53,18 @@
 #define OFFSET_G55 1
 
 #define BUFFER_LINE_SIZE 80
+// This defines the maximum number of dots in a raster.
+#define RASTER_BUFFER	1024
+struct _raster {
+	double dot_size;
+	double x_off;
+	double y_off;
+	uint8_t appending;
+	uint32_t length;
+	uint8_t buffer[RASTER_BUFFER];
+};
+static struct _raster raster;
+
 char rx_line[BUFFER_LINE_SIZE];
 char *rx_line_cursor;
 
@@ -294,7 +306,9 @@ uint8_t gcode_execute_line(char *line) {
   double unit_converted_value;  
   uint8_t next_action = NEXT_ACTION_NONE;
   double target[3];
+  double vector[3] = {0.0};
   double p = 0.0;
+  double n = -1.0;
   int cs = 0;
   int l = 0;
   bool got_actual_line_command = false;  // as opposed to just e.g. G1 F1200
@@ -309,6 +323,27 @@ uint8_t gcode_execute_line(char *line) {
           case 0: gc.motion_mode = next_action = NEXT_ACTION_SEEK; break;
           case 1: gc.motion_mode = next_action = NEXT_ACTION_FEED; break;
           case 4: next_action = NEXT_ACTION_DWELL; break;
+			case 8:
+				// Special case to append raster data
+				if (line[char_counter] == 'D') {
+					uint32_t len;
+					char_counter++;
+
+					len = strlen(line) - char_counter;
+
+					if (raster.length + len >= RASTER_BUFFER || len > 70)
+					{
+						gc.status_code = GCODE_STATUS_RX_BUFFER_OVERFLOW;
+						stepper_request_stop(gc.status_code);
+					}
+
+					memcpy(&raster.buffer[raster.length], &line[char_counter], len);
+					raster.length += len;
+					return gc.status_code;
+				} else {
+					next_action = NEXT_ACTION_RASTER;
+				}
+				break;
           case 10: next_action = NEXT_ACTION_SET_COORDINATE_OFFSET; break;
           case 20: gc.inches_mode = true; break;
           case 21: gc.inches_mode = false; break;
@@ -360,11 +395,15 @@ uint8_t gcode_execute_line(char *line) {
         }
         break;
       case 'X': case 'Y': case 'Z':
-        if (gc.absolute_mode) {
-          target[letter - 'X'] = unit_converted_value;
-        } else {
-          target[letter - 'X'] += unit_converted_value;
-        }
+		// We don't want to update the target when setting the raster offset.
+		if (next_action != NEXT_ACTION_RASTER) {
+	        if (gc.absolute_mode) {
+	          target[letter - 'X'] = unit_converted_value;
+	        } else {
+	          target[letter - 'X'] += unit_converted_value;
+	        }
+		}
+		vector[letter - 'X'] = unit_converted_value;
         got_actual_line_command = true;
         break;        
       case 'P':  // dwelling seconds or CS selector
@@ -380,6 +419,9 @@ uint8_t gcode_execute_line(char *line) {
       case 'L':  // G10 qualifier 
       l = trunc(value);
         break;
+		case 'N':
+			n = value;
+		break;
     }
   }
   
@@ -404,6 +446,30 @@ uint8_t gcode_execute_line(char *line) {
                       gc.feed_rate, gc.nominal_laser_intensity );                   
       }
       break; 
+	case NEXT_ACTION_RASTER:
+		if (got_actual_line_command) {
+			raster.x_off = vector[X_AXIS];
+			raster.y_off = vector[Y_AXIS];
+		}
+		if (p > 0.0) {
+			raster.dot_size = p;
+		}
+		if (n >= 0.0) {
+			// Here we go...
+			if (raster.length > 0) {
+				planner_raster(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
+						target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
+						target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
+						gc.feed_rate, gc.nominal_laser_intensity, raster.x_off, raster.y_off, raster.dot_size, raster.buffer, raster.length);
+				if (raster.x_off == 0.0)
+					target[X_AXIS] += raster.dot_size;
+				else
+					target[Y_AXIS] += raster.dot_size;
+			}
+			// Reset the buffer.
+			raster.length = 0;
+		}
+		break;
     case NEXT_ACTION_DWELL:
       planner_dwell(p, gc.nominal_laser_intensity);
       break;
@@ -523,16 +589,36 @@ static int next_statement(char *letter, double *double_ptr, char *line, uint8_t 
 // is the indexer pointing to the current character of the line, while double_ptr is 
 // a pointer to the result variable. Returns true when it succeeds
 static int read_double(char *line, uint8_t *char_counter, double *double_ptr) {
-  char *start = line + *char_counter;
-  char *end;
-  
-  *double_ptr = strtod(start, &end);
-  if(end == start) { 
-    return(false); 
-  };
+	char *start = line + *char_counter;
+	char *end;
+	char *search;
+	char mod_char = 0;
 
-  *char_counter = end - line;
-  return(true);
+	// Quick search for any X's (don't want G0X0Y0 interpreting as a hex value!).
+	// The alternative was sscanf, but that adds 15K of code.
+	for (search = line + *char_counter; *search != 0x00; search++)
+	{
+		if (*search == 'X' || *search == 'E') {
+			// Temporarily replace this with string terminator
+			mod_char = *search;
+			*search = 0;
+			break;
+		}
+	}
+
+	*double_ptr = strtod(start, &end);
+	// Revert the string (if needed)
+	if (mod_char != 0)
+		*search = mod_char;
+
+	// Nothing found
+	if (end == start)
+		return (false);
+
+	// Update our char counter
+	*char_counter = end - line;
+
+	return (true);
 }
 
 

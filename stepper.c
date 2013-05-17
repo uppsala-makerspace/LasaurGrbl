@@ -261,7 +261,8 @@ ISR(TIMER1_COMPA_vect) {
       busy = false;
       return;       
     }      
-    if (current_block->type == TYPE_LINE) {  // starting on new line block
+    if (current_block->type == TYPE_LINE
+    	|| current_block->type == TYPE_RASTER_LINE) {  // starting on new line block
       adjusted_rate = current_block->initial_rate;
       acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2; // start halfway, midpoint rule.
       adjust_speed( adjusted_rate ); // initialize cycles_per_step_event
@@ -274,6 +275,14 @@ ISR(TIMER1_COMPA_vect) {
 
   // process current block, populate out_bits (or handle other commands)
   switch (current_block->type) {
+  	case TYPE_RASTER_LINE:
+ 	  raster_index = (step_events_completed * current_block->raster_buffer_len) / current_block->steps_x;
+ 	  intensity = (current_block->raster_buffer[raster_index] == '1')?current_block->raster_intensity:0;
+ 	  if (intensity != current_block->nominal_laser_intensity) {
+ 		  current_block->nominal_laser_intensity = intensity;
+ 		  control_laser_intensity(intensity);
+ 	  }
+ 	  //break;
     case TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
       out_bits = current_block->direction_bits;
@@ -339,7 +348,11 @@ ISR(TIMER1_COMPA_vect) {
         // decelerating
         } else if (step_events_completed >= current_block->decelerate_after) {
           if ( acceleration_tick() ) {  // scheduled speed change
-            adjusted_rate -= current_block->rate_delta;
+		      // Make we catch this going negative (causes lockup)
+        	  if (adjusted_rate > current_block->rate_delta)
+        		  adjusted_rate -= current_block->rate_delta;
+        	  else
+        		  adjusted_rate = 0;
             if (adjusted_rate < current_block->final_rate) {  // overshot
               adjusted_rate = current_block->final_rate;
             }
