@@ -27,6 +27,9 @@
 #define LASAURGRBL_VERSION "13.04"
 //#define DEBUG_IGNORE_SENSORS  // set for debugging
 
+// This defines the maximum number of dots in a raster.
+#define RASTER_BUFFER_SIZE	1024
+
 #define CONFIG_X_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_Y_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_Z_STEPS_PER_MM 157.48 //microsteps/mm
@@ -49,6 +52,9 @@
 #define CONFIG_INVERT_X_AXIS 1  // 0 is regular, 1 inverts the x direction
 #define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
 #define CONFIG_INVERT_Z_AXIS 0  // 0 is regular, 1 inverts the y direction
+
+#define CONFIG_LASER_PWM_FREQ			40000
+#define CONFIG_LASER_PPI_PULSE_MS		2
 
 #define JOY_PORT              	GPIO_PORTF_BASE
 #define JOY_BIT                	0
@@ -102,7 +108,6 @@
 #define LASER_PORT           	GPIO_PORTB_BASE
 #define LASER_BIT        		6
 #define LASER_TIMER				TIMER0_BASE
-#define LASER_PWM_FREQ			40000
 
 #define LASER_EN_PORT         	GPIO_PORTB_BASE
 #define LASER_EN_BIT       		1
@@ -149,6 +154,7 @@
 #define max(a,b) (((a) > (b)) ? (a) : (b))
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 
+#define MM_PER_INCH (25.4)
 
 #endif
 
@@ -169,4 +175,3 @@
 // x = ~x; // toggles ALL the bits in x.
 
 void __delay_us(uint32_t delay);
-

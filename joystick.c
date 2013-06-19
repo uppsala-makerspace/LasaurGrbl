@@ -70,7 +70,8 @@ static void x_handler(void) {
 
     status |= STATUS_CH0_IDLE;
 
-    button_debounce = 0;
+    if (button_debounce > 0)
+    	button_debounce--;
 }
 
 static void y_handler(void) {
@@ -95,7 +96,7 @@ static void button_handler(void) {
 	GPIOPinIntClear(JOY_PORT, JOY_MASK);
 
 	if (button_debounce == 0) {
-		button_debounce = 1;
+		button_debounce = 3;
 
 		// Toggle the cross hair
 		status &= ~STATUS_XHAIR_ON;
@@ -110,12 +111,11 @@ static void button_handler(void) {
 			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
 			task_enable(TASK_SET_OFFSET, 0);
 		}
-
-		// Use this time as the debounce.
-		if (status & STATUS_CH0_IDLE)
-			ADCProcessorTrigger(ADC0_BASE, 0);
-
 	}
+
+	// Use ADC conversion as the debounce timer.
+	if (status & STATUS_CH0_IDLE)
+		ADCProcessorTrigger(ADC0_BASE, 0);
 }
 
 static void joystick_isr(void) {

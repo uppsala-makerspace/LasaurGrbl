@@ -53,7 +53,7 @@
 #include <inc/hw_gpio.h>
 
 #include <driverlib/gpio.h>
-#include "driverlib/rom.h"
+#include <driverlib/rom.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
 
@@ -86,8 +86,9 @@ static uint8_t out_step_bits;     // The next stepping-bits to be output
 static int32_t counter_x,       // Counter variables for the bresenham line tracer
                counter_y,
                counter_z;
-static uint32_t step_events_completed; // The number of step events executed in the current block
-static volatile uint8_t busy;  // true whe stepper ISR is in already running
+static uint32_t step_events_completed;        // The number of step events executed in the current block
+static volatile uint8_t busy;                 // true whe stepper ISR is in already running
+static uint32_t ppi_step_events = 0;    	  // The number of step events executed globally (for PPI)
 
 // Variables used by the trapezoid generation
 static uint32_t cycles_per_step_event;        // The number of machine cycles between each step event
@@ -194,7 +195,7 @@ void stepper_go_idle() {
   current_block = NULL;
   // Disable stepper driver interrupt
   TimerDisable(STEPPING_TIMER, TIMER_A);
-  control_laser_intensity(0);
+  control_laser_intensity(0, 0);
 
   // Turn on Green LED
   GPIOPinWrite(STATUS_PORT, STATUS_MASK, STATUS_MASK ^ STATUS_INVERT);
@@ -295,7 +296,7 @@ void stepper_isr (void) {
     // Pause if we have a (transient) safety issue, will be abrupt and may skip steps...
     if (SENSE_SAFETY) {
     	// Turn off the laser
-    	control_laser_intensity(0);
+    	control_laser_intensity(0, 0);
     	// Make sure that the rate (laser power) will be set when we resume
     	adjusted_rate = 0;
     	busy = false;
@@ -341,11 +342,17 @@ void stepper_isr (void) {
   // process current block, populate out_bits (or handle other commands)
   switch (current_block->block_type) {
   	case BLOCK_TYPE_RASTER_LINE:
- 	  raster_index = (step_events_completed * current_block->raster_buffer_len) / current_block->steps_x;
- 	  intensity = (current_block->raster_buffer[raster_index] == '1')?current_block->raster_intensity:0;
- 	  if (intensity != current_block->nominal_laser_intensity) {
- 		  current_block->nominal_laser_intensity = intensity;
- 		  control_laser_intensity(intensity);
+ 	  raster_index = (step_events_completed * current_block->raster.length) / current_block->step_event_count;
+
+ 	  intensity = 0;
+ 	  if (current_block->raster.invert == 0 && current_block->raster.buffer[raster_index] == '1')
+ 		  intensity = current_block->raster.intensity;
+ 	  else if (current_block->raster.invert != 0 && current_block->raster.buffer[raster_index] == '0')
+ 		  intensity = current_block->raster.intensity;
+
+ 	  if (intensity != current_block->laser_pwm) {
+ 		  current_block->laser_pwm = intensity;
+ 		  control_laser_intensity(intensity, 0);
  	  }
  	  //break;
     case BLOCK_TYPE_LINE:
@@ -388,6 +395,17 @@ void stepper_isr (void) {
       
       step_events_completed++;  // increment step count
       
+      // Send PPI pulse as required.
+      if (current_block->laser_pwm > 0 && current_block->laser_ppi_steps > 0) {
+    	  ppi_step_events++;
+
+    	  if (ppi_step_events % current_block->laser_ppi_steps == 0) {
+    		  // Send a laser pulse
+    		  control_laser_intensity(current_block->laser_pwm, CONFIG_LASER_PPI_PULSE_MS);
+    	  }
+      }
+
+
       // apply stepper invert mask
       out_dir_bits ^= STEP_DIR_INVERT;
 
@@ -527,16 +545,15 @@ static void adjust_speed( uint32_t steps_per_minute ) {
   // This can be called from init, so make sure we don't dereference a NULL block.
   if (current_block != NULL)
   {
-	  // beam dynamics
-	  uint8_t adjusted_intensity = current_block->nominal_laser_intensity *
-								   ((float)steps_per_minute/(float)current_block->nominal_rate);
-	  uint8_t constrained_intensity = max(adjusted_intensity, 0);
-	  control_laser_intensity(constrained_intensity);
+	  if (current_block->laser_ppi_steps == 0) {
+		  // beam dynamics (not using PPI)
+		  uint8_t adjusted_intensity = current_block->laser_pwm *
+									   ((float)steps_per_minute/(float)current_block->nominal_rate);
+		  uint8_t constrained_intensity = max(adjusted_intensity, 0);
+		  control_laser_intensity(constrained_intensity, 0);
+	  }
   }
 }
-
-
-
 
 
 static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_direction, uint32_t microseconds_per_pulse) {

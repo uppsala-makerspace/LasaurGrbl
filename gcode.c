@@ -43,8 +43,6 @@
 #include "temperature.h"
 #include "tasks.h"
 
-#define MM_PER_INCH (25.4)
-
 enum {
 	NEXT_ACTION_NONE = 0,
 	NEXT_ACTION_SEEK,
@@ -59,6 +57,7 @@ enum {
 	NEXT_ACTION_AUX1_ASSIST_ENABLE,
 	NEXT_ACTION_AUX1_ASSIST_DISABLE,
 	NEXT_ACTION_SET_ACCELERATION,
+	NEXT_ACTION_SET_PPI,
 };
 
 #define OFFSET_G54 0
@@ -66,17 +65,7 @@ enum {
 
 #define BUFFER_LINE_SIZE 80
 
-// This defines the maximum number of dots in a raster.
-#define RASTER_BUFFER	1024
-struct _raster {
-	double dot_size;
-	double x_off;
-	double y_off;
-	uint8_t appending;
-	uint32_t length;
-	uint8_t buffer[RASTER_BUFFER];
-};
-static struct _raster raster;
+static uint8_t raster_buffer[RASTER_BUFFER_SIZE];
 
 static char rx_line[BUFFER_LINE_SIZE] = {0};
 static int rx_chars = 0;
@@ -96,8 +85,11 @@ typedef struct {
 	double position[3]; 				// projected position once all scheduled motions will have been executed
 	double offsets[6]; 					// coord system offsets {G54_X,G54_Y,G54_Z,G55_X,G55_Y,G55_Z}
 	uint8_t offselect;            		// currently active offset, 0 -> G54, 1 -> G55
-	uint8_t nominal_laser_intensity;	// 0-255 percentage
+	uint8_t laser_pwm;					// 0-255 percentage
+	uint16_t laser_ppi;					// Laser PPI (Pulses Per Inch)
+	double ppi;							// Pixels per inch
 	double acceleration;			   	// mm/min/min
+	raster_t raster;					// Raster State
 } parser_state_t;
 static parser_state_t gc;
 
@@ -114,7 +106,8 @@ void gcode_init() {
 	gc.seek_rate = CONFIG_DEFAULT_RATE;
 	gc.acceleration = CONFIG_DEFAULT_ACCELERATION;
 	gc.absolute_mode = true;
-	gc.nominal_laser_intensity = 0U;
+	gc.laser_pwm = 0U;
+	gc.laser_ppi = 0U;
 	gc.offselect = OFFSET_G54;
 	// prime G54 cs
 	// refine with "G10 L2 P0 X_ Y_ Z_"
@@ -129,6 +122,8 @@ void gcode_init() {
 	gc.offsets[3 + Z_AXIS] = CONFIG_Z_ORIGIN_OFFSET;
 	position_update_requested = false;
 	line_checksum_ok_already = false;
+
+	gc.raster.buffer = raster_buffer;
 }
 
 uint8_t gcode_process_data(const tUSBBuffer *psBuffer) {
@@ -396,14 +391,14 @@ uint8_t gcode_execute_line(char *line) {
 
 					len = strlen(line) - char_counter;
 
-					if (raster.length + len >= RASTER_BUFFER || len > 70)
+					if (gc.raster.length + len >= RASTER_BUFFER_SIZE || len > 70)
 					{
 						gc.status_code = GCODE_STATUS_RX_BUFFER_OVERFLOW;
 						stepper_request_stop(gc.status_code);
 					}
 
-					memcpy(&raster.buffer[raster.length], &line[char_counter], len);
-					raster.length += len;
+					memcpy(&gc.raster.buffer[gc.raster.length], &line[char_counter], len);
+					gc.raster.length += len;
 					return gc.status_code;
 				} else {
 					next_action = NEXT_ACTION_RASTER;
@@ -443,6 +438,14 @@ uint8_t gcode_execute_line(char *line) {
 			break;
 		case 'M':
 			switch (int_value) {
+			case 3:
+			case 4:
+				next_action = NEXT_ACTION_SET_PPI;
+				gc.laser_ppi = 0;
+				break;
+			case 5:
+				gc.laser_ppi = 0;
+				break;
 			case 17:
 				stepper_wake_up();
 				break;
@@ -547,8 +550,10 @@ uint8_t gcode_execute_line(char *line) {
 			case 'S':
 				if (next_action == NEXT_ACTION_SET_ACCELERATION)
 					gc.acceleration = value * 3600;
+				else if (next_action == NEXT_ACTION_SET_PPI)
+					gc.laser_ppi = value;
 				else
-					gc.nominal_laser_intensity = value;
+					gc.laser_pwm = value;
 				break;
 			case 'L':  // G10 qualifier
 				l = trunc(value);
@@ -571,7 +576,7 @@ uint8_t gcode_execute_line(char *line) {
 			planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 					target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 					target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-					gc.seek_rate, gc.acceleration, 0);
+					gc.seek_rate, gc.acceleration, 0, 0);
 		}
 		break;
 	case NEXT_ACTION_FEED:
@@ -579,35 +584,44 @@ uint8_t gcode_execute_line(char *line) {
 			planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 					target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 					target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-					gc.feed_rate, gc.acceleration, gc.nominal_laser_intensity);
+					gc.feed_rate, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
 		}
 		break;
 	case NEXT_ACTION_RASTER:
 		if (got_actual_line_command) {
-			raster.x_off = vector[X_AXIS];
-			raster.y_off = vector[Y_AXIS];
+			gc.raster.x_off = vector[X_AXIS];
+			gc.raster.y_off = vector[Y_AXIS];
+			if (vector[Z_AXIS] < 0) {
+				gc.raster.invert = 1;
+			} else {
+				gc.raster.invert = 0;
+			}
+
 		}
 		if (p > 0.0) {
-			raster.dot_size = p;
+			gc.raster.dot_size = p;
 		}
 		if (n >= 0.0) {
 			// Here we go...
-			if (raster.length > 0) {
+			if (gc.raster.length > 0) {
 				planner_raster(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 						target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 						target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-						gc.feed_rate, gc.acceleration, gc.nominal_laser_intensity, raster.x_off, raster.y_off, raster.dot_size, raster.buffer, raster.length);
-				if (raster.x_off == 0.0)
-					target[X_AXIS] += raster.dot_size;
-				else
-					target[Y_AXIS] += raster.dot_size;
+						gc.feed_rate, gc.acceleration, gc.laser_pwm, &gc.raster);
+
+				if (gc.raster.x_off != 0.0)
+					target[Y_AXIS] += gc.raster.dot_size;
+				else if (gc.raster.y_off != 0.0)
+					target[X_AXIS] -= gc.raster.dot_size;
 			}
+
 			// Reset the buffer.
-			raster.length = 0;
+			gc.raster.length = 0;
+			gc.raster.buffer = raster_buffer;
 		}
 		break;
 	case NEXT_ACTION_DWELL:
-		planner_dwell(p, gc.nominal_laser_intensity);
+		planner_dwell(p, gc.laser_pwm);
 		break;
 	case NEXT_ACTION_HOMING_CYCLE:
 		clear_vector(target);
@@ -687,7 +701,7 @@ void gcode_manual_move(double x, double y, double rate) {
 	planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 				 target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 				 target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-				 rate, gc.acceleration, 0);
+				 rate, gc.acceleration, 0, 0);
 
 	memcpy(gc.position, target, sizeof(target));
 }
@@ -719,7 +733,7 @@ void gcode_do_home(void) {
 	planner_line(gc.offsets[3 * gc.offselect + X_AXIS],
 			gc.offsets[3 * gc.offselect + Y_AXIS],
 			gc.offsets[3 * gc.offselect + Z_AXIS], gc.seek_rate,
-			gc.acceleration, 0);
+			gc.acceleration, 0, 0);
 }
 
 // Parses the next statement and leaves the counter on the first character following

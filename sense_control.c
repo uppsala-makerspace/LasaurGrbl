@@ -22,10 +22,12 @@
 #include <inc/hw_memmap.h>
 #include <inc/hw_timer.h>
 #include <inc/hw_gpio.h>
+#include <inc/hw_ints.h>
 
 #include <driverlib/gpio.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
+#include <driverlib/rom.h>
 
 #include "config.h"
 
@@ -35,6 +37,18 @@
 
 static uint32_t laser_cycles;
 static uint32_t laser_divider;
+
+static uint32_t ppi_cycles;
+static uint32_t ppi_divider;
+
+// Laser pulse one-shot timer.
+static void laser_isr(void) {
+	TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
+
+	// Turn off the Laser
+	GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
+}
+
 
 void sense_init() {
 	//// chiller, door, (power)
@@ -58,25 +72,37 @@ void control_init() {
 	GPIOPinTypeGPIOOutput(LASER_EN_PORT, LASER_EN_MASK);
 	GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
 
-	// set refresh rate
-	laser_cycles = SysCtlClockGet() / LASER_PWM_FREQ; /*Hz*/
+	// Configure timer
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+	TimerConfigure(LASER_TIMER, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_PWM|TIMER_CFG_B_ONE_SHOT);
+	TimerControlLevel(LASER_TIMER, TIMER_A, 1);
+
+	// PPI = PWMfreq/(feedrate/MM_PER_INCH/60)
+
+	// Set PPI Pulse timer
+	ppi_cycles = SysCtlClockGet() / 1000 * CONFIG_LASER_PPI_PULSE_MS;
+	ppi_divider = ppi_cycles >> 16;
+	ppi_cycles /= (ppi_divider + 1);
+	TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
+	TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
+
+	// Setup ISR
+	TimerIntRegister(LASER_TIMER, TIMER_B, laser_isr);
+	TimerIntEnable(LASER_TIMER, TIMER_B);
+	ROM_IntEnable(INT_TIMER0B);
+
+	// Set PWM refresh rate
+	laser_cycles = SysCtlClockGet() / CONFIG_LASER_PWM_FREQ; /*Hz*/
 	laser_divider = laser_cycles >> 16;
 	laser_cycles /= (laser_divider + 1);
 
-	// Configure timer
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-	TimerConfigure(LASER_TIMER, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_PWM|TIMER_CFG_B_PWM);
-	TimerControlLevel(LASER_TIMER, TIMER_BOTH, 1);
-
-	// PPI = PWMfreq/(feedrate/25.4/60)
-
-	// Setup Timer
-	TimerPrescaleSet(LASER_TIMER, TIMER_BOTH, laser_divider);
+	// Setup Laser PWM Timer
+	TimerPrescaleSet(LASER_TIMER, TIMER_A, laser_divider);
 	TimerLoadSet(LASER_TIMER, TIMER_A, laser_cycles);
 	TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
 
 	// Set default value
-	control_laser_intensity(0);
+	control_laser_intensity(0, 0);
 
 	TimerEnable(LASER_TIMER, TIMER_A);
 
@@ -90,14 +116,26 @@ void control_init() {
 	control_aux1_assist(false);
 }
 
+void control_laser_intensity(uint8_t intensity, uint8_t pulse_length) {
 
-void control_laser_intensity(uint8_t intensity) {
+	// Set the PWM (Intensity).
 	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles - (laser_cycles * intensity / 255));
 
-	if (intensity > 5)
-		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
-	else
+	// If required, set the PPI timer.
+	if (pulse_length > 0) {
+		// Schedule a timer to turn off the laser
+		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
+		TimerEnable(LASER_TIMER, TIMER_B);
+	}
+	else {
+		TimerDisable(LASER_TIMER, TIMER_B);
+	}
+
+	// Now control the beam enable.
+	if (intensity == 0)
 		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
+	else
+		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
 }
 
 

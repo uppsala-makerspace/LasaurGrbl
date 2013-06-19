@@ -27,13 +27,18 @@
 
 
 // The number of linear motions that can be in the plan at any give time
-#define BLOCK_BUFFER_SIZE 32  // do not make bigger than uint8_t
+#define BLOCK_BUFFER_SIZE 48  // do not make bigger than uint8_t
+#define NUM_RASTERS	4
 
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // ring buffer for motion instructions
 static volatile uint8_t block_buffer_head;       // index of the next block to be pushed
 static volatile uint8_t block_buffer_tail;       // index of the block to process now
 static volatile uint8_t block_buffers_used;
 
+// Ring buffer used for raster data.
+static uint8_t raster_buffer[NUM_RASTERS][RASTER_BUFFER_SIZE];
+static volatile uint8_t raster_buffer_next = 0;
+static volatile uint8_t raster_buffer_count = 0;
 
 static int32_t position[3];             // The current position of the tool in absolute steps
 static volatile bool position_update_requested;  // make sure to update to stepper position on next occasion
@@ -52,48 +57,12 @@ static void reduce_entry_speed_forward(block_t *previous, block_t *current);
 static void planner_recalculate();
 
 
-
-void planner_init() {
-  block_buffer_head = 0;
-  block_buffer_tail = 0;
-  clear_vector(position);
-  planner_set_position( CONFIG_X_ORIGIN_OFFSET, 
-                        CONFIG_Y_ORIGIN_OFFSET, 
-                        CONFIG_Z_ORIGIN_OFFSET );  
-  position_update_requested = false;
-  clear_vector_double(previous_unit_vec);
-  previous_nominal_speed = 0.0;
-}
-
-// Process a raster.
-// Rasters can be +/- in the x or y directions (not z).
-// The sign of x_off/y_off specify the raster direction.
-// The value of x_off/y_off specify the offset (acceleration margin) before the actual raster.
-void planner_raster(double x, double y, double z, double feed_rate, double acceleration, uint8_t nominal_laser_intensity, double x_off, double y_off, double dot_size, uint8_t *raster, uint32_t raster_len) {
-	block_t *block;
-
-	// Move to the starting point. (Assumes we have space before the limits are hit)
-	planner_line(x - x_off, y - y_off, z, feed_rate, acceleration, 0);
-	planner_line(x , y, z, feed_rate, acceleration, 0);
-
-	// Etch contiguous dots of the same value.
-	block = planner_line(x + dot_size * raster_len, y, z, feed_rate, acceleration, nominal_laser_intensity);
-	block->block_type = BLOCK_TYPE_RASTER_LINE;
-	block->raster_buffer = raster;
-	block->raster_buffer_len = raster_len;
-	block->raster_intensity = nominal_laser_intensity;
-
-	planner_line(x + dot_size * raster_len + x_off, y + y_off, z, feed_rate, acceleration, 0);
-
-	stepper_synchronize();
-
-	// Move to the starting point. (Assumes we have space before the limits are hit)
-	planner_line(x - x_off, y - y_off, z, feed_rate, acceleration, 0);
-}
-
 // Add a new linear movement to the buffer. x, y and z is 
 // the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
-block_t *planner_line(double x, double y, double z, double feed_rate, double acceleration, uint8_t nominal_laser_intensity) {
+static void planner_movement(double x, double y, double z,
+					  double feed_rate, double acceleration,
+					  uint8_t nominal_laser_intensity, uint16_t ppi,
+					  raster_t *raster) {
   // calculate target position in absolute steps
   int32_t target[3];
 
@@ -128,11 +97,23 @@ block_t *planner_line(double x, double y, double z, double feed_rate, double acc
   // prepare to set up new block
   block_t *block = &block_buffer[block_buffer_head];
   
-  // set block type to line command
-  block->block_type = BLOCK_TYPE_LINE;
+  // Setup the block type
+  if (raster == NULL) {
+	  block->block_type = BLOCK_TYPE_LINE;
+  } else {
+	  block->block_type = BLOCK_TYPE_RASTER_LINE;
+	  memcpy(&block->raster, raster, sizeof(raster_t));
+  }
+
 
   // set nominal laser intensity
-  block->nominal_laser_intensity = nominal_laser_intensity;
+  block->laser_pwm = nominal_laser_intensity;
+
+  // Calculate the ppi steps
+  block->laser_ppi_steps = 0;
+  if (ppi > 0) {
+	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
+  }
 
   // compute direction bits for this block
   block->direction_bits = 0;
@@ -145,7 +126,7 @@ block_t *planner_line(double x, double y, double z, double feed_rate, double acc
   block->steps_y = labs(target[Y_AXIS]-position[Y_AXIS]);
   block->steps_z = labs(target[Z_AXIS]-position[Z_AXIS]);
   block->step_event_count = max(block->steps_x, max(block->steps_y, block->steps_z));
-  if (block->step_event_count == 0) { return 0; };  // bail if this is a zero-length block
+  if (block->step_event_count == 0) { return; };  // bail if this is a zero-length block
   
   // compute path vector in terms of absolute step target and current positions
   double delta_mm[3];
@@ -232,8 +213,111 @@ block_t *planner_line(double x, double y, double z, double feed_rate, double acc
 
   // make sure the stepper interrupt is processing
   stepper_wake_up();
+}
 
-  return block;
+void planner_init() {
+  block_buffer_head = 0;
+  block_buffer_tail = 0;
+  raster_buffer_next = 0;
+  raster_buffer_count = 0;
+  clear_vector(position);
+  planner_set_position( CONFIG_X_ORIGIN_OFFSET,
+                        CONFIG_Y_ORIGIN_OFFSET,
+                        CONFIG_Z_ORIGIN_OFFSET );
+  position_update_requested = false;
+  clear_vector_double(previous_unit_vec);
+  previous_nominal_speed = 0.0;
+}
+
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specify the raster direction.
+// The value of x_off/y_off specify the offset (acceleration margin) before the actual raster.
+void planner_raster(double x, double y, double z,
+		            double feed_rate, double acceleration,
+		            uint8_t nominal_laser_intensity,
+		            raster_t *raster) {
+	double raster_len = 0;
+	double head = 0;
+
+	/*
+	uint8_t *ptr = raster->buffer;
+	uint32_t count = raster->length;
+
+	// Truncate the start blank parts.
+	for (; *ptr == '0' && count > 0; ptr++, count--, head += raster->dot_size);
+	raster->buffer = ptr;
+	raster->length = count;
+
+	if (raster->length == 0)
+		return;
+
+	// Truncate the end blank parts.
+	ptr = raster->buffer + count - 1;
+	for (; *ptr == '0' && count > 1; ptr--, count--);
+	raster->length = count;
+*/
+	raster_len = raster->dot_size * raster->length;
+
+	// Work out the starting point. A negative offset will flip/mirror the raster in that direction.
+	// Move to the starting point. (Assumes we have space before the limits are hit)
+	if (raster->x_off > 0) {
+		x += head;
+		planner_movement(x - raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
+	} else if (raster->x_off < 0) {
+		x += head;
+		planner_movement(x + raster_len - raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, NULL);
+	} else if (raster->y_off > 0) {
+		y += head;
+		planner_movement(x, y - raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
+	} else if (raster->y_off < 0) {
+		y += head;
+		planner_movement(x, y + raster_len - raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, NULL);
+	}
+
+	// Copy the data into our buffer
+	// If there isn't space, sit and spin here waiting.
+	while (1) {
+		if (raster_buffer_count < NUM_RASTERS) {
+			raster_buffer_count++;
+			memcpy(raster_buffer[raster_buffer_next], raster->buffer, raster->length);
+			raster->buffer = raster_buffer[raster_buffer_next];
+			raster_buffer_next++;
+			if (raster_buffer_next == NUM_RASTERS)
+				raster_buffer_next = 0;
+			break;
+		}
+	}
+
+	// Etch contiguous dots of the same value.
+	raster->intensity = nominal_laser_intensity;
+
+	if (raster->x_off > 0) {
+		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, raster);
+		planner_movement(x + raster_len + raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+	} else if (raster->x_off < 0) {
+		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
+		planner_movement(x + raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+	} else if (raster->y_off > 0) {
+		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, raster);
+		planner_movement(x, y + raster_len + raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+	} else if (raster->y_off < 0) {
+		y += head;
+		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
+		planner_movement(x, y + raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+	}
+}
+
+// Add a new linear movement to the buffer. x, y and z is
+// the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
+void planner_line(double x, double y, double z,
+		          double feed_rate, double acceleration,
+		          uint8_t laser_pwm, uint16_t ppi) {
+	planner_movement(x, y, z, feed_rate, acceleration, laser_pwm, ppi, NULL);
 }
 
 
@@ -295,6 +379,9 @@ block_t *planner_get_current_block() {
 
 void planner_discard_current_block() {
   if (block_buffer_head != block_buffer_tail) {
+	if (block_buffer[block_buffer_tail].block_type == BLOCK_TYPE_RASTER_LINE) {
+		raster_buffer_count--;
+	}
     block_buffer_tail = next_block_index( block_buffer_tail );
   }
 }
@@ -303,6 +390,9 @@ void planner_reset_block_buffer() {
   block_buffer_head = 0;
   block_buffer_tail = 0;
   block_buffers_used = 0;
+
+  raster_buffer_count = 0;
+  raster_buffer_next = 0;
 }
 
 

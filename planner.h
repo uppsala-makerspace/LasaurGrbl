@@ -35,6 +35,21 @@ typedef enum {
 	BLOCK_TYPE_AUX1_ASSIST_DISABLE,
 } BLOCK_TYPE;
 
+// Raster structure, used by gcode, planner and stepper.
+typedef struct _raster {
+	uint8_t *buffer;		// Raster data buffer
+	uint32_t length;
+
+	uint8_t intensity;
+	uint8_t invert;
+
+	double dot_size;
+	double x;
+	double y;
+	double x_off;
+	double y_off;
+} raster_t;
+
 #define planner_control_air_assist_enable() planner_command(BLOCK_TYPE_AIR_ASSIST_ENABLE)
 #define planner_control_air_assist_disable() planner_command(BLOCK_TYPE_AIR_ASSIST_DISABLE)
 #define planner_control_aux1_assist_enable() planner_command(BLOCK_TYPE_AUX1_ASSIST_ENABLE)
@@ -54,7 +69,8 @@ typedef struct {
   double entry_speed;                 // Entry speed at previous-current junction in mm/min
   double vmax_junction;               // max junction speed (mm/min) based on angle between segments, accel and deviation settings
   double millimeters;                 // The total travel of this block in mm
-  uint8_t nominal_laser_intensity;    // 0-255 is 0-100% percentage
+  uint8_t laser_pwm;    			  // 0-255 is 0-100% percentage
+  uint32_t laser_ppi_steps;           // Number of steps per pulse (calculated from ppi)
   bool recalculate_flag;              // Planner flag to recalculate trapezoids on entry junction
   bool nominal_length_flag;           // Planner flag for nominal speed always reached
   // Settings for the trapezoid generator
@@ -64,12 +80,9 @@ typedef struct {
   uint32_t accelerate_until;          // The index of the step event on which to stop acceleration
   uint32_t decelerate_after;          // The index of the step event on which to start decelerating
   double acceleration;          	  // Acceleration speed (mm/min/min)
-  uint8_t *raster_buffer;	          // Raster data buffer
-  uint32_t raster_buffer_len;
-  uint8_t raster_intensity;
-
+  raster_t raster;
 } block_t;
-      
+
 // Initialize the motion plan subsystem      
 void planner_init();
 
@@ -78,12 +91,17 @@ void planner_init();
 // The sign of x_off/y_off specifies the raster direction.
 // The value of x_off/y_off specifies the offset (acceleration margin) before the actual raster.
 // raster and raster_len contain the pointer and length of buffer containing 0-255 PWM values for each dot.
-void planner_raster(double x, double y, double z, double feed_rate, double acceleration, uint8_t nominal_laser_intensity, double x_off, double y_off, double dot_size, uint8_t *raster, uint32_t raster_len);
+void planner_raster(double x, double y, double z,
+		            double feed_rate, double acceleration,
+		            uint8_t nominal_laser_intensity,
+		            raster_t *raster);
 
 // Add a new linear movement to the buffer.
 // x, y and z is the signed, absolute target position in millimaters.
 // Feed rate specifies the speed of the motion.
-block_t *planner_line(double x, double y, double z, double feed_rate, double acceleration, uint8_t nominal_laser_intensity);
+void planner_line(double x, double y, double z,
+		          double feed_rate, double acceleration,
+		          uint8_t laser_pwm, uint16_t laser_ppi);
 
 // Add a new piercing action, lasing at one spot.
 void planner_dwell(double seconds, uint8_t nominal_laser_intensity);
