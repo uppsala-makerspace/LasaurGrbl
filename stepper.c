@@ -287,7 +287,7 @@ void stepper_isr (void) {
 
   #ifndef DEBUG_IGNORE_SENSORS
 	// stop program when any limit is hit or the e-stop turned the power off
-	if (SENSE_LIMITS) {
+	if (SENSE_LIMITS && SENSE_LIMITS) {
 		stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
 		busy = false;
 		return;
@@ -308,13 +308,13 @@ void stepper_isr (void) {
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
 	GPIOPinWrite(STEP_PORT, STEP_MASK, out_step_bits);
 	out_step_bits = 0;
-	pulse_active = 1;
 	// prime for reset pulse in CONFIG_PULSE_MICROSECONDS
 	//set period
 
-	TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
-	TimerLoadSet(STEPPING_TIMER, TIMER_B, (CONFIG_PULSE_MICROSECONDS - 3) * CYCLES_PER_MICROSECOND);
-	TimerEnable(STEPPING_TIMER, TIMER_B);
+	//pulse_active = 1;
+	//TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
+	//TimerLoadSet(STEPPING_TIMER, TIMER_B, (CONFIG_PULSE_MICROSECONDS - 3) * CYCLES_PER_MICROSECOND);
+	//TimerEnable(STEPPING_TIMER, TIMER_B);
 
 
   // If there is no current block, attempt to pop one from the buffer
@@ -482,7 +482,7 @@ void stepper_isr (void) {
       break;    
   }
 
-  //GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
+  GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
   busy = false;
 }
 
@@ -539,7 +539,7 @@ static void adjust_speed( uint32_t steps_per_minute ) {
 
   if (cycles_per_step_event == 0)
   {
-	  stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
+	  stepper_request_stop(GCODE_STATUS_BAD_NUMBER_FORMAT);
   }
 
   // This can be called from init, so make sure we don't dereference a NULL block.
@@ -561,9 +561,9 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
   uint32_t step_delay = microseconds_per_pulse - CONFIG_PULSE_MICROSECONDS;
   uint8_t out_dir_bits = STEP_DIR_MASK;
   uint8_t limit_bits;
-  uint8_t x_overshoot_count = 12;
-  uint8_t y_overshoot_count = 12;
-  uint8_t z_overshoot_count = 12;
+  uint8_t x_overshoot_count = 24;
+  uint8_t y_overshoot_count = 24;
+  uint8_t z_overshoot_count = 24;
 
   if (x_axis) { out_step_bits |= (1<<STEP_X_BIT); }
   if (y_axis) { out_step_bits |= (1<<STEP_Y_BIT); }
@@ -581,12 +581,16 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
   
   for(;;) {
-    limit_bits = GPIOPinRead(LIMIT_PORT, LIMIT_MASK);
+
+	limit_bits = (SENSE_X_LIMIT)?0x01:0;
+	limit_bits |= (SENSE_Y_LIMIT)?0x02:0;
+	limit_bits |= (SENSE_Z_LIMIT)?0x04:0;
+
     if (reverse_direction) {         
       // Invert limit_bits if this is a reverse homing_cycle
-      limit_bits ^= LIMIT_MASK;
+      limit_bits ^= 0x07;
     }
-    if (x_axis && !(limit_bits & (1<<X_LIMIT_BIT))) {
+    if (x_axis && (limit_bits & 0x01)) {
       if(x_overshoot_count == 0) {
         x_axis = false;
         out_step_bits ^= (1<<STEP_X_BIT);
@@ -594,7 +598,7 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
         x_overshoot_count--;
       }     
     } 
-    if (y_axis && !(limit_bits & (1<<Y_LIMIT_BIT))) {
+    if (y_axis && (limit_bits & 0x02)) {
       if(y_overshoot_count == 0) {
         y_axis = false;
         out_step_bits ^= (1<<STEP_Y_BIT);
@@ -602,7 +606,7 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
         y_overshoot_count--;
       }        
     }
-    if (z_axis && !(limit_bits & (1<<Z_LIMIT_BIT))) {
+    if (z_axis && (limit_bits & 0x04)) {
       if(z_overshoot_count == 0) {
         z_axis = false;
         out_step_bits ^= (1<<STEP_Z_BIT);
@@ -625,11 +629,11 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
 }
 
 static void approach_limit_switch(bool x, bool y, bool z) {
-  homing_cycle(x, y, z, false, 50);
+	homing_cycle(x, y, z, false, 50);
 }
 
 static void leave_limit_switch(bool x, bool y, bool z) {
-  homing_cycle(x, y, z, true, 50);
+	homing_cycle(x, y, z, true, 50);
 }
 
 void stepper_homing_cycle() {
