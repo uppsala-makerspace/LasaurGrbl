@@ -35,8 +35,8 @@
 #define CONFIG_Z_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_PULSE_MICROSECONDS 10
 #define CONFIG_DEFAULT_RATE 8000.0
-#define CONFIG_MAX_FEEDRATE 20000.0 // in millimeters per minute
-#define CONFIG_MAX_SEEKRATE 20000.0
+#define CONFIG_MAX_FEEDRATE 35000.0 // in millimeters per minute
+#define CONFIG_MAX_SEEKRATE 35000.0
 #define CONFIG_DEFAULT_ACCELERATION 8000000.0 // mm/min^2, typically 1000000-8000000, divide by (60*60) to get mm/sec^2
 #define CONFIG_JUNCTION_DEVIATION 0.006 // mm
 #define CONFIG_X_ORIGIN_OFFSET 5.0  // mm, x-offset of table origin from physical home
@@ -76,8 +76,8 @@
 #define ASSIST_MASK				(1 << AIR_ASSIST_BIT) | (1<< AUX1_ASSIST_BIT)
   
 #define LIMIT_PORT              GPIO_PORTC_BASE
-#define X_LIMIT_BIT             5
-#define Y_LIMIT_BIT             4
+#define X_LIMIT_BIT             4
+#define Y_LIMIT_BIT             5
 #define Z_LIMIT_BIT             6
 #define E_LIMIT_BIT             7
 #define LIMIT_MASK 				((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<E_LIMIT_BIT))
