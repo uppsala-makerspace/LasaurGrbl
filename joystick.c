@@ -48,10 +48,9 @@ static unsigned long joystick_x[1] = {0};
 static unsigned long joystick_y[1] = {0};
 static unsigned long joystick_center[2] = {0};
 static unsigned long status = STATUS_CH0_IDLE | STATUS_CH1_IDLE;
+static uint8_t enabled = 0;
 
 static struct task_manual_move_data task_data = {0.0};
-
-static uint8_t button_debounce = 0;
 
 static void x_handler(void) {
     //
@@ -69,9 +68,6 @@ static void x_handler(void) {
     	joystick_center[0] = joystick_x[0];
 
     status |= STATUS_CH0_IDLE;
-
-    if (button_debounce > 0)
-    	button_debounce--;
 }
 
 static void y_handler(void) {
@@ -95,27 +91,17 @@ static void y_handler(void) {
 static void button_handler(void) {
 	GPIOPinIntClear(JOY_PORT, JOY_MASK);
 
-	if (button_debounce == 0) {
-		button_debounce = 3;
-
-		// Toggle the cross hair
-		status &= ~STATUS_XHAIR_ON;
-		if (GPIOPinRead(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT)) > 0)
-			status |= STATUS_XHAIR_ON;
-
-		status ^= STATUS_XHAIR_ON;
-
-		if (status & STATUS_XHAIR_ON) {
-			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), (1<< AUX1_ASSIST_BIT));
-		} else {
-			GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
-			task_enable(TASK_SET_OFFSET, 0);
-		}
+	if (GPIOPinRead(JOY_PORT, JOY_MASK) > 0)
+	{
+		enabled = 0;
+		GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
+		task_enable(TASK_SET_OFFSET, 0);
 	}
-
-	// Use ADC conversion as the debounce timer.
-	if (status & STATUS_CH0_IDLE)
-		ADCProcessorTrigger(ADC0_BASE, 0);
+	else
+	{
+		enabled = 1;
+		GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), (1<< AUX1_ASSIST_BIT));
+	}
 }
 
 static void joystick_isr(void) {
@@ -123,7 +109,7 @@ static void joystick_isr(void) {
 	TimerIntClear(JOY_TIMER, TIMER_TIMA_TIMEOUT);
 
 	// Only allow the joystick when AUX1 (Crosshair) is enabled
-	if (GPIOPinRead(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT)) > 0) {
+	if (enabled) {
 
 		unsigned long x = joystick_x[0];
 		unsigned long y = joystick_y[0];
@@ -173,7 +159,7 @@ void init_joystick(void) {
 	// Register Joystick button isr
 	GPIOPinTypeGPIOInput(JOY_PORT, JOY_MASK);
 	GPIOPadConfigSet(JOY_PORT, JOY_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
-	GPIOIntTypeSet(JOY_PORT, JOY_MASK, GPIO_FALLING_EDGE);
+	GPIOIntTypeSet(JOY_PORT, JOY_MASK, GPIO_BOTH_EDGES);
 	GPIOPortIntRegister(JOY_PORT, button_handler);
 	GPIOPinIntEnable(JOY_PORT, JOY_MASK);
 
