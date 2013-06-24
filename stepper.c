@@ -112,7 +112,6 @@ static uint32_t config_step_timer(uint32_t cycles);
 void pulse_isr(void);
 void stepper_isr(void);
 
-
 // Initialize and start the stepper motor subsystem
 void stepper_init() {  
 	// Configure directions of interface pins
@@ -195,7 +194,7 @@ void stepper_go_idle() {
   current_block = NULL;
   // Disable stepper driver interrupt
   TimerDisable(STEPPING_TIMER, TIMER_A);
-  control_laser_intensity(0, 0);
+  control_laser(0, 0);
 
   // Turn on Green LED
   GPIOPinWrite(STATUS_PORT, STATUS_MASK, STATUS_MASK ^ STATUS_INVERT);
@@ -296,7 +295,7 @@ void stepper_isr (void) {
     // Pause if we have a (transient) safety issue, will be abrupt and may skip steps...
     if (SENSE_SAFETY) {
     	// Turn off the laser
-    	control_laser_intensity(0, 0);
+    	control_laser(0, 0);
     	// Make sure that the rate (laser power) will be set when we resume
     	adjusted_rate = 0;
     	busy = false;
@@ -352,7 +351,8 @@ void stepper_isr (void) {
 
  	  if (intensity != current_block->laser_pwm) {
  		  current_block->laser_pwm = intensity;
- 		  control_laser_intensity(intensity, 0);
+ 		  control_laser_intensity(intensity);
+ 		  control_laser(intensity, 0);
  	  }
  	  //break;
     case BLOCK_TYPE_LINE:
@@ -401,7 +401,7 @@ void stepper_isr (void) {
 
     	  if (ppi_step_events % current_block->laser_ppi_steps == 0) {
     		  // Send a laser pulse
-    		  control_laser_intensity(current_block->laser_pwm, CONFIG_LASER_PPI_PULSE_MS);
+    		  control_laser(1, CONFIG_LASER_PPI_PULSE_MS);
     	  }
       }
 
@@ -539,19 +539,22 @@ static void adjust_speed( uint32_t steps_per_minute ) {
 
   if (cycles_per_step_event == 0)
   {
+	  control_laser(0, 0);
 	  stepper_request_stop(GCODE_STATUS_BAD_NUMBER_FORMAT);
   }
 
   // This can be called from init, so make sure we don't dereference a NULL block.
   if (current_block != NULL)
   {
+	  uint8_t constrained_intensity = current_block->laser_pwm;
 	  if (current_block->laser_ppi_steps == 0) {
 		  // beam dynamics (not using PPI)
 		  uint8_t adjusted_intensity = current_block->laser_pwm *
 									   ((float)steps_per_minute/(float)current_block->nominal_rate);
-		  uint8_t constrained_intensity = max(adjusted_intensity, 0);
-		  control_laser_intensity(constrained_intensity, 0);
+		  constrained_intensity = max(adjusted_intensity, 0);
+		  control_laser(constrained_intensity, 0);
 	  }
+	  control_laser_intensity(constrained_intensity);
   }
 }
 

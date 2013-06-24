@@ -548,12 +548,16 @@ uint8_t gcode_execute_line(char *line) {
 				}
 				break;
 			case 'S':
-				if (next_action == NEXT_ACTION_SET_ACCELERATION)
+				if (next_action == NEXT_ACTION_SET_ACCELERATION) {
 					gc.acceleration = value * 3600;
-				else if (next_action == NEXT_ACTION_SET_PPI)
+				}
+				else if (next_action == NEXT_ACTION_SET_PPI) {
 					gc.laser_ppi = value;
-				else
+				}
+				else {
 					gc.laser_pwm = value;
+					control_laser_intensity(gc.laser_pwm);
+				}
 				break;
 			case 'L':  // G10 qualifier
 				l = trunc(value);
@@ -772,7 +776,7 @@ static int read_double(char *line, uint8_t *char_counter, double *double_ptr) {
 	// The alternative was sscanf, but that adds 15K of code.
 	for (search = line + *char_counter; *search != 0x00; search++)
 	{
-		if (*search == 'X' || *search == 'E') {
+		if (*search == 'X' || *search == 'Y' || *search == 'Z' || *search == 'E') {
 			// Temporarily replace this with string terminator
 			mod_char = *search;
 			*search = 0;

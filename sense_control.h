@@ -32,11 +32,12 @@ void sense_init();
 // invert door, remove power, add z_limits
 //#define SENSE_LIMITS (SENSE_X_LIMIT || SENSE_Y_LIMIT || SENSE_Z_LIMIT || SENSE_E_LIMIT)
 #define SENSE_LIMITS (SENSE_X_LIMIT || SENSE_Y_LIMIT)
-#define SENSE_SAFETY (SENSE_CHILLER_OFF || SENSE_DOOR_OPEN)
+#define SENSE_SAFETY (/*SENSE_CHILLER_OFF ||*/ SENSE_DOOR_OPEN)
 
 void control_init();
 
-void control_laser_intensity(uint8_t intensity, uint8_t pulse_length);  //0-255 is 0-100%
+void control_laser_intensity(uint8_t intensity);  //0-255 is 0-100%
+void control_laser(uint8_t on_off, uint8_t pulse_length);
 
 void control_air_assist(bool enable);
 void control_aux1_assist(bool enable);

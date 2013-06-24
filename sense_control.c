@@ -102,7 +102,8 @@ void control_init() {
 	TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
 
 	// Set default value
-	control_laser_intensity(0, 0);
+	control_laser_intensity(0);
+	control_laser(0, 0);
 
 	TimerEnable(LASER_TIMER, TIMER_A);
 
@@ -116,11 +117,13 @@ void control_init() {
 	control_aux1_assist(false);
 }
 
-void control_laser_intensity(uint8_t intensity, uint8_t pulse_length) {
-
+void control_laser_intensity(uint8_t intensity) {
 	// Set the PWM (Intensity).
+	if (intensity == 0) intensity = 1;
 	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles - (laser_cycles * intensity / 255));
+}
 
+void control_laser(uint8_t on_off, uint8_t pulse_length) {
 	// If required, set the PPI timer.
 	if (pulse_length > 0) {
 		// Schedule a timer to turn off the laser
@@ -132,7 +135,7 @@ void control_laser_intensity(uint8_t intensity, uint8_t pulse_length) {
 	}
 
 	// Now control the beam enable.
-	if (intensity == 0)
+	if (on_off == 0)
 		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
 	else
 		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
