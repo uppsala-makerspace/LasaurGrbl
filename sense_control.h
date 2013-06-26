@@ -38,6 +38,7 @@ void control_init();
 
 void control_laser_intensity(uint8_t intensity);  //0-255 is 0-100%
 void control_laser(uint8_t on_off, uint8_t pulse_length);
+uint8_t control_get_intensity(void);
 
 void control_air_assist(bool enable);
 void control_aux1_assist(bool enable);

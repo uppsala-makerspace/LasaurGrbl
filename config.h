@@ -27,6 +27,9 @@
 #define LASAURGRBL_VERSION "13.04"
 //#define DEBUG_IGNORE_SENSORS  // set for debugging
 
+// Whether or not to drive an LCD.
+#define ENABLE_LCD
+
 // This defines the maximum number of dots in a raster.
 #define RASTER_BUFFER_SIZE	1024
 
@@ -66,6 +69,8 @@
 #define SENSE_MASK 				(1<<DOOR_BIT)
 
 #define SENSE_TIMER				TIMER2_BASE
+
+#define GP_TIMER				TIMER4_BASE
 
 #define OW_PORT					GPIO_PORTE_BASE
 #define OW_BIT             		5
@@ -113,12 +118,6 @@
 #define LASER_EN_BIT       		1
 #define LASER_EN_MASK			(1 << LASER_EN_BIT)
 #define LASER_EN_INVERT			0
-
-#define STATUS_PORT         	GPIO_PORTB_BASE
-#define STATUS_BIT       		2
-#define STATUS_MASK				(1 << STATUS_BIT)
-#define STATUS_INVERT			(1 << STATUS_BIT)
-
 
 // The temporal resolution of the acceleration management subsystem. Higher number give smoother
 // acceleration but may impact performance.
@@ -174,4 +173,5 @@
 //
 // x = ~x; // toggles ALL the bits in x.
 
-void __delay_us(uint32_t delay);
+extern void __delay_us(uint32_t delay);
+extern uint32_t system_time_ms;

@@ -20,6 +20,7 @@
 #define tasks_h
 
 #include <stdint.h>
+#include "config.h"
 
 // Available tasks.
 // Uses 1 bit per task, so adjust task_t if you need > 16 tasks.
@@ -28,6 +29,10 @@ typedef enum {
 	TASK_SERIAL_RX,
 	TASK_MANUAL_MOVE,
 	TASK_SET_OFFSET,
+#ifdef ENABLE_LCD
+	TASK_UPDATE_LCD,
+#endif
+	TASK_END,
 } TASK;
 
 typedef uint16_t	task_t;

@@ -70,6 +70,7 @@ typedef struct {
   double vmax_junction;               // max junction speed (mm/min) based on angle between segments, accel and deviation settings
   double millimeters;                 // The total travel of this block in mm
   uint8_t laser_pwm;    			  // 0-255 is 0-100% percentage
+  uint32_t laser_ppi;           	  // Number of pulses per inch
   uint32_t laser_ppi_steps;           // Number of steps per pulse (calculated from ppi)
   bool recalculate_flag;              // Planner flag to recalculate trapezoids on entry junction
   bool nominal_length_flag;           // Planner flag for nominal speed always reached

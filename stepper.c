@@ -119,7 +119,6 @@ void stepper_init() {
 	GPIOPinTypeGPIOOutput(STEP_DIR_PORT, STEP_DIR_MASK);
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
-	GPIOPinTypeGPIOOutput(STATUS_PORT, STATUS_MASK);
 
 	GPIOPadConfigSet(STEP_PORT, STEP_MASK, GPIO_STRENGTH_8MA_SC, GPIO_PIN_TYPE_STD);
 	GPIOPadConfigSet(STEP_DIR_PORT, STEP_DIR_MASK, GPIO_STRENGTH_8MA_SC, GPIO_PIN_TYPE_STD);
@@ -181,9 +180,6 @@ void stepper_wake_up() {
 
     // Enable stepper driver interrupt
     TimerEnable(STEPPING_TIMER, TIMER_A);
-
-    // Turn off Green LED
-    GPIOPinWrite(STATUS_PORT, STATUS_MASK, STATUS_INVERT);
   }
 }
 
@@ -195,9 +191,6 @@ void stepper_go_idle() {
   // Disable stepper driver interrupt
   TimerDisable(STEPPING_TIMER, TIMER_A);
   control_laser(0, 0);
-
-  // Turn on Green LED
-  GPIOPinWrite(STATUS_PORT, STATUS_MASK, STATUS_MASK ^ STATUS_INVERT);
 }
 
 // stop event handling

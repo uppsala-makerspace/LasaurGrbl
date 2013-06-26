@@ -112,6 +112,7 @@ static void planner_movement(double x, double y, double z,
   // Calculate the ppi steps
   block->laser_ppi_steps = 0;
   if (ppi > 0) {
+	  block->laser_ppi = ppi; // Only used by LCD output.
 	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
   }
 

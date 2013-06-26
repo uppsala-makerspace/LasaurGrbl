@@ -41,6 +41,8 @@ static uint32_t laser_divider;
 static uint32_t ppi_cycles;
 static uint32_t ppi_divider;
 
+static uint8_t laser_intensity = 0;
+
 // Laser pulse one-shot timer.
 static void laser_isr(void) {
 	TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
@@ -100,6 +102,7 @@ void control_init() {
 	TimerPrescaleSet(LASER_TIMER, TIMER_A, laser_divider);
 	TimerLoadSet(LASER_TIMER, TIMER_A, laser_cycles);
 	TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
+	laser_intensity = 0;
 
 	// Set default value
 	control_laser_intensity(0);
@@ -121,6 +124,11 @@ void control_laser_intensity(uint8_t intensity) {
 	// Set the PWM (Intensity).
 	if (intensity == 0) intensity = 1;
 	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles - (laser_cycles * intensity / 255));
+	laser_intensity = intensity;
+}
+
+uint8_t control_get_intensity(void) {
+	return laser_intensity;
 }
 
 void control_laser(uint8_t on_off, uint8_t pulse_length) {

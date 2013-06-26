@@ -38,6 +38,7 @@
 #include "serial.h"
 #include "joystick.h"
 #include "tasks.h"
+#include "lcd.h"
 
 /* Main */
 int main(void)
@@ -80,6 +81,9 @@ int main(void)
 
     // This needs to be done before the USB interrupts start firing
     temperature_init();
+#ifdef ENABLE_LCD
+    lcd_init();
+#endif
     serial_init();
     gcode_init();
     sense_init();
