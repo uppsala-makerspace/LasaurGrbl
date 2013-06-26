@@ -390,12 +390,11 @@ void stepper_isr (void) {
       
       // Send PPI pulse as required.
       if (current_block->laser_pwm > 0 && current_block->laser_ppi_steps > 0) {
-    	  ppi_step_events++;
-
     	  if (ppi_step_events % current_block->laser_ppi_steps == 0) {
     		  // Send a laser pulse
     		  control_laser(1, CONFIG_LASER_PPI_PULSE_MS);
     	  }
+    	  ppi_step_events++;
       }
 
 
