@@ -105,16 +105,8 @@ static void planner_movement(double x, double y, double z,
 	  memcpy(&block->raster, raster, sizeof(raster_t));
   }
 
-
   // set nominal laser intensity
   block->laser_pwm = nominal_laser_intensity;
-
-  // Calculate the ppi steps
-  block->laser_ppi_steps = 0;
-  if (ppi > 0) {
-	  block->laser_ppi = ppi; // Only used by LCD output.
-	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
-  }
 
   // compute direction bits for this block
   block->direction_bits = 0;
@@ -150,6 +142,22 @@ static void planner_movement(double x, double y, double z,
   block->rate_delta = ceil( block->step_event_count * inverse_millimeters 
                             * block->acceleration / (60 * ACCELERATION_TICKS_PER_SECOND) );
 
+  // Calculate the ppi steps
+  block->laser_ppi_steps = 0;
+  if (ppi > 0) {
+	  // Check that the configured PPI and Feedrate are compatible
+	  // Prefer PPI (and slow down) if not.
+	  uint32_t pulses_per_min = ppi * block->nominal_rate / MM_PER_INCH;
+	  uint32_t max_pulses_per_min = 60000 / CONFIG_LASER_PPI_PULSE_MS;
+
+	  // Set the Feedrate to the maximum it can be for this PPI.
+	  if (pulses_per_min > max_pulses_per_min) {
+		  block->nominal_rate = max_pulses_per_min * MM_PER_INCH / ppi;
+	  }
+
+	  block->laser_ppi = ppi; // Only used by LCD output.
+	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
+  }
 
   //// acceleeration manager calculations
   // Compute path unit vector                            
