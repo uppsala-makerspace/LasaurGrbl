@@ -117,9 +117,7 @@ void tasks_loop(void) {
 
 		// Process offset set
     	if (task_running(TASK_SET_OFFSET)) {
-			if (!stepper_active()) {
-				gcode_set_offset_to_current_position();
-			}
+			gcode_set_offset_to_current_position();
 			task_disable(TASK_SET_OFFSET);
     	}
 
