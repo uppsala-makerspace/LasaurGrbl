@@ -35,7 +35,7 @@
 
 #define CONFIG_X_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_Y_STEPS_PER_MM 157.48 //microsteps/mm
-#define CONFIG_Z_STEPS_PER_MM 157.48 //microsteps/mm
+#define CONFIG_Z_STEPS_PER_MM 1500.0 //milliseconds/mm
 #define CONFIG_PULSE_MICROSECONDS 10
 #define CONFIG_DEFAULT_RATE 8000.0
 #define CONFIG_MAX_FEEDRATE 35000.0 // in millimeters per minute
@@ -46,11 +46,11 @@
 #define CONFIG_Y_ORIGIN_OFFSET 15.0  // mm, y-offset of table origin from physical home
 #define CONFIG_Z_ORIGIN_OFFSET 0.0   // mm, z-offset of table origin from physical home
 #define CONFIG_X_MIN 0.0
-#define CONFIG_Y_MIN 0.0
-#define CONFIG_Z_MIN 0.0
 #define CONFIG_X_MAX 325.0
+#define CONFIG_Y_MIN 0.0
 #define CONFIG_Y_MAX 215.0
-#define CONFIG_Z_MAX 50.0
+//#define CONFIG_Z_MIN 0.0
+//#define CONFIG_Z_MAX 50.0
 
 #define CONFIG_INVERT_X_AXIS 1  // 0 is regular, 1 inverts the x direction
 #define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
@@ -91,18 +91,23 @@
 #define STEPPING_TIMER			TIMER1_BASE
 
 #define STEP_EN_PORT         	GPIO_PORTB_BASE
-#define STEP_X_EN          		0
-//#define STEP_Y_EN           	1
-//#define STEP_Z_EN           	2
-#define STEP_EN_MASK			((1 << STEP_X_EN))// | (1 << STEP_Y_EN) | (1 << STEP_Z_EN))
-#define STEP_EN_INVERT			(1 << STEP_X_EN)
+#define STEP_EN          		0
+#define STEP_EN_MASK			(1 << STEP_EN)
+#define STEP_EN_INVERT			(1 << STEP_EN)
 
 #define STEP_DIR_PORT         	GPIO_PORTB_BASE
 #define STEP_X_DIR           	3
 #define STEP_Y_DIR           	4
-#define STEP_Z_DIR           	5
-#define STEP_DIR_MASK			((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) | (1 << STEP_Z_DIR))
-#define STEP_DIR_INVERT			((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR))
+//#define STEP_Z_DIR           	5
+#define STEP_DIR_MASK			((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) /*| (1 << STEP_Z_DIR)*/)
+#define STEP_DIR_INVERT			((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)/*|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR)*/)
+
+#define MOTOR_Z
+#ifdef MOTOR_Z
+#define	STEP_Z_MASK				((1 << 5) | (1 << 7))
+#define	STEP_Z_UP				(1 << 7)
+#define	STEP_Z_DOWN				(1 << 5)
+#endif
 
 #define STEP_PORT           	GPIO_PORTE_BASE
 #define STEP_X_BIT              2

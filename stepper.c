@@ -63,6 +63,7 @@
 #include "planner.h"
 #include "sense_control.h"
 #include "temperature.h"
+#include "tasks.h"
 
 
 #define CYCLES_PER_MICROSECOND (SysCtlClockGet()/1000000)  // 80MHz = 80
@@ -127,6 +128,13 @@ void stepper_init() {
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, STEP_DIR_INVERT);
 	GPIOPinWrite(STEP_EN_PORT, STEP_EN_MASK, STEP_EN_MASK ^ STEP_EN_INVERT);
 
+#ifdef MOTOR_Z
+	// Use alternative to Stepper (H-Bridge Motor drive)
+	GPIOPadConfigSet(SENSE_PORT, STEP_Z_MASK, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
+	GPIOPinTypeGPIOOutput(STEP_DIR_PORT, STEP_Z_MASK);
+	GPIOPinWrite(STEP_DIR_PORT, STEP_Z_MASK, 0);
+#endif
+
 	// Configure timer
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
 	TimerConfigure(STEPPING_TIMER, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_PERIODIC | TIMER_CFG_B_ONE_SHOT);
@@ -155,8 +163,10 @@ void stepper_init() {
 	// The stepper interrupt gets started when blocks are being added.
 	stepper_go_idle();
 
+#ifndef DEBUG_IGNORE_SENSORS
 	// Go Home
 	gcode_do_home();
+#endif
 }
 
 
@@ -373,6 +383,7 @@ void stepper_isr (void) {
           stepper_position[Y_AXIS] += 1;
         }        
       }
+#ifdef STEP_Z_DIR
       counter_z += current_block->steps_z;
       if (counter_z > 0) {
         out_step_bits |= (1<<STEP_Z_BIT);
@@ -384,6 +395,16 @@ void stepper_isr (void) {
           stepper_position[Z_AXIS] += 1;
         }        
       }
+#else
+      if (current_block->steps_z != 0) {
+    	  if ((out_dir_bits & STEP_Z_MASK) != 0)
+        	  GPIOPinWrite(STEP_DIR_PORT, STEP_Z_MASK, STEP_Z_DOWN);
+          else
+        	  GPIOPinWrite(STEP_DIR_PORT, STEP_Z_MASK, STEP_Z_UP);
+    	  task_enable(TASK_MOTOR_DELAY, (void*)(system_time_ms + (current_block->steps_z)));
+    	  current_block->steps_z = 0;
+      }
+#endif
       //////
       
       step_events_completed++;  // increment step count

@@ -71,8 +71,12 @@ static void planner_movement(double x, double y, double z,
   x=min(x, CONFIG_X_MAX);
   y=max(y, CONFIG_Y_MIN);
   y=min(y, CONFIG_Y_MAX);
+#ifdef CONFIG_Z_MIN
   z=max(z, CONFIG_Z_MIN);
+#endif
+#ifdef CONFIG_Z_MAX
   z=min(z, CONFIG_Z_MAX);
+#endif
 
   target[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
   target[Y_AXIS] = lround(y*CONFIG_Y_STEPS_PER_MM);
@@ -112,7 +116,11 @@ static void planner_movement(double x, double y, double z,
   block->direction_bits = 0;
   if (target[X_AXIS] < position[X_AXIS]) { block->direction_bits |= (1<<STEP_X_DIR); }
   if (target[Y_AXIS] < position[Y_AXIS]) { block->direction_bits |= (1<<STEP_Y_DIR); }
+#ifndef MOTOR_Z
   if (target[Z_AXIS] < position[Z_AXIS]) { block->direction_bits |= (1<<STEP_Z_DIR); }
+#else
+  if (target[Z_AXIS] < position[Z_AXIS]) { block->direction_bits |= STEP_Z_MASK; }
+#endif
   
   // number of steps for each axis
   block->steps_x = labs(target[X_AXIS]-position[X_AXIS]);

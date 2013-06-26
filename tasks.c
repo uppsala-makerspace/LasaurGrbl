@@ -121,6 +121,15 @@ void tasks_loop(void) {
 			task_disable(TASK_SET_OFFSET);
     	}
 
+		// Z Motor Run
+    	if (task_running(TASK_MOTOR_DELAY)) {
+    		if (system_time_ms > (uint32_t)task_data[TASK_MOTOR_DELAY])
+    		{
+    			GPIOPinWrite(STEP_DIR_PORT, GPIO_PIN_5 | GPIO_PIN_7, 0);
+    			task_disable(TASK_MOTOR_DELAY);
+    		}
+    	}
+
 #ifdef ENABLE_LCD
     	// LCD Update
     	if (task_running(TASK_UPDATE_LCD)) {
