@@ -65,7 +65,7 @@
 
 /* Defines */
 #define TX_BUFFERSIZE   128
-#define RX_BUFFERSIZE   256
+#define RX_BUFFERSIZE   512
 
 #ifndef USB_VID_TI
 #define USB_VID_TI      USB_VID_STELLARIS
