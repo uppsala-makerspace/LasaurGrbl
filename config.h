@@ -59,6 +59,14 @@
 #define CONFIG_LASER_PWM_FREQ			40000
 #define CONFIG_LASER_PPI_PULSE_MS		2
 
+// Interrupt Priorities (0 highest)
+#define	CONFIG_STEPPER_PRIORITY		(0 << 5)
+#define	CONFIG_LASER_PRIORITY		(1 << 5)
+#define	CONFIG_USB_PRIORITY			(2 << 5)
+#define	CONFIG_SENSE_PRIORITY		(3 << 5)
+#define	CONFIG_JOY_PRIORITY			(4 << 5)
+#define	CONFIG_GPTIMER_PRIORITY		(7 << 5)
+
 #define JOY_PORT              	GPIO_PORTF_BASE
 #define JOY_BIT                	0
 #define JOY_MASK 				(1<<JOY_BIT)

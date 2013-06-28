@@ -129,12 +129,13 @@ void gcode_init() {
 uint8_t gcode_process_data(const tUSBBuffer *psBuffer) {
 	uint8_t chr = '\0';
 
-	if (planner_blocks_available() < 2) {
+	if (planner_blocks_available() < PLANNER_FIFO_READY_THRESHOLD) {
 		return 1;
 	}
 
 	// Read all data available...
-	while (USBBufferRead(psBuffer, &chr, 1) == 1) {
+	while ((planner_blocks_available() >= PLANNER_FIFO_READY_THRESHOLD) &&
+		   (USBBufferRead(psBuffer, &chr, 1) == 1) ) {
 		if ((chr == 0x0A) || (chr == 0x0D)) {
 			//// process line
 			if (rx_chars > 0) {          // Line is complete. Then execute!
@@ -148,7 +149,7 @@ uint8_t gcode_process_data(const tUSBBuffer *psBuffer) {
 			break;
 		} else if (chr == 0x14) {
 			// Respond to Lasersaur's ready request
-			if (planner_blocks_available() >= 2) {
+			if (planner_blocks_available() >= PLANNER_FIFO_READY_THRESHOLD) {
 				char tmp[2] = { 0x12, 0 };
 				printString(tmp);
 			} else {
@@ -162,6 +163,10 @@ uint8_t gcode_process_data(const tUSBBuffer *psBuffer) {
 			// add to line, as char which is signed
 			rx_line[rx_chars++] = (char) chr;
 		}
+	}
+
+	if (planner_blocks_available() < PLANNER_FIFO_READY_THRESHOLD) {
+		return 1;
 	}
 
 	return 0;

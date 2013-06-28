@@ -25,6 +25,9 @@
 
 #include "config.h"
 
+// This needs to be the minimum buffers required for the largest command (raster)
+#define PLANNER_FIFO_READY_THRESHOLD		4
+
 // Command types the planner and stepper can schedule for execution
 typedef enum {
 	BLOCK_TYPE_LINE,

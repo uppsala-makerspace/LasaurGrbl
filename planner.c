@@ -27,7 +27,7 @@
 
 
 // The number of linear motions that can be in the plan at any give time
-#define BLOCK_BUFFER_SIZE 48  // do not make bigger than uint8_t
+#define BLOCK_BUFFER_SIZE 45  // do not make bigger than uint8_t
 #define NUM_RASTERS	4
 
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // ring buffer for motion instructions
@@ -153,6 +153,7 @@ static void planner_movement(double x, double y, double z,
   // Calculate the ppi steps
   block->laser_ppi_steps = 0;
   if (ppi > 0) {
+#if 0
 	  // Check that the configured PPI and Feedrate are compatible
 	  // Prefer PPI (and slow down) if not.
 	  uint32_t pulses_per_min = ppi * block->nominal_rate / MM_PER_INCH;
@@ -162,7 +163,7 @@ static void planner_movement(double x, double y, double z,
 	  if (pulses_per_min > max_pulses_per_min) {
 		  block->nominal_rate = max_pulses_per_min * MM_PER_INCH / ppi;
 	  }
-
+#endif
 	  block->laser_ppi = ppi; // Only used by LCD output.
 	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
   }

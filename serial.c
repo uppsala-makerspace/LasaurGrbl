@@ -26,10 +26,12 @@
 #include <inc/hw_memmap.h>
 #include <inc/hw_timer.h>
 #include <inc/hw_gpio.h>
+#include <inc/hw_ints.h>
 
 #include <driverlib/gpio.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
+#include <driverlib/interrupt.h>
 
 #include "config.h"
 
@@ -53,6 +55,8 @@ void serial_init() {
     GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_4 | GPIO_PIN_5);
 
     USBCDCD_init();
+
+    IntPrioritySet(INT_USB0, CONFIG_USB_PRIORITY);
 }
 
 void printString(const char *s) {

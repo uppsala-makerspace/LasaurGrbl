@@ -14,6 +14,7 @@
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 */
+#include <inc/hw_ints.h>
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
 #include <inc/hw_timer.h>
@@ -22,6 +23,7 @@
 #include <driverlib/gpio.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
+#include <driverlib/interrupt.h>
 
 #include "tasks.h"
 
@@ -58,6 +60,7 @@ void tasks_init(void) {
 	TimerLoadSet64(GP_TIMER, timer_load);
 	TimerIntRegister(GP_TIMER, TIMER_A, gp_timer_isr);
 	TimerIntEnable(GP_TIMER, TIMER_TIMA_TIMEOUT);
+	IntPrioritySet(INT_TIMER4A, CONFIG_GPTIMER_PRIORITY);
 
 	TimerEnable(GP_TIMER, TIMER_A);
 }
@@ -90,7 +93,7 @@ void tasks_loop(void) {
 
 		// Wait for the machine to be ready (available blocks)
     	if (task_running(TASK_READY_WAIT)) {
-    		if (planner_blocks_available() >= 2)
+    		if (planner_blocks_available() >= PLANNER_FIFO_READY_THRESHOLD)
 			{
 				char tmp[2] = {0x12, 0};
 				printString(tmp);
@@ -102,14 +105,14 @@ void tasks_loop(void) {
     	if (task_running(TASK_SERIAL_RX)) {
     		if (gcode_process_data(task_data[TASK_SERIAL_RX]) == 0) {
     			GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
-    			task_disable(TASK_SERIAL_RX);
+        		task_disable(TASK_SERIAL_RX);
     		}
     	}
 
 		// Process manual moves
     	if (task_running(TASK_MANUAL_MOVE)) {
     		struct task_manual_move_data *move = task_data[TASK_MANUAL_MOVE];
-    		if (planner_blocks_available() >= 2) {
+    		if (planner_blocks_available() >= PLANNER_FIFO_READY_THRESHOLD) {
     			gcode_manual_move(move->x_offset, move->y_offset, move->rate);
     			task_disable(TASK_MANUAL_MOVE);
     		}

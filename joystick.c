@@ -17,14 +17,16 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <inc/hw_ints.h>
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
 #include <inc/hw_timer.h>
 #include <inc/hw_gpio.h>
-#include "driverlib/adc.h"
-#include "driverlib/gpio.h"
-#include "driverlib/sysctl.h"
+#include <driverlib/adc.h>
+#include <driverlib/gpio.h>
+#include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
+#include <driverlib/interrupt.h>
 
 #include "config.h"
 
@@ -204,5 +206,6 @@ void init_joystick(void) {
 	TimerLoadSet64(JOY_TIMER, SysCtlClockGet() / 500);
 	TimerIntRegister(JOY_TIMER, TIMER_A, joystick_isr);
 	TimerIntEnable(JOY_TIMER, TIMER_TIMA_TIMEOUT);
+	IntPrioritySet(INT_TIMER3A, CONFIG_JOY_PRIORITY);
 	TimerEnable(JOY_TIMER, TIMER_A);
 }

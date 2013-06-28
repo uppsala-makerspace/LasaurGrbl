@@ -19,6 +19,7 @@
 
 #include <string.h>
 
+#include <inc/hw_ints.h>
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
 #include <inc/hw_timer.h>
@@ -27,6 +28,7 @@
 #include <driverlib/gpio.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
+#include <driverlib/interrupt.h>
 
 #include "config.h"
 
@@ -330,6 +332,8 @@ void temperature_init(void) {
 
 	TimerIntRegister(SENSE_TIMER, TIMER_A, timer_cal_isr);
 	TimerIntEnable(SENSE_TIMER, TIMER_TIMA_TIMEOUT);
+	IntPrioritySet(INT_TIMER2A, CONFIG_SENSE_PRIORITY);
+
 
 	cycles_per_us = 1;
 	timer_calibration = 0;

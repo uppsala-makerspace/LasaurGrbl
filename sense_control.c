@@ -28,6 +28,7 @@
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
 #include <driverlib/rom.h>
+#include <driverlib/interrupt.h>
 
 #include "config.h"
 
@@ -91,7 +92,7 @@ void control_init() {
 	// Setup ISR
 	TimerIntRegister(LASER_TIMER, TIMER_B, laser_isr);
 	TimerIntEnable(LASER_TIMER, TIMER_B);
-	ROM_IntEnable(INT_TIMER0B);
+    IntPrioritySet(INT_TIMER0B, CONFIG_LASER_PRIORITY);
 
 	// Set PWM refresh rate
 	laser_cycles = SysCtlClockGet() / CONFIG_LASER_PWM_FREQ; /*Hz*/

@@ -56,6 +56,7 @@
 #include <driverlib/rom.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>
+#include <driverlib/interrupt.h>
 
 #include "config.h"
 #include "stepper.h"
@@ -146,6 +147,8 @@ void stepper_init() {
 	ROM_IntEnable(INT_TIMER1B);
 	TimerIntEnable(STEPPING_TIMER, TIMER_TIMA_TIMEOUT);
 	TimerIntEnable(STEPPING_TIMER, TIMER_TIMB_TIMEOUT);
+    IntPrioritySet(INT_TIMER1A, CONFIG_STEPPER_PRIORITY);
+    IntPrioritySet(INT_TIMER1B, CONFIG_STEPPER_PRIORITY);
 
 	adjust_speed(MINIMUM_STEPS_PER_MINUTE);
 	clear_vector(stepper_position);
