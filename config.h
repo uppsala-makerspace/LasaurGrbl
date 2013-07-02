@@ -59,6 +59,12 @@
 #define CONFIG_LASER_PWM_FREQ			40000
 #define CONFIG_LASER_PPI_PULSE_MS		2
 
+// This will use a timer to guarantee a step pulse length.
+// However the maximum seek rate will be limited (approx. 15000mm/min)
+// Disabling this define will pulse for the duration of the stepper ISR (< 1us)
+// This works with Pololu drivers, and achieves >=30000mm/min.
+//#define CONFIG_STEPPER_USE_PULSE_TIMER
+
 // Interrupt Priorities (0 highest)
 #define	CONFIG_STEPPER_PRIORITY		(0 << 5)
 #define	CONFIG_LASER_PRIORITY		(1 << 5)

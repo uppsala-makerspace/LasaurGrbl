@@ -103,15 +103,20 @@ static volatile uint8_t stop_status;          // yields the reason for a stop re
 
 static uint16_t timer_prescaler = 0;
 static uint16_t timer_preload = 0xffff;
-static uint8_t pulse_active = 0;
 
+#ifdef CONFIG_STEPPER_USE_PULSE_TIMER
+static uint8_t pulse_active = 0;
+#endif
 
 // prototypes for static functions (non-accesible from other files)
 static bool acceleration_tick();
 static void adjust_speed( uint32_t steps_per_minute );
 static uint32_t config_step_timer(uint32_t cycles);
 
+#ifdef CONFIG_STEPPER_USE_PULSE_TIMER
 void pulse_isr(void);
+#endif
+
 void stepper_isr(void);
 
 // Initialize and start the stepper motor subsystem
@@ -141,14 +146,16 @@ void stepper_init() {
 	TimerConfigure(STEPPING_TIMER, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_PERIODIC | TIMER_CFG_B_ONE_SHOT);
 
 	TimerIntRegister(STEPPING_TIMER, TIMER_A, stepper_isr);
-	TimerIntRegister(STEPPING_TIMER, TIMER_B, pulse_isr);
-
 	ROM_IntEnable(INT_TIMER1A);
-	ROM_IntEnable(INT_TIMER1B);
 	TimerIntEnable(STEPPING_TIMER, TIMER_TIMA_TIMEOUT);
-	TimerIntEnable(STEPPING_TIMER, TIMER_TIMB_TIMEOUT);
     IntPrioritySet(INT_TIMER1A, CONFIG_STEPPER_PRIORITY);
+
+#ifdef CONFIG_STEPPER_USE_PULSE_TIMER
+	TimerIntRegister(STEPPING_TIMER, TIMER_B, pulse_isr);
+	ROM_IntEnable(INT_TIMER1B);
+	TimerIntEnable(STEPPING_TIMER, TIMER_TIMB_TIMEOUT);
     IntPrioritySet(INT_TIMER1B, CONFIG_STEPPER_PRIORITY);
+#endif
 
 	adjust_speed(MINIMUM_STEPS_PER_MINUTE);
 	clear_vector(stepper_position);
@@ -248,10 +255,8 @@ void stepper_set_position(double x, double y, double z) {
 
 
 
-// The Stepper Reset ISR
-// It resets the motor port after a short period completing one step cycle.
-// TODO: It is possible for the serial interrupts to delay this interrupt by a few microseconds, if
-// they execute right before this interrupt. Not a big deal, but could use some TLC at some point.
+#ifdef CONFIG_STEPPER_USE_PULSE_TIMER
+// Reset the step pulse after a short period completing one step cycle.
 void pulse_isr (void) {
 	// reset step pins
 	GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
@@ -261,6 +266,7 @@ void pulse_isr (void) {
 
 	pulse_active = 0;
 }
+#endif // CONFIG_STEPPER_USE_PULSE_TIMER
   
 
 // The Stepper ISR
@@ -277,7 +283,9 @@ void stepper_isr (void) {
 	TimerLoadSet(STEPPING_TIMER, TIMER_A, timer_preload);
 	TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
 
+#ifdef CONFIG_STEPPER_USE_PULSE_TIMER
 	if (pulse_active) { return; }	// If the step pulse hasn't completed yet, try again later.
+#endif
 
 	busy = true;
   if (stop_requested) {
@@ -316,11 +324,12 @@ void stepper_isr (void) {
 	// prime for reset pulse in CONFIG_PULSE_MICROSECONDS
 	//set period
 
-	//pulse_active = 1;
-	//TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
-	//TimerLoadSet(STEPPING_TIMER, TIMER_B, (CONFIG_PULSE_MICROSECONDS - 3) * CYCLES_PER_MICROSECOND);
-	//TimerEnable(STEPPING_TIMER, TIMER_B);
-
+#ifdef CONFIG_STEPPER_USE_PULSE_TIMER
+	pulse_active = 1;
+	TimerPrescaleSet(STEPPING_TIMER, TIMER_B, 0);
+	TimerLoadSet(STEPPING_TIMER, TIMER_B, (CONFIG_PULSE_MICROSECONDS - 3) * CYCLES_PER_MICROSECOND);
+	TimerEnable(STEPPING_TIMER, TIMER_B);
+#endif
 
   // If there is no current block, attempt to pop one from the buffer
   if (current_block == NULL) {
@@ -498,7 +507,10 @@ void stepper_isr (void) {
       break;    
   }
 
+#ifndef CONFIG_STEPPER_USE_PULSE_TIMER
   GPIOPinWrite(STEP_PORT, STEP_MASK, 0);
+#endif
+
   busy = false;
 }
 
