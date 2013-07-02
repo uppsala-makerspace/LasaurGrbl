@@ -18,6 +18,9 @@
 #ifndef _joystick_h
 #define	_joystick_h
 
-void init_joystick(void);
+void joystick_init(void);
+void joystick_enable(void);
+void joystick_disable(void);
+
 
 #endif // _joystick_h

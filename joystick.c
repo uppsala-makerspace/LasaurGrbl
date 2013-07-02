@@ -156,7 +156,7 @@ static void joystick_isr(void) {
 	}
 }
 
-void init_joystick(void) {
+void joystick_init(void) {
 
 	// Register Joystick button isr
 	GPIOPinTypeGPIOInput(JOY_PORT, JOY_MASK);
@@ -208,4 +208,16 @@ void init_joystick(void) {
 	TimerIntEnable(JOY_TIMER, TIMER_TIMA_TIMEOUT);
 	IntPrioritySet(INT_TIMER3A, CONFIG_JOY_PRIORITY);
 	TimerEnable(JOY_TIMER, TIMER_A);
+}
+
+void joystick_enable(void){
+	GPIOPinIntEnable(JOY_PORT, JOY_MASK);
+    ADCIntEnable(ADC0_BASE, 0);
+    ADCIntEnable(ADC0_BASE, 1);
+}
+
+void joystick_disable(void){
+	GPIOPinIntDisable(JOY_PORT, JOY_MASK);
+    ADCIntDisable(ADC0_BASE, 0);
+    ADCIntDisable(ADC0_BASE, 1);
 }

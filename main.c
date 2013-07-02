@@ -70,14 +70,13 @@ int main(void)
     GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_0, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
     HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_M;
 
-    /* Turn on user LED */
+    /* Turn off user LEDs */
     GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1, 0);
-    //GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
 
     /* Initialize GRBL */
     tasks_init();
 
-    init_joystick();
+    joystick_init();
 
     // This needs to be done before the USB interrupts start firing
     temperature_init();

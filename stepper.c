@@ -65,6 +65,7 @@
 #include "sense_control.h"
 #include "temperature.h"
 #include "tasks.h"
+#include "joystick.h"
 
 
 #define CYCLES_PER_MICROSECOND (SysCtlClockGet()/1000000)  // 80MHz = 80

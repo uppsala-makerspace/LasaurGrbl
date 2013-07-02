@@ -33,7 +33,7 @@
 #include "stepper.h"
 #include "sense_control.h"
 #include "lcd.h"
-
+#include "joystick.h"
 
 
 static volatile task_t task_status = 0;
@@ -82,6 +82,7 @@ uint8_t task_running(TASK task) {
 }
 
 void tasks_loop(void) {
+	uint8_t serial_active = 0;
 	double last_x = 0;
 	double last_y = 0;
 	double last_z = 0;
@@ -103,9 +104,15 @@ void tasks_loop(void) {
 
 		// Process any serial data available
     	if (task_running(TASK_SERIAL_RX)) {
+			// Disable Joystick control whilst under Serial control
+			joystick_disable();
+			serial_active = 1;
+
     		if (gcode_process_data(task_data[TASK_SERIAL_RX]) == 0) {
     			GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
         		task_disable(TASK_SERIAL_RX);
+
+        		serial_active = 0;
     		}
     	}
 
@@ -178,6 +185,11 @@ void tasks_loop(void) {
     		}
     	}
 #endif // ENABLE_LCD
+
+    	if (serial_active == 0 && !stepper_active()) {
+			// Allow Joystick control
+			joystick_enable();
+    	}
 	}
 }
 
