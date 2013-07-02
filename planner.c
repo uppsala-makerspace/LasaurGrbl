@@ -153,17 +153,6 @@ static void planner_movement(double x, double y, double z,
   // Calculate the ppi steps
   block->laser_ppi_steps = 0;
   if (ppi > 0) {
-#if 0
-	  // Check that the configured PPI and Feedrate are compatible
-	  // Prefer PPI (and slow down) if not.
-	  uint32_t pulses_per_min = ppi * block->nominal_rate / MM_PER_INCH / CONFIG_X_STEPS_PER_MM;
-	  uint32_t max_pulses_per_min = 60000 / CONFIG_LASER_PPI_PULSE_MS;
-
-	  // Set the Feedrate to the maximum it can be for this PPI.
-	  if (pulses_per_min > max_pulses_per_min) {
-		  block->nominal_rate = max_pulses_per_min * MM_PER_INCH * CONFIG_X_STEPS_PER_MM / ppi;
-	  }
-#endif
 	  block->laser_ppi = ppi; // Only used by LCD output.
 	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
   }

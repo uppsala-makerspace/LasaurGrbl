@@ -87,7 +87,6 @@ typedef struct {
 	uint8_t offselect;            		// currently active offset, 0 -> G54, 1 -> G55
 	uint8_t laser_pwm;					// 0-255 percentage
 	uint16_t laser_ppi;					// Laser PPI (Pulses Per Inch)
-	double ppi;							// Pixels per inch
 	double acceleration;			   	// mm/min/min
 	raster_t raster;					// Raster State
 } parser_state_t;
@@ -124,6 +123,18 @@ void gcode_init() {
 	line_checksum_ok_already = false;
 
 	gc.raster.buffer = raster_buffer;
+}
+
+static void check_ppi_feedrate(void) {
+	  // Check that the configured PPI and Feedrate are compatible
+	  // Prefer PPI (and slow down) if not.
+	  uint32_t pulses_per_min = gc.laser_ppi * gc.feed_rate / MM_PER_INCH;
+	  uint32_t max_pulses_per_min = 60000 / CONFIG_LASER_PPI_PULSE_MS;
+
+	  // Set the Feedrate to the maximum it can be for this PPI.
+	  if (pulses_per_min > max_pulses_per_min) {
+		  gc.feed_rate = max_pulses_per_min * MM_PER_INCH / gc.laser_ppi;
+	  }
 }
 
 uint8_t gcode_process_data(const tUSBBuffer *psBuffer) {
@@ -529,6 +540,7 @@ uint8_t gcode_execute_line(char *line) {
 					gc.seek_rate = min(CONFIG_MAX_SEEKRATE, unit_converted_value);
 				} else {
 					gc.feed_rate = min(CONFIG_MAX_FEEDRATE, unit_converted_value);
+					check_ppi_feedrate();
 				}
 				break;
 			case 'X':
@@ -558,6 +570,7 @@ uint8_t gcode_execute_line(char *line) {
 				}
 				else if (next_action == NEXT_ACTION_SET_PPI) {
 					gc.laser_ppi = value;
+					check_ppi_feedrate();
 				}
 				else {
 					gc.laser_pwm = value;
