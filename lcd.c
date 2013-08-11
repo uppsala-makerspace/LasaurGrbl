@@ -114,7 +114,7 @@ void lcd_init(void)
 	GPIOPinTypeSSI(GPIO_PORTA_BASE, GPIO_PIN_5 | GPIO_PIN_4 | GPIO_PIN_3 | GPIO_PIN_2);
 
 	SSIConfigSetExpClk(SSI0_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0,
-	                       SSI_MODE_MASTER, 8000000, 8);
+	                       SSI_MODE_MASTER, 1000000, 8);
 
 	SSIEnable(SSI0_BASE);
 

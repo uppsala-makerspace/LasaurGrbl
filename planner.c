@@ -67,14 +67,22 @@ static void planner_movement(double x, double y, double z,
   int32_t target[3];
 
   // Make sure we stay within our limits
+#if defined(CONFIG_X_MIN)
   x=max(x, CONFIG_X_MIN);
+#endif
+#if defined(CONFIG_X_MAX)
   x=min(x, CONFIG_X_MAX);
+#endif
+#if defined(CONFIG_Y_MIN)
   y=max(y, CONFIG_Y_MIN);
+#endif
+#if defined(CONFIG_Y_MAX)
   y=min(y, CONFIG_Y_MAX);
-#ifdef CONFIG_Z_MIN
+#endif
+#if defined(CONFIG_Z_MIN)
   z=max(z, CONFIG_Z_MIN);
 #endif
-#ifdef CONFIG_Z_MAX
+#if defined(CONFIG_Z_MAX)
   z=min(z, CONFIG_Z_MAX);
 #endif
 

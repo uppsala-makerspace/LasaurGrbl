@@ -141,8 +141,17 @@ static void joystick_isr(void) {
 		else// if (fabs(x_off) < 1.0)
 			x_off /= 10.0;
 
+#ifdef JOY_INVERT_Y
 		task_data.x_offset = -y_off;
+#else
+		task_data.x_offset = y_off;
+#endif
+
+#ifdef JOY_INVERT_X
+		task_data.y_offset = -x_off;
+#else
 		task_data.y_offset = x_off;
+#endif
 		task_data.rate = 20000;
 		task_enable(TASK_MANUAL_MOVE, &task_data);
 

@@ -660,19 +660,17 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
   return;
 }
 
-static void approach_limit_switch(bool x, bool y, bool z) {
-	homing_cycle(x, y, z, false, 50);
-}
-
-static void leave_limit_switch(bool x, bool y, bool z) {
-	homing_cycle(x, y, z, true, 50);
-}
-
 void stepper_homing_cycle() {
-  stepper_synchronize();  
-  // home the x and y axis
-  approach_limit_switch(true, true, false);
-  leave_limit_switch(true, true, false);
+	stepper_synchronize();
+	// home the x and y axis
+
+	// Home X and Y quickly.
+	homing_cycle(true, true, false, false, 50);
+	homing_cycle(true, true, false, true, 50);
+
+	// Perform a slow (accurate) home.
+	homing_cycle(true, true, false, false, 1000);
+	homing_cycle(true, true, false, true, 1000);
 }
 
 

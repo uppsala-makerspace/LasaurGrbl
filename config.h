@@ -42,13 +42,13 @@
 #define CONFIG_MAX_SEEKRATE 35000.0
 #define CONFIG_DEFAULT_ACCELERATION 8000000.0 // mm/min^2, typically 1000000-8000000, divide by (60*60) to get mm/sec^2
 #define CONFIG_JUNCTION_DEVIATION 0.006 // mm
-#define CONFIG_X_ORIGIN_OFFSET 5.0  // mm, x-offset of table origin from physical home
-#define CONFIG_Y_ORIGIN_OFFSET 15.0  // mm, y-offset of table origin from physical home
+#define CONFIG_X_ORIGIN_OFFSET 0.0  // mm, x-offset of table origin from physical home
+#define CONFIG_Y_ORIGIN_OFFSET 0.0  // mm, y-offset of table origin from physical home
 #define CONFIG_Z_ORIGIN_OFFSET 0.0   // mm, z-offset of table origin from physical home
 #define CONFIG_X_MIN 0.0
-#define CONFIG_X_MAX 325.0
+//#define CONFIG_X_MAX 325.0
 #define CONFIG_Y_MIN 0.0
-#define CONFIG_Y_MAX 215.0
+//#define CONFIG_Y_MAX 215.0
 //#define CONFIG_Z_MIN 0.0
 //#define CONFIG_Z_MAX 50.0
 
@@ -77,6 +77,9 @@
 #define JOY_BIT                	0
 #define JOY_MASK 				(1<<JOY_BIT)
 #define JOY_TIMER				TIMER3_BASE
+
+//#define JOY_INVERT_Y
+//#define JOY_INVERT_X
 
 #define SENSE_PORT              GPIO_PORTE_BASE
 #define DOOR_BIT                1
@@ -173,6 +176,12 @@
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 
 #define MM_PER_INCH (25.4)
+
+#define M_PI 3.14159
+
+// Arc interpretation settings:
+#define MM_PER_ARC_SEGMENT 1
+#define N_ARC_CORRECTION 25
 
 #endif
 
