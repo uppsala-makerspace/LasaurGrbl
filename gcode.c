@@ -624,6 +624,8 @@ uint8_t gcode_execute_line(char *line) {
 	case NEXT_ACTION_CW_ARC:
 	case NEXT_ACTION_CCW_ARC:
 		if (got_actual_line_command) {
+			double arc_target[3];
+			double arc_position[3];
 	          if (r != 0) { // Arc Radius Mode
 	            /*
 	              We need to calculate the center of the circle that has the designated radius and passes
@@ -721,7 +723,16 @@ uint8_t gcode_execute_line(char *line) {
 	          } else { // Arc Center Format Offset Mode
 	            r = hypot(offset[X_AXIS], offset[Y_AXIS]); // Compute arc radius for mc_arc
 	          }
-			mc_arc(gc.position, target, offset, X_AXIS, Y_AXIS, Z_AXIS, gc.feed_rate, r, (next_action==NEXT_ACTION_CW_ARC)?true:false, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
+
+			arc_target[X_AXIS] = target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS];
+			arc_target[Y_AXIS] = target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS];
+			arc_target[Z_AXIS] = target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS];
+
+			arc_position[X_AXIS] = gc.position[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS];
+			arc_position[Y_AXIS] = gc.position[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS];
+			arc_position[Z_AXIS] = gc.position[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS];
+
+			mc_arc(arc_position, arc_target, offset, X_AXIS, Y_AXIS, Z_AXIS, gc.feed_rate, r, (next_action==NEXT_ACTION_CW_ARC)?true:false, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
 		}
 		break;
 	case NEXT_ACTION_RASTER:
