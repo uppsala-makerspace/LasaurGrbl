@@ -38,6 +38,7 @@
 #include "gcode.h"
 #include "serial.h"
 #include "sense_control.h"
+#include "motion_control.h"
 #include "planner.h"
 #include "stepper.h"
 #include "temperature.h"
@@ -47,6 +48,8 @@ enum {
 	NEXT_ACTION_NONE = 0,
 	NEXT_ACTION_SEEK,
 	NEXT_ACTION_FEED,
+	NEXT_ACTION_CW_ARC,
+	NEXT_ACTION_CCW_ARC,
 	NEXT_ACTION_RASTER,
 	NEXT_ACTION_DWELL,
 	NEXT_ACTION_STOP,
@@ -135,6 +138,11 @@ static void check_ppi_feedrate(void) {
 	  if (pulses_per_min > max_pulses_per_min) {
 		  gc.feed_rate = max_pulses_per_min * MM_PER_INCH / gc.laser_ppi;
 	  }
+}
+
+static float to_millimeters(float value)
+{
+	return(gc.inches_mode ? (value * MM_PER_INCH) : value);
 }
 
 uint8_t gcode_process_data(const tUSBBuffer *psBuffer) {
@@ -373,15 +381,20 @@ uint8_t gcode_execute_line(char *line) {
 	char letter;
 	double value;
 	int int_value;
-	double unit_converted_value;
 	uint8_t next_action = NEXT_ACTION_NONE;
 	double target[3];
+	double offset[3];
 	double vector[3] = {0.0};
-	double p = 0.0;
-	double n = -1.0;
-	int cs = 0;
 	int l = 0;
+	double n = -1.0;
+	double p = 0.0;
+	double r = 0.0;
+	int cs = 0;
 	bool got_actual_line_command = false;  // as opposed to just e.g. G1 F1200
+
+	clear_vector(target); // XYZ(ABC) axes parameters.
+	clear_vector(offset); // IJK Arc offsets are incremental. Value of zero indicates no change.
+
 	gc.status_code = GCODE_STATUS_OK;
 
 	//// Pass 1: Commands
@@ -395,6 +408,12 @@ uint8_t gcode_execute_line(char *line) {
 				break;
 			case 1:
 				gc.motion_mode = next_action = NEXT_ACTION_FEED;
+				break;
+			case 2:
+				gc.motion_mode = next_action = NEXT_ACTION_CW_ARC;
+				break;
+			case 3:
+				gc.motion_mode = next_action = NEXT_ACTION_CCW_ARC;
 				break;
 			case 4:
 				next_action = NEXT_ACTION_DWELL;
@@ -526,37 +545,21 @@ uint8_t gcode_execute_line(char *line) {
 
 	//// Pass 2: Parameters
 	while (next_statement(&letter, &value, line, &char_counter)) {
-		if (gc.inches_mode) {
-			unit_converted_value = value * MM_PER_INCH;
-		} else {
-			unit_converted_value = value;
-		}
 		switch (letter) {
 			case 'F':
-				if (unit_converted_value <= 0) {
+				if (to_millimeters(value) <= 0) {
 					FAIL(GCODE_STATUS_BAD_NUMBER_FORMAT);
 				}
 				if (gc.motion_mode == NEXT_ACTION_SEEK) {
-					gc.seek_rate = min(CONFIG_MAX_SEEKRATE, unit_converted_value);
+					gc.seek_rate = min(CONFIG_MAX_SEEKRATE, to_millimeters(value));
 				} else {
-					gc.feed_rate = min(CONFIG_MAX_FEEDRATE, unit_converted_value);
+					gc.feed_rate = min(CONFIG_MAX_FEEDRATE, to_millimeters(value));
 					check_ppi_feedrate();
 				}
 				break;
-			case 'X':
-			case 'Y':
-			case 'Z':
-				// We don't want to update the target when setting the raster offset.
-				if (next_action != NEXT_ACTION_RASTER) {
-					if (gc.absolute_mode) {
-						target[letter - 'X'] = unit_converted_value;
-					} else {
-						target[letter - 'X'] += unit_converted_value;
-					}
-				}
-				vector[letter - 'X'] = unit_converted_value;
-				got_actual_line_command = true;
-				break;
+			case 'I': case 'J': case 'K': offset[letter-'I'] = to_millimeters(value); break;
+			case 'L': l = trunc(value); break;
+			case 'N': n = value; break;
 			case 'P':  // dwelling seconds or CS selector
 				if (next_action == NEXT_ACTION_SET_COORDINATE_OFFSET) {
 					cs = trunc(value);
@@ -564,6 +567,7 @@ uint8_t gcode_execute_line(char *line) {
 					p = value;
 				}
 				break;
+			case 'R': r = to_millimeters(value); break;
 			case 'S':
 				if (next_action == NEXT_ACTION_SET_ACCELERATION) {
 					gc.acceleration = value * 3600;
@@ -577,11 +581,19 @@ uint8_t gcode_execute_line(char *line) {
 					control_laser_intensity(gc.laser_pwm);
 				}
 				break;
-			case 'L':  // G10 qualifier
-				l = trunc(value);
-				break;
-			case 'N':
-				n = value;
+			case 'X':
+			case 'Y':
+			case 'Z':
+				// We don't want to update the target when setting the raster offset.
+				if (next_action != NEXT_ACTION_RASTER) {
+					if (gc.absolute_mode) {
+						target[letter - 'X'] = to_millimeters(value);
+					} else {
+						target[letter - 'X'] += to_millimeters(value);
+					}
+				}
+				vector[letter - 'X'] = to_millimeters(value);
+				got_actual_line_command = true;
 				break;
 		}
 	}
@@ -607,6 +619,109 @@ uint8_t gcode_execute_line(char *line) {
 					target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 					target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
 					gc.feed_rate, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
+		}
+		break;
+	case NEXT_ACTION_CW_ARC:
+	case NEXT_ACTION_CCW_ARC:
+		if (got_actual_line_command) {
+	          if (r != 0) { // Arc Radius Mode
+	            /*
+	              We need to calculate the center of the circle that has the designated radius and passes
+	              through both the current position and the target position. This method calculates the following
+	              set of equations where [x,y] is the vector from current to target position, d == magnitude of
+	              that vector, h == hypotenuse of the triangle formed by the radius of the circle, the distance to
+	              the center of the travel vector. A vector perpendicular to the travel vector [-y,x] is scaled to the
+	              length of h [-y/d*h, x/d*h] and added to the center of the travel vector [x/2,y/2] to form the new point
+	              [i,j] at [x/2-y/d*h, y/2+x/d*h] which will be the center of our arc.
+
+	              d^2 == x^2 + y^2
+	              h^2 == r^2 - (d/2)^2
+	              i == x/2 - y/d*h
+	              j == y/2 + x/d*h
+
+	                                                                   O <- [i,j]
+	                                                                -  |
+	                                                      r      -     |
+	                                                          -        |
+	                                                       -           | h
+	                                                    -              |
+	                                      [0,0] ->  C -----------------+--------------- T  <- [x,y]
+	                                                | <------ d/2 ---->|
+
+	              C - Current position
+	              T - Target position
+	              O - center of circle that pass through both C and T
+	              d - distance from C to T
+	              r - designated radius
+	              h - distance from center of CT to O
+
+	              Expanding the equations:
+
+	              d -> sqrt(x^2 + y^2)
+	              h -> sqrt(4 * r^2 - x^2 - y^2)/2
+	              i -> (x - (y * sqrt(4 * r^2 - x^2 - y^2)) / sqrt(x^2 + y^2)) / 2
+	              j -> (y + (x * sqrt(4 * r^2 - x^2 - y^2)) / sqrt(x^2 + y^2)) / 2
+
+	              Which can be written:
+
+	              i -> (x - (y * sqrt(4 * r^2 - x^2 - y^2))/sqrt(x^2 + y^2))/2
+	              j -> (y + (x * sqrt(4 * r^2 - x^2 - y^2))/sqrt(x^2 + y^2))/2
+
+	              Which we for size and speed reasons optimize to:
+
+	              h_x2_div_d = sqrt(4 * r^2 - x^2 - y^2)/sqrt(x^2 + y^2)
+	              i = (x - (y * h_x2_div_d))/2
+	              j = (y + (x * h_x2_div_d))/2
+
+	            */
+
+	            // Calculate the change in position along each selected axis
+	            double x = target[X_AXIS]-gc.position[X_AXIS];
+	            double y = target[Y_AXIS]-gc.position[Y_AXIS];
+
+	            clear_vector(offset);
+	            // First, use h_x2_div_d to compute 4*h^2 to check if it is negative or r is smaller
+	            // than d. If so, the sqrt of a negative number is complex and error out.
+	            double h_x2_div_d = 4 * r*r - x*x - y*y;
+	            if (h_x2_div_d < 0) { FAIL(GCODE_STATUS_ARC_RADIUS_ERROR); return(gc.status_code); }
+	            // Finish computing h_x2_div_d.
+	            h_x2_div_d = -sqrt(h_x2_div_d)/hypot(x,y); // == -(h * 2 / d)
+	            // Invert the sign of h_x2_div_d if the circle is counter clockwise (see sketch below)
+	            if (gc.motion_mode == NEXT_ACTION_CCW_ARC) { h_x2_div_d = -h_x2_div_d; }
+
+	            /* The counter clockwise circle lies to the left of the target direction. When offset is positive,
+	               the left hand circle will be generated - when it is negative the right hand circle is generated.
+
+
+	                                                             T  <-- Target position
+
+	                                                             ^
+	                  Clockwise circles with this center         |          Clockwise circles with this center will have
+	                  will have > 180 deg of angular travel      |          < 180 deg of angular travel, which is a good thing!
+	                                                   \         |          /
+	      center of arc when h_x2_div_d is positive ->  x <----- | -----> x <- center of arc when h_x2_div_d is negative
+	                                                             |
+	                                                             |
+
+	                                                             C  <-- Current position                                 */
+
+
+	            // Negative R is g-code-alese for "I want a circle with more than 180 degrees of travel" (go figure!),
+	            // even though it is advised against ever generating such circles in a single line of g-code. By
+	            // inverting the sign of h_x2_div_d the center of the circles is placed on the opposite side of the line of
+	            // travel and thus we get the unadvisably long arcs as prescribed.
+	            if (r < 0) {
+	                h_x2_div_d = -h_x2_div_d;
+	                r = -r; // Finished with r. Set to positive for mc_arc
+	            }
+	            // Complete the operation by calculating the actual center of the arc
+	            offset[X_AXIS] = 0.5*(x-(y*h_x2_div_d));
+	            offset[Y_AXIS] = 0.5*(y+(x*h_x2_div_d));
+
+	          } else { // Arc Center Format Offset Mode
+	            r = hypot(offset[X_AXIS], offset[Y_AXIS]); // Compute arc radius for mc_arc
+	          }
+			mc_arc(gc.position, target, offset, X_AXIS, Y_AXIS, Z_AXIS, gc.feed_rate, r, (next_action==NEXT_ACTION_CW_ARC)?true:false, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
 		}
 		break;
 	case NEXT_ACTION_RASTER:
@@ -715,21 +830,21 @@ void gcode_manual_move(double x, double y, double rate) {
 	target[X_AXIS] += x;
 	target[Y_AXIS] += y;
 
-	//target[X_AXIS] = max(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS], CONFIG_X_MIN);
-	//target[X_AXIS] = min(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS], CONFIG_X_MAX);
-	//target[Y_AXIS] = max(target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS], CONFIG_Y_MIN);
-	//target[Y_AXIS] = min(target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS], CONFIG_Y_MAX);
-
 	planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 				 target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 				 target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
 				 rate, gc.acceleration, 0, 0);
 
+	//target[X_AXIS] = max(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS], CONFIG_X_MIN);
+	//target[X_AXIS] = min(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS], CONFIG_X_MAX);
+	//target[Y_AXIS] = max(target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS], CONFIG_Y_MIN);
+	//target[Y_AXIS] = min(target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS], CONFIG_Y_MAX);
+
 	memcpy(gc.position, target, sizeof(target));
 }
 
 // Set the offset to the current position.
-// Used by the joystick to set 0,0 to to the piece location.
+// Used by the joystick to set 0,0 to to the current location.
 void gcode_set_offset_to_current_position(void) {
 	// set offset to current pos, eg: G10 L20 P2
 	gc.offsets[3 * gc.offselect + X_AXIS] = gc.position[X_AXIS]
