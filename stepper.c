@@ -584,6 +584,7 @@ static void adjust_speed( uint32_t steps_per_minute ) {
 		  uint8_t adjusted_intensity = current_block->laser_pwm *
 									   ((float)steps_per_minute/(float)current_block->nominal_rate);
 		  constrained_intensity = max(adjusted_intensity, 0);
+		  control_laser(constrained_intensity, 0);
 	  }
 	  control_laser_intensity(constrained_intensity);
   }
