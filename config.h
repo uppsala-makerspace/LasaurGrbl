@@ -57,7 +57,7 @@
 #define CONFIG_INVERT_Z_AXIS 0  // 0 is regular, 1 inverts the y direction
 
 #define CONFIG_LASER_PWM_FREQ			40000
-#define CONFIG_LASER_PPI_PULSE_MS		2
+#define CONFIG_LASER_PPI_PULSE_MS		4
 
 // This will use a timer to guarantee a step pulse length.
 // However the maximum seek rate will be limited (approx. 15000mm/min)
