@@ -33,6 +33,7 @@
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // ring buffer for motion instructions
 static volatile uint8_t block_buffer_head;       // index of the next block to be pushed
 static volatile uint8_t block_buffer_tail;       // index of the block to process now
+static volatile uint8_t block_buffer_tail_write;
 static volatile uint8_t block_buffers_used;
 
 // Ring buffer used for raster data.
@@ -233,6 +234,7 @@ static void planner_movement(double x, double y, double z,
 void planner_init() {
   block_buffer_head = 0;
   block_buffer_tail = 0;
+  block_buffer_tail_write = 0;
   raster_buffer_next = 0;
   raster_buffer_count = 0;
   clear_vector(position);
@@ -387,23 +389,33 @@ int planner_blocks_available(void) {
 **H---------T**
 */
 
-block_t *planner_get_current_block() {
-  if (block_buffer_head == block_buffer_tail) { return(NULL); }
+block_t *planner_get_current_block()
+{
+  if (block_buffer_head == block_buffer_tail)
+  {
+	  return(NULL);
+  }
+  block_buffer_tail_write = next_block_index(block_buffer_tail);
   return(&block_buffer[block_buffer_tail]);
 }
 
-void planner_discard_current_block() {
-  if (block_buffer_head != block_buffer_tail) {
-	if (block_buffer[block_buffer_tail].block_type == BLOCK_TYPE_RASTER_LINE) {
+void planner_discard_current_block()
+{
+  if (block_buffer_head != block_buffer_tail)
+  {
+	if (block_buffer[block_buffer_tail].block_type == BLOCK_TYPE_RASTER_LINE)
+	{
 		raster_buffer_count--;
 	}
     block_buffer_tail = next_block_index( block_buffer_tail );
+    block_buffer_tail_write = block_buffer_tail;
   }
 }
 
 void planner_reset_block_buffer() {
   block_buffer_head = 0;
   block_buffer_tail = 0;
+  block_buffer_tail_write = 0;
   block_buffers_used = 0;
 
   raster_buffer_count = 0;
@@ -588,7 +600,7 @@ static void planner_recalculate() {
   block_t *previous = NULL;  // block closer to tail (older)
   block_t *current = NULL;   // block who's entry_speed to be adjusted
   block_t *next = NULL;      // block closer to head (newer)
-  while(block_index != block_buffer_tail) {    
+  while(block_index != block_buffer_tail_write) {
     block_index = prev_block_index( block_index );
     next = current;
     current = previous;
@@ -601,7 +613,7 @@ static void planner_recalculate() {
   //// forward pass
   // Recalculate entry_speed to be low enough it can definitely 
   // be reached from previous entry_speed at fixed acceleration.
-  block_index = block_buffer_tail;
+  block_index = block_buffer_tail_write;
   previous = NULL;  // block closer to tail (older)
   current = NULL;   // block who's entry_speed to be adjusted
   next = NULL;      // block closer to head (newer)
@@ -623,7 +635,7 @@ static void planner_recalculate() {
   // entry_speed with the one and only acceleration from our settings and (b) have junction
   // speeds that do not exceed our limits for given direction change.
   // Now we only need to calculate the actual accelerate_until and decelerate_after values.
-  block_index = block_buffer_tail;
+  block_index = block_buffer_tail_write;
   current = NULL;
   next = NULL;
   while(block_index != block_buffer_head) {
