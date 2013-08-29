@@ -351,6 +351,9 @@ void stepper_isr (void) {
       counter_y = counter_x;
       counter_z = counter_x;
       step_events_completed = 0;
+      // If this is a move, reset ppi steps (it is only incremented on cuts).
+      if (current_block->laser_pwm == 0)
+    	  ppi_step_events = 0;
     }
   }
 
@@ -581,7 +584,6 @@ static void adjust_speed( uint32_t steps_per_minute ) {
 		  uint8_t adjusted_intensity = current_block->laser_pwm *
 									   ((float)steps_per_minute/(float)current_block->nominal_rate);
 		  constrained_intensity = max(adjusted_intensity, 0);
-		  control_laser(constrained_intensity, 0);
 	  }
 	  control_laser_intensity(constrained_intensity);
   }
