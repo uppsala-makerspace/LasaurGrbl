@@ -91,7 +91,7 @@ void control_init() {
 
 	// Setup ISR
 	TimerIntRegister(LASER_TIMER, TIMER_B, laser_isr);
-	TimerIntEnable(LASER_TIMER, TIMER_B);
+	TimerIntEnable(LASER_TIMER, TIMER_TIMB_TIMEOUT);
     IntPrioritySet(INT_TIMER0B, CONFIG_LASER_PRIORITY);
 
 	// Set PWM refresh rate
@@ -135,21 +135,20 @@ uint8_t control_get_intensity(void) {
 
 void control_laser(uint8_t on_off, uint8_t pulse_length) {
 
-	// Disable the timer to avoid a race.
-	TimerDisable(LASER_TIMER, TIMER_B);
+	// If required, (re)set the PPI timer.
+	if (pulse_length > 0) {
+		// Schedule a timer to turn off the laser
+		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
+		// Clear any interrupts to avoid a race.
+		// This function is called from a higher priority ISR.
+		TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
+	}
 
 	// Control the beam enable.
 	if (on_off == 0)
 		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
 	else
 		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
-
-	// If required, (re)set the PPI timer.
-	if (pulse_length > 0) {
-		// Schedule a timer to turn off the laser
-		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
-		TimerEnable(LASER_TIMER, TIMER_B);
-	}
 }
 
 
