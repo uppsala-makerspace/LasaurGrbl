@@ -226,7 +226,9 @@ void joystick_enable(void){
 }
 
 void joystick_disable(void){
+	enabled = 0;
 	GPIOPinIntDisable(JOY_PORT, JOY_MASK);
     ADCIntDisable(ADC0_BASE, 0);
     ADCIntDisable(ADC0_BASE, 1);
+	GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
 }
