@@ -132,11 +132,10 @@ static void check_ppi_feedrate(void) {
 	  // Check that the configured PPI and Feedrate are compatible
 	  // Prefer PPI (and slow down) if not.
 	  uint32_t pulses_per_min = gc.laser_ppi * gc.feed_rate / MM_PER_INCH;
-	  uint32_t max_pulses_per_min = 60000 / CONFIG_LASER_PPI_PULSE_MS;
 
 	  // Set the Feedrate to the maximum it can be for this PPI.
-	  if (pulses_per_min > max_pulses_per_min) {
-		  gc.feed_rate = max_pulses_per_min * MM_PER_INCH / gc.laser_ppi;
+	  if (pulses_per_min > CONFIG_LASER_PPI_MAX_PPM) {
+		  gc.feed_rate = CONFIG_LASER_PPI_MAX_PPM * MM_PER_INCH / gc.laser_ppi;
 	  }
 }
 

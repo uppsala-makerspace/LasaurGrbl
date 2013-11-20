@@ -28,7 +28,7 @@
 //#define DEBUG_IGNORE_SENSORS  // set for debugging
 
 // Whether or not to drive an LCD.
-#define ENABLE_LCD
+//#define ENABLE_LCD
 
 // This defines the maximum number of dots in a raster.
 #define RASTER_BUFFER_SIZE	1024
@@ -57,7 +57,11 @@
 #define CONFIG_INVERT_Z_AXIS 0  // 0 is regular, 1 inverts the y direction
 
 #define CONFIG_LASER_PWM_FREQ			40000
+
 #define CONFIG_LASER_PPI_PULSE_MS		4
+#define CONFIG_LASER_PPI_MAX_RATIO		0.75
+#define CONFIG_LASER_PPI_MAX_PPM		(60000.0 / CONFIG_LASER_PPI_PULSE_MS * CONFIG_LASER_PPI_MAX_RATIO)
+
 
 // This will use a timer to guarantee a step pulse length.
 // However the maximum seek rate will be limited (approx. 15000mm/min)
