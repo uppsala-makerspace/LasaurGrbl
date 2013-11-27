@@ -91,7 +91,8 @@ static int32_t counter_x,       // Counter variables for the bresenham line trac
                counter_z;
 static uint32_t step_events_completed;        // The number of step events executed in the current block
 static volatile uint8_t busy;                 // true whe stepper ISR is in already running
-static uint32_t ppi_step_events = 0;    	  // The number of step events executed globally (for PPI)
+static double ppi_mm_x = 0;    	  		  	  // The number of mm travelled in X since last pulse (for PPI)
+static double ppi_mm_y = 0;    	  		      // The number of mm travelled in Y since last pulse (for PPI)
 
 // Variables used by the trapezoid generation
 static uint32_t cycles_per_step_event;        // The number of machine cycles between each step event
@@ -351,9 +352,10 @@ void stepper_isr (void) {
       counter_y = counter_x;
       counter_z = counter_x;
       step_events_completed = 0;
-      // If this is a move, reset ppi steps (it is only incremented on cuts).
-      if (current_block->laser_pwm == 0)
-    	  ppi_step_events = 0;
+      // If this is a move, or ppi is zero, reset ppi steps (it is only incremented on PPI cuts).
+      if (current_block->laser_pwm == 0 || current_block->laser_mmpp == 0)
+    	  ppi_mm_x = 0;
+          ppi_mm_y = 0;
     }
   }
 
@@ -384,8 +386,10 @@ void stepper_isr (void) {
         // also keep track of absolute position
         if ((out_dir_bits >> STEP_X_DIR) & 1 ) {
           stepper_position[X_AXIS] -= 1;
+          ppi_mm_x -= (1 / CONFIG_X_STEPS_PER_MM);
         } else {
           stepper_position[X_AXIS] += 1;
+          ppi_mm_x += (1 / CONFIG_X_STEPS_PER_MM);
         }        
       }
       counter_y += current_block->steps_y;
@@ -395,8 +399,10 @@ void stepper_isr (void) {
         // also keep track of absolute position
         if ((out_dir_bits >> STEP_Y_DIR) & 1 ) {
           stepper_position[Y_AXIS] -= 1;
+          ppi_mm_y -= (1 / CONFIG_Y_STEPS_PER_MM);
         } else {
           stepper_position[Y_AXIS] += 1;
+          ppi_mm_y += (1 / CONFIG_Y_STEPS_PER_MM);
         }        
       }
 #ifdef STEP_Z_DIR
@@ -426,14 +432,19 @@ void stepper_isr (void) {
       step_events_completed++;  // increment step count
       
       // Send PPI pulse as required.
-      if (current_block->laser_pwm > 0 && current_block->laser_ppi_steps > 0) {
-    	  if (ppi_step_events % current_block->laser_ppi_steps == 0) {
+      if (current_block->laser_pwm > 0 && current_block->laser_mmpp > 0) {
+    	  // Use pythagoras to calculate the distance travelled.
+    	  double travelled = pow(pow(ppi_mm_x, 2) + pow(ppi_mm_y, 2), 0.5);
+
+    	  if (travelled >= current_block->laser_mmpp) {
     		  // Send a laser pulse
     		  control_laser(1, CONFIG_LASER_PPI_PULSE_MS);
-    	  }
-    	  ppi_step_events++;
-      }
 
+    		  // Reset distance travelled.
+    		  ppi_mm_x = 0;
+    		  ppi_mm_y = 0;
+    	  }
+      }
 
       // apply stepper invert mask
       out_dir_bits ^= STEP_DIR_INVERT;
@@ -579,7 +590,7 @@ static void adjust_speed( uint32_t steps_per_minute ) {
   if (current_block != NULL)
   {
 	  uint8_t constrained_intensity = current_block->laser_pwm;
-	  if (current_block->laser_ppi_steps == 0) {
+	  if (current_block->laser_mmpp == 0) {
 		  // beam dynamics (not using PPI)
 		  uint8_t adjusted_intensity = current_block->laser_pwm *
 									   ((float)steps_per_minute/(float)current_block->nominal_rate);

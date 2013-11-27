@@ -160,10 +160,11 @@ static void planner_movement(double x, double y, double z,
                             * block->acceleration / (60 * ACCELERATION_TICKS_PER_SECOND) );
 
   // Calculate the ppi steps
-  block->laser_ppi_steps = 0;
+  block->laser_mmpp = 0;
+  block->laser_ppi = 0;
   if (ppi > 0) {
 	  block->laser_ppi = ppi; // Only used by LCD output.
-	  block->laser_ppi_steps = CONFIG_X_STEPS_PER_MM * MM_PER_INCH / ppi;
+	  block->laser_mmpp = MM_PER_INCH / ppi;
   }
 
   //// acceleeration manager calculations
