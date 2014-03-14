@@ -28,11 +28,19 @@
 
 
 // The number of linear motions that can be in the plan at any give time
-#define BLOCK_BUFFER_SIZE 16  // do not make bigger than uint8_t
+#define BLOCK_BUFFER_SIZE 15  // do not make bigger than uint8_t
+#define RASTER_BUFFER_COUNT 2
 
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // ring buffer for motion instructions
 static volatile uint8_t block_buffer_head;       // index of the next block to be pushed
 static volatile uint8_t block_buffer_tail;       // index of the block to process now
+
+// Raster buffer.
+// We are severely memory constrained, so each (gcode) line of raster data is queued as a new
+// planner block rather than waiting for the end of the raster. The raster buffers are grabbed
+// on an "is free" basis and a pointer to it stored in the planner block.
+static raster_t raster_buffer[RASTER_BUFFER_COUNT];
+static raster_info_t raster_current;
 
 static int32_t position[3];             // The current position of the tool in absolute steps
 static volatile bool position_update_requested;  // make sure to update to stepper position on next occasion
@@ -51,8 +59,8 @@ static void reduce_entry_speed_forward(block_t *previous, block_t *current);
 static void planner_recalculate();
 
 
-
 void planner_init() {
+  int i;
   block_buffer_head = 0;
   block_buffer_tail = 0;
   clear_vector(position);
@@ -62,13 +70,20 @@ void planner_init() {
   position_update_requested = false;
   clear_vector_double(previous_unit_vec);
   previous_nominal_speed = 0.0;
+
+  // Mark the raster buffers as free.
+  for (i=0; i<RASTER_BUFFER_COUNT; ++i) {
+    raster_buffer[i].free = true;
+  }
 }
 
 
 
 // Add a new linear movement to the buffer. x, y and z is 
 // the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
-void planner_line(double x, double y, double z, double feed_rate, uint8_t nominal_laser_intensity) {    
+static void planner_movement(double x, double y, double z, double feed_rate, 
+                             uint8_t nominal_laser_intensity, raster_t *raster) {
+  
   // calculate target position in absolute steps
   int32_t target[3];
   target[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
@@ -76,7 +91,7 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
   target[Z_AXIS] = lround(z*CONFIG_Z_STEPS_PER_MM); 
 
   // calculate the buffer head and check for space
-  int next_buffer_head = next_block_index( block_buffer_head );	
+  int next_buffer_head = next_block_index( block_buffer_head ); 
   while(block_buffer_tail == next_buffer_head) {  // buffer full condition
     // good! We are well ahead of the robot. Rest here until buffer has room.
     // sleep_mode();
@@ -92,8 +107,13 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
   // prepare to set up new block
   block_t *block = &block_buffer[block_buffer_head];
   
-  // set block type to line command
-  block->type = TYPE_LINE;
+  // Setup the block type
+  if (raster == NULL) {
+    block->block_type = BLOCK_TYPE_LINE;
+  } else {
+    block->block_type = BLOCK_TYPE_RASTER_LINE;
+    block->raster = raster;
+  }
 
   // set nominal laser intensity
   block->nominal_laser_intensity = nominal_laser_intensity;
@@ -119,7 +139,7 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
   block->millimeters = sqrt( (delta_mm[X_AXIS]*delta_mm[X_AXIS]) + 
                              (delta_mm[Y_AXIS]*delta_mm[Y_AXIS]) + 
                              (delta_mm[Z_AXIS]*delta_mm[Z_AXIS]) );
-  double inverse_millimeters = 1.0/block->millimeters;  // store for efficency	
+  double inverse_millimeters = 1.0/block->millimeters;  // store for efficency  
   
   // calculate nominal_speed (mm/min) and nominal_rate (step/min)
   // minimum stepper speed is limited by MINIMUM_STEPS_PER_MINUTE in stepper.c
@@ -197,6 +217,84 @@ void planner_line(double x, double y, double z, double feed_rate, uint8_t nomina
   stepper_wake_up();
 }
 
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specify the raster direction.
+// The value of x_off/y_off specify the offset (acceleration margin) before the actual raster.
+void planner_raster(double x, double y, double z,
+                double feed_rate,
+                uint8_t nominal_laser_intensity,
+                raster_info_t *info) {
+
+  memcpy(&raster_current, info, sizeof(raster_info_t));
+
+  // Store the parameters
+  raster_current.x = x;
+  raster_current.y = y;
+  raster_current.z = z;
+  raster_current.feed_rate = feed_rate;
+
+  // Move to the starting point. (Assumes we have space before the limits are hit)
+  // then accelerate to operating feed_rate.
+  // Hopefully by then we'll have the first block of raster data...
+  if (raster_current.x_off > 0) {
+    planner_movement(x - raster_current.x_off, y, z, CONFIG_SEEKRATE, 0, NULL);
+    planner_movement(x, y, z, feed_rate, 0, NULL);
+  } else if (raster_current.y_off > 0) {
+    planner_movement(x, y - raster_current.y_off, z, CONFIG_SEEKRATE, 0, NULL);
+    planner_movement(x, y, z, feed_rate, 0, NULL);
+  }
+
+  raster_current.intensity = nominal_laser_intensity;
+}
+
+// There isn't enough RAM to buffer a whole raster, so take and process piecemeal.
+void planner_raster_data(char *data, uint8_t len, bool last) {
+  int i;
+
+  if (len > 0) {
+    raster_t* raster = NULL;
+    for (i=0; i<RASTER_BUFFER_COUNT; ++i) {
+      if (raster_buffer[i].free == true)
+      {
+        raster = &raster_buffer[i];
+        raster->free = false;
+        break;
+      }
+    }
+
+    // Append the data to the inactive buffer.
+    memcpy(raster->data, data, len);
+    raster->data_length = len;
+    raster->intensity = raster_current.intensity;
+    raster->invert = raster_current.invert;
+
+    // Shuffle the stepper along.
+    if (raster_current.x_off > 0) {
+      planner_movement(raster_current.x + raster_current.length, raster_current.y, raster_current.z, raster_current.feed_rate, 0, raster);
+    } else if (raster_current.y_off > 0) {
+      planner_movement(raster_current.x, raster_current.y + raster_current.length, raster_current.z, raster_current.feed_rate, 0, raster);
+    }
+  }
+
+  // If this is the last one, end properly.
+  if (last) {
+    if (raster_current.x_off > 0) {
+      planner_movement(raster_current.x + raster_current.length + raster_current.x_off, raster_current.y, raster_current.z, CONFIG_SEEKRATE, 0, NULL);
+    } else if (raster_current.y_off > 0) {
+      planner_movement(raster_current.x, raster_current.y + raster_current.length + raster_current.y_off, raster_current.z, CONFIG_SEEKRATE, 0, NULL);
+    }
+  }
+}
+
+// Add a new linear movement to the buffer. x, y and z is
+// the signed, absolute target position in millimeters. Feed rate specifies the speed of the motion.
+void planner_line(double x, double y, double z,
+              double feed_rate,
+              uint8_t laser_pwm) {
+  planner_movement(x, y, z, feed_rate, laser_pwm, NULL);
+}
+
 
 void planner_dwell(double seconds, uint8_t nominal_laser_intensity) {
 // // Execute dwell in seconds. Maximum time delay is > 18 hours, more than enough for any application.
@@ -214,7 +312,7 @@ void planner_dwell(double seconds, uint8_t nominal_laser_intensity) {
 
 void planner_command(uint8_t type) {
   // calculate the buffer head and check for space
-  int next_buffer_head = next_block_index( block_buffer_head );	
+  int next_buffer_head = next_block_index( block_buffer_head ); 
   while(block_buffer_tail == next_buffer_head) {  // buffer full condition
     // good! We are well ahead of the robot. Rest here until buffer has room.
     // sleep_mode();
@@ -224,7 +322,7 @@ void planner_command(uint8_t type) {
   block_t *block = &block_buffer[block_buffer_head];
 
   // set block type command
-  block->type = type;
+  block->block_type = type;
 
   // Move buffer head
   block_buffer_head = next_buffer_head;

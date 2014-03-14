@@ -23,29 +23,61 @@
                  
 #include "config.h"
 
+#define RASTER_BUFFER_SIZE 70
 
-// Command types the planner and stepper can schedule for execution 
-#define TYPE_LINE 0
-#define TYPE_AIR_ASSIST_ENABLE 1
-#define TYPE_AIR_ASSIST_DISABLE 2
-#define TYPE_AUX1_ASSIST_ENABLE 3
-#define TYPE_AUX1_ASSIST_DISABLE 4
-#define TYPE_AUX2_ASSIST_ENABLE 5
-#define TYPE_AUX2_ASSIST_DISABLE 6
+// Command types the planner and stepper can schedule for execution
+typedef enum {
+  BLOCK_TYPE_LINE,
+  BLOCK_TYPE_RASTER_LINE,
+  BLOCK_TYPE_AIR_ASSIST_ENABLE,
+  BLOCK_TYPE_AIR_ASSIST_DISABLE,
+  BLOCK_TYPE_AUX1_ASSIST_ENABLE,
+  BLOCK_TYPE_AUX1_ASSIST_DISABLE,
+  BLOCK_TYPE_AUX2_ASSIST_ENABLE,
+  BLOCK_TYPE_AUX2_ASSIST_DISABLE,
+} BLOCK_TYPE;
 
-#define planner_control_air_assist_enable() planner_command(TYPE_AIR_ASSIST_ENABLE)
-#define planner_control_air_assist_disable() planner_command(TYPE_AIR_ASSIST_DISABLE)
-#define planner_control_aux1_assist_enable() planner_command(TYPE_AUX1_ASSIST_ENABLE)
-#define planner_control_aux1_assist_disable() planner_command(TYPE_AUX1_ASSIST_DISABLE)
+typedef struct _raster_info {
+  uint8_t intensity;
+  uint8_t invert;
+
+  double dot_size;
+  double x_off;
+  double y_off;
+
+  double x;
+  double y;
+  double z;
+  double feed_rate;
+
+  uint32_t length;
+} raster_info_t;
+
+// Raster structure, used by gcode, planner and stepper.
+typedef struct _raster {
+  bool free;
+
+  uint8_t data[RASTER_BUFFER_SIZE];
+  uint32_t data_length;
+
+  uint8_t intensity;
+  uint8_t invert;
+} raster_t;
+
+
+#define planner_control_air_assist_enable() planner_command(BLOCK_TYPE_AIR_ASSIST_ENABLE)
+#define planner_control_air_assist_disable() planner_command(BLOCK_TYPE_AIR_ASSIST_DISABLE)
+#define planner_control_aux1_assist_enable() planner_command(BLOCK_TYPE_AUX1_ASSIST_ENABLE)
+#define planner_control_aux1_assist_disable() planner_command(BLOCK_TYPE_AUX1_ASSIST_DISABLE)
 #ifdef DRIVEBOARD
-  #define planner_control_aux2_assist_enable() planner_command(TYPE_AUX2_ASSIST_ENABLE)
-  #define planner_control_aux2_assist_disable() planner_command(TYPE_AUX2_ASSIST_DISABLE)
+  #define planner_control_aux2_assist_enable() planner_command(BLOCK_TYPE_AUX2_ASSIST_ENABLE)
+  #define planner_control_aux2_assist_disable() planner_command(BLOCK_TYPE_AUX2_ASSIST_DISABLE)
 #endif
 
 // This struct is used when buffering the setup for each linear movement "nominal" values are as specified in 
 // the source g-code and may never actually be reached if acceleration management is active.
 typedef struct {
-  uint8_t type;                       // Type of command, eg: TYPE_LINE, TYPE_AIR_ASSIST_ENABLE
+  BLOCK_TYPE block_type;              // Type of command, eg: TYPE_LINE, TYPE_AIR_ASSIST_ENABLE
   // Fields used by the bresenham algorithm for tracing the line
   uint32_t steps_x, steps_y, steps_z; // Step count along each axis
   uint8_t  direction_bits;            // The direction bit set for this block (refers to *_DIRECTION_BIT in config.h)
@@ -65,11 +97,23 @@ typedef struct {
   int32_t rate_delta;                 // The steps/minute to add or subtract when changing speed (must be positive)
   uint32_t accelerate_until;          // The index of the step event on which to stop acceleration
   uint32_t decelerate_after;          // The index of the step event on which to start decelerating
-
+  raster_t *raster;                   // Which raster buffer we're using.
 } block_t;
-      
+
 // Initialize the motion plan subsystem      
 void planner_init();
+
+// Process a raster.
+// Rasters can be +/- in the x or y directions (not z).
+// The sign of x_off/y_off specifies the raster direction.
+// The value of x_off/y_off specifies the offset (acceleration margin) before the actual raster.
+// raster and raster_len contain the pointer and length of buffer containing 0-255 PWM values for each dot.
+void planner_raster(double x, double y, double z,
+                double feed_rate,
+                uint8_t nominal_laser_intensity,
+                raster_info_t *info);
+
+void planner_raster_data(char *data, uint8_t len,  bool last);
 
 // Add a new linear movement to the buffer.
 // x, y and z is the signed, absolute target position in millimaters.

@@ -33,7 +33,6 @@
 #define BAUD_RATE 57600
 // #define DEBUG_IGNORE_SENSORS  // set for debugging
 
-
 #define CONFIG_X_STEPS_PER_MM 32.80839895 //microsteps/mm
 #ifndef NANOTEC_STEPPER_09
   #define CONFIG_Y_STEPS_PER_MM 32.80839895 //microsteps/mm
@@ -195,3 +194,4 @@
 //
 // x = ~x; // toggles ALL the bits in x.
 
+#define MM_PER_INCH 25.4

@@ -162,7 +162,7 @@ SIGNAL(USART_RX_vect) {
   uint8_t data = UDR0;
   if (data == CHAR_STOP) {
     // special stop character, bypass buffer
-    stepper_request_stop(STATUS_SERIAL_STOP_REQUEST);
+    stepper_request_stop(GCODE_STATUS_SERIAL_STOP_REQUEST);
   } else if (data == CHAR_RESUME) {
     // special resume character, bypass buffer
     stepper_stop_resume();
@@ -181,7 +181,7 @@ SIGNAL(USART_RX_vect) {
 
     if (next_head == rx_buffer_tail) {
       // buffer is full, other side sent too much data
-      stepper_request_stop(STATUS_RX_BUFFER_OVERFLOW);
+      stepper_request_stop(GCODE_STATUS_RX_BUFFER_OVERFLOW);
     } else {
       rx_buffer[head] = data;
       rx_buffer_head = next_head;

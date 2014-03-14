@@ -58,7 +58,6 @@
 #define CYCLES_PER_MICROSECOND (F_CPU/1000000)  //16000000/1000000 = 16
 #define CYCLES_PER_ACCELERATION_TICK (F_CPU/ACCELERATION_TICKS_PER_SECOND)  // 16MHz/100 = 160000
 
-
 static int32_t stepper_position[3];  // real-time position in absolute steps
 static block_t *current_block;  // A pointer to the block currently being traced
 
@@ -116,7 +115,7 @@ void stepper_init() {
   acceleration_tick_counter = 0;
   current_block = NULL;
   stop_requested = false;
-  stop_status = STATUS_OK;
+  stop_status = GCODE_STATUS_OK;
   busy = false;
   
   // start in the idle state
@@ -210,6 +209,8 @@ ISR(TIMER2_OVF_vect) {
 // config_step_timer. It pops blocks from the block_buffer and executes them by pulsing the stepper pins appropriately.
 // The bresenham line tracer algorithm controls all three stepper outputs simultaneously.
 ISR(TIMER1_COMPA_vect) {
+  uint32_t raster_index;
+  uint8_t intensity;
   if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
   busy = true;
   if (stop_requested) {
@@ -225,13 +226,13 @@ ISR(TIMER1_COMPA_vect) {
   #ifndef DEBUG_IGNORE_SENSORS
     // stop program when any limit is hit or the e-stop turned the power off
     if (SENSE_LIMITS) {
-      stepper_request_stop(STATUS_LIMIT_HIT);
+      stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
       busy = false;
       return;    
     }
     #ifndef DRIVEBOARD
       else if (SENSE_POWER_OFF) {
-        stepper_request_stop(STATUS_POWER_OFF);
+        stepper_request_stop(GCODE_STATUS_POWER_OFF);
         busy = false;
         return;
       }
@@ -261,7 +262,8 @@ ISR(TIMER1_COMPA_vect) {
       busy = false;
       return;       
     }      
-    if (current_block->type == TYPE_LINE) {  // starting on new line block
+    if (current_block->block_type == BLOCK_TYPE_LINE
+        || current_block->block_type == BLOCK_TYPE_RASTER_LINE) {  // starting on new line block
       adjusted_rate = current_block->initial_rate;
       acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2; // start halfway, midpoint rule.
       adjust_speed( adjusted_rate ); // initialize cycles_per_step_event
@@ -273,8 +275,22 @@ ISR(TIMER1_COMPA_vect) {
   }
 
   // process current block, populate out_bits (or handle other commands)
-  switch (current_block->type) {
-    case TYPE_LINE:
+  switch (current_block->block_type) {
+    case BLOCK_TYPE_RASTER_LINE:
+    raster_index = (step_events_completed * current_block->raster->data_length) / current_block->step_event_count;
+
+    intensity = 0;
+    if (current_block->raster->invert == 0 && current_block->raster->data[raster_index] == '1')
+      intensity = current_block->raster->intensity;
+    else if (current_block->raster->invert != 0 && current_block->raster->data[raster_index] == '0')
+      intensity = current_block->raster->intensity;
+
+    if (intensity != current_block->nominal_laser_intensity) {
+      current_block->nominal_laser_intensity = intensity;
+      control_laser_intensity(intensity);
+    }
+    //break;
+    case BLOCK_TYPE_LINE:
       ////// Execute step displacement profile by bresenham line algorithm
       out_bits = current_block->direction_bits;
       counter_x += current_block->steps_x;
@@ -335,11 +351,14 @@ ISR(TIMER1_COMPA_vect) {
             // reset counter, midpoint rule
             // makes sure deceleration is performed the same every time
             acceleration_tick_counter = CYCLES_PER_ACCELERATION_TICK/2;
-                 
+
         // decelerating
         } else if (step_events_completed >= current_block->decelerate_after) {
           if ( acceleration_tick() ) {  // scheduled speed change
-            adjusted_rate -= current_block->rate_delta;
+            if (adjusted_rate > current_block->rate_delta)
+              adjusted_rate -= current_block->rate_delta;
+            else
+              adjusted_rate = 0;
             if (adjusted_rate < current_block->final_rate) {  // overshot
               adjusted_rate = current_block->final_rate;
             }
@@ -362,38 +381,38 @@ ISR(TIMER1_COMPA_vect) {
     
       break; 
 
-    case TYPE_AIR_ASSIST_ENABLE:
+    case BLOCK_TYPE_AIR_ASSIST_ENABLE:
       control_air_assist(true);
       current_block = NULL;
       planner_discard_current_block();  
       break;
 
-    case TYPE_AIR_ASSIST_DISABLE:
+    case BLOCK_TYPE_AIR_ASSIST_DISABLE:
       control_air_assist(false);
       current_block = NULL;
       planner_discard_current_block();  
       break;
 
-    case TYPE_AUX1_ASSIST_ENABLE:
+    case BLOCK_TYPE_AUX1_ASSIST_ENABLE:
       control_aux1_assist(true);
       current_block = NULL;
       planner_discard_current_block();  
       break;
 
-    case TYPE_AUX1_ASSIST_DISABLE:
+    case BLOCK_TYPE_AUX1_ASSIST_DISABLE:
       control_aux1_assist(false);
       current_block = NULL;
       planner_discard_current_block();  
       break;    
 
     #ifdef DRIVEBOARD
-      case TYPE_AUX2_ASSIST_ENABLE:
+      case BLOCK_TYPE_AUX2_ASSIST_ENABLE:
         control_aux2_assist(true);
         current_block = NULL;
         planner_discard_current_block();  
         break;
 
-      case TYPE_AUX2_ASSIST_DISABLE:
+      case BLOCK_TYPE_AUX2_ASSIST_DISABLE:
         control_aux2_assist(false);
         current_block = NULL;
         planner_discard_current_block();  
@@ -464,7 +483,12 @@ static uint32_t config_step_timer(uint32_t cycles) {
 static void adjust_speed( uint32_t steps_per_minute ) {
   // steps_per_minute is typicaly just adjusted_rate
   if (steps_per_minute < MINIMUM_STEPS_PER_MINUTE) { steps_per_minute = MINIMUM_STEPS_PER_MINUTE; }
-  cycles_per_step_event = config_step_timer((CYCLES_PER_MICROSECOND*1000000*60)/steps_per_minute);
+  cycles_per_step_event = config_step_timer( (CYCLES_PER_MICROSECOND*1000000/steps_per_minute) * 60 );
+
+  if (cycles_per_step_event == 0)
+  {
+    stepper_request_stop(GCODE_STATUS_BAD_NUMBER_FORMAT);
+  }
   // beam dynamics
   uint8_t adjusted_intensity = current_block->nominal_laser_intensity * 
                                ((float)steps_per_minute/(float)current_block->nominal_rate);

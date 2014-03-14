@@ -32,27 +32,34 @@
 #include "planner.h"
 #include "stepper.h"
 
-#define MM_PER_INCH (25.4)
-
-#define NEXT_ACTION_NONE 0
-#define NEXT_ACTION_SEEK 1 
-#define NEXT_ACTION_FEED 2
-#define NEXT_ACTION_DWELL 3
-#define NEXT_ACTION_HOMING_CYCLE 4
-#define NEXT_ACTION_SET_COORDINATE_OFFSET 5
-#define NEXT_ACTION_AIR_ASSIST_ENABLE 6
-#define NEXT_ACTION_AIR_ASSIST_DISABLE 7
-#define NEXT_ACTION_AUX1_ASSIST_ENABLE 8
-#define NEXT_ACTION_AUX1_ASSIST_DISABLE 9
+enum {
+  NEXT_ACTION_NONE = 0,
+  NEXT_ACTION_SEEK,
+  NEXT_ACTION_FEED,
+  NEXT_ACTION_CW_ARC,
+  NEXT_ACTION_CCW_ARC,
+  NEXT_ACTION_RASTER,
+  NEXT_ACTION_DWELL,
+  NEXT_ACTION_STOP,
+  NEXT_ACTION_HOMING_CYCLE,
+  NEXT_ACTION_SET_COORDINATE_OFFSET,
+  NEXT_ACTION_AIR_ASSIST_ENABLE,
+  NEXT_ACTION_AIR_ASSIST_DISABLE,
+  NEXT_ACTION_AUX1_ASSIST_ENABLE,
+  NEXT_ACTION_AUX1_ASSIST_DISABLE,
 #ifdef DRIVEBOARD
-  #define NEXT_ACTION_AUX2_ASSIST_ENABLE 10
-  #define NEXT_ACTION_AUX2_ASSIST_DISABLE 11
+  NEXT_ACTION_AUX2_ASSIST_ENABLE,
+  NEXT_ACTION_AUX2_ASSIST_DISABLE,
 #endif
+  NEXT_ACTION_SET_ACCELERATION,
+  NEXT_ACTION_SET_PPI,
+};
 
 #define OFFSET_G54 0
 #define OFFSET_G55 1
 
 #define BUFFER_LINE_SIZE 80
+
 char rx_line[BUFFER_LINE_SIZE];
 char *rx_line_cursor;
 
@@ -61,7 +68,7 @@ uint8_t line_checksum_ok_already;
 #define FAIL(status) gc.status_code = status;
 
 typedef struct {
-  uint8_t status_code;             // return codes
+  GCODE_STATUS status_code;        // return codes
   uint8_t motion_mode;             // {G0, G1}
   bool inches_mode;                // 0 = millimeter mode, 1 = inches mode {G20, G21}
   bool absolute_mode;              // 0 = relative motion, 1 = absolute motion {G90, G91}
@@ -71,6 +78,7 @@ typedef struct {
   double offsets[6];               // coord system offsets {G54_X,G54_Y,G54_Z,G55_X,G55_Y,G55_Z}
   uint8_t offselect;               // currently active offset, 0 -> G54, 1 -> G55
   uint8_t nominal_laser_intensity; // 0-255 percentage
+  raster_info_t raster;            // Raster State
 } parser_state_t;
 static parser_state_t gc;
 
@@ -107,7 +115,7 @@ void gcode_init() {
 void gcode_process_line() {
   uint8_t chr = '\0';
   int numChars = 0;
-  int status_code = STATUS_OK;
+  int status_code = GCODE_STATUS_OK;
   uint8_t skip_line = false;
   uint8_t print_extended_status = false;
 
@@ -115,7 +123,7 @@ void gcode_process_line() {
     chr = serial_read();  // blocks until there is data
     if (numChars + 1 >= BUFFER_LINE_SIZE) {  // +1 for \0
       // reached line size, other side sent too long lines
-      stepper_request_stop(STATUS_LINE_BUFFER_OVERFLOW);
+      stepper_request_stop(GCODE_STATUS_LINE_BUFFER_OVERFLOW);
       break;
     } else if (chr <= ' ') { 
       // ignore control characters and space
@@ -142,21 +150,35 @@ void gcode_process_line() {
       printString("!");  // report harware is in stop mode
       status_code = stepper_stop_status();
       // report stop conditions
-      if ( status_code == STATUS_POWER_OFF) {
-        printString("P");  // Stop: Power Off
-      } else if (status_code == STATUS_LIMIT_HIT) {
-        printString("L");  // Stop: Limit Hit
-      } else if (status_code == STATUS_SERIAL_STOP_REQUEST) {
-        printString("R");  // Stop: Serial Request   
-      } else if (status_code == STATUS_RX_BUFFER_OVERFLOW) {
-        printString("B");  // Stop: Rx Buffer Overflow  
-      } else if (status_code == STATUS_LINE_BUFFER_OVERFLOW) {
-        printString("I");  // Stop: Line Buffer Overflow  
-      } else if (status_code == STATUS_TRANSMISSION_ERROR) {
-        printString("T");  // Stop: Serial Transmission Error  
-      } else {
-        printString("O");  // Stop: Other error
-        printInteger(status_code);        
+      switch (status_code) {
+	case GCODE_STATUS_POWER_OFF:
+	  printString("P");  // Stop: Power Off
+	break;
+
+	case GCODE_STATUS_LIMIT_HIT:
+	  printString("L");  // Stop: Limit Hit
+	break;
+
+	case GCODE_STATUS_SERIAL_STOP_REQUEST:
+	  printString("R");  // Stop: Serial Request
+	break;
+
+	case GCODE_STATUS_RX_BUFFER_OVERFLOW:
+	  printString("B");  // Stop: Rx Buffer Overflow
+	break;
+
+	case GCODE_STATUS_LINE_BUFFER_OVERFLOW:
+	  printString("I");  // Stop: Line Buffer Overflow
+	break;
+
+	case GCODE_STATUS_TRANSMISSION_ERROR:
+	  printString("T");  // Stop: Serial Transmission Error
+	break;
+
+	default:
+	  printString("O");  // Stop: Other error
+	  printInteger(status_code);
+	break;
       }
     } else {
       if (rx_line[0] == '*' || rx_line[0] == '^') {
@@ -169,7 +191,7 @@ void gcode_process_line() {
           if (rx_checksum < 128) {
             printString(rx_line);
             printString(" -> checksum outside [128,255]");
-            stepper_request_stop(STATUS_TRANSMISSION_ERROR);
+            stepper_request_stop(GCODE_STATUS_TRANSMISSION_ERROR);
           }
           char *itr = rx_line_cursor;
           uint16_t checksum = 0;
@@ -191,7 +213,7 @@ void gcode_process_line() {
               printString("^");
             } else {  // '*'
               printString(rx_line);
-              stepper_request_stop(STATUS_TRANSMISSION_ERROR);
+              stepper_request_stop(GCODE_STATUS_TRANSMISSION_ERROR);
               // line_checksum_ok_already = false;
             }
           } else {  // we got a good line
@@ -216,19 +238,27 @@ void gcode_process_line() {
         if (rx_line_cursor[0] != '?') {
           // process the next line of G-code
           status_code = gcode_execute_line(rx_line_cursor);
-          // report parse errors
-          if (status_code == STATUS_OK) {
-            // pass
-          } else if (status_code == STATUS_BAD_NUMBER_FORMAT) {
-            printString("N");  // Warning: Bad number format
-          } else if (status_code == STATUS_EXPECTED_COMMAND_LETTER) {
-            printString("E");  // Warning: Expected command letter
-          } else if (status_code == STATUS_UNSUPPORTED_STATEMENT) {
-            printString("U");  // Warning: Unsupported statement   
-          } else {
-            printString("W");  // Warning: Other error
-            printInteger(status_code);        
-          } 
+	  switch (status_code) {
+	  case GCODE_STATUS_OK:
+	    break;
+
+	  case GCODE_STATUS_BAD_NUMBER_FORMAT:
+	    printString("N");  // Warning: Bad number format
+	    break;
+
+	  case GCODE_STATUS_EXPECTED_COMMAND_LETTER:
+	    printString("E");  // Warning: Expected command letter
+	    break;
+
+	  case GCODE_STATUS_UNSUPPORTED_STATEMENT:
+	    printString("U");  // Warning: Unsupported statement
+	    break;
+
+	  default:
+	    printString("W");  // Warning: Other error
+	    printInteger(status_code);
+	    break;
+	  }
         } else {
           print_extended_status = true;
         } 
@@ -294,11 +324,13 @@ uint8_t gcode_execute_line(char *line) {
   double unit_converted_value;  
   uint8_t next_action = NEXT_ACTION_NONE;
   double target[3];
+  double vector[3] = {0.0, 0.0, 0.0};
+  double n = -1.0;
   double p = 0.0;
   int cs = 0;
   int l = 0;
   bool got_actual_line_command = false;  // as opposed to just e.g. G1 F1200
-  gc.status_code = STATUS_OK;
+  gc.status_code = GCODE_STATUS_OK;
     
   //// Pass 1: Commands
   while(next_statement(&letter, &value, line, &char_counter)) {
@@ -309,6 +341,29 @@ uint8_t gcode_execute_line(char *line) {
           case 0: gc.motion_mode = next_action = NEXT_ACTION_SEEK; break;
           case 1: gc.motion_mode = next_action = NEXT_ACTION_FEED; break;
           case 4: next_action = NEXT_ACTION_DWELL; break;
+	  case 8:
+	    // Special case to append raster data
+	    if (line[char_counter] == 'D') {
+	      uint32_t len;
+	      char_counter++;
+
+	      len = strlen(line) - char_counter;
+
+	      if (len >= RASTER_BUFFER_SIZE || len > 70)
+	      {
+		gc.status_code = GCODE_STATUS_RX_BUFFER_OVERFLOW;
+		stepper_request_stop(gc.status_code);
+	      }
+	      else
+	      {
+		planner_raster_data(&line[char_counter], len, false);
+	      }
+
+	      return gc.status_code;
+	    } else {
+	      next_action = NEXT_ACTION_RASTER;
+	    }
+	    break;
           case 10: next_action = NEXT_ACTION_SET_COORDINATE_OFFSET; break;
           case 20: gc.inches_mode = true; break;
           case 21: gc.inches_mode = false; break;
@@ -317,7 +372,7 @@ uint8_t gcode_execute_line(char *line) {
           case 55: gc.offselect = OFFSET_G55; break;
           case 90: gc.absolute_mode = true; break;
           case 91: gc.absolute_mode = false; break;
-          default: FAIL(STATUS_UNSUPPORTED_STATEMENT);
+          default: FAIL(GCODE_STATUS_UNSUPPORTED_STATEMENT); break;
         }
         break;
       case 'M':
@@ -330,7 +385,7 @@ uint8_t gcode_execute_line(char *line) {
             case 84: next_action = NEXT_ACTION_AUX2_ASSIST_ENABLE;break;
             case 85: next_action = NEXT_ACTION_AUX2_ASSIST_DISABLE;break;
           #endif
-          default: FAIL(STATUS_UNSUPPORTED_STATEMENT);
+          default: FAIL(GCODE_STATUS_UNSUPPORTED_STATEMENT); break;
         }            
         break;
     }
@@ -352,7 +407,7 @@ uint8_t gcode_execute_line(char *line) {
     }
     switch(letter) {
       case 'F':
-        if (unit_converted_value <= 0) { FAIL(STATUS_BAD_NUMBER_FORMAT); }
+        if (unit_converted_value <= 0) { FAIL(GCODE_STATUS_BAD_NUMBER_FORMAT); }
         if (gc.motion_mode == NEXT_ACTION_SEEK) {
           gc.seek_rate = unit_converted_value;
         } else {
@@ -367,6 +422,7 @@ uint8_t gcode_execute_line(char *line) {
         }
         got_actual_line_command = true;
         break;        
+      case 'N': n = value; break;
       case 'P':  // dwelling seconds or CS selector
         if (next_action == NEXT_ACTION_SET_COORDINATE_OFFSET) {
           cs = trunc(value);
@@ -404,6 +460,37 @@ uint8_t gcode_execute_line(char *line) {
                       gc.feed_rate, gc.nominal_laser_intensity );                   
       }
       break; 
+      case NEXT_ACTION_RASTER:
+	if (p > 0.0) {
+	  gc.raster.dot_size = p;
+	}
+	if (got_actual_line_command) {
+	  gc.raster.x_off = vector[X_AXIS];
+	  gc.raster.y_off = vector[Y_AXIS];
+	  if (vector[Z_AXIS] < 0) {
+	    gc.raster.invert = 1;
+	  } else {
+	    gc.raster.invert = 0;
+	  }
+
+	  // Setup the raster...
+	  planner_raster(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
+			  target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
+			  target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
+			  gc.feed_rate, gc.nominal_laser_intensity, &gc.raster);
+	}
+
+	if (n >= 0.0) {
+	  // End of the raster.
+	  planner_raster_data(NULL, 0, true);
+
+	  // Always increment on N regardless of D.
+	  if (gc.raster.x_off != 0.0)
+	    target[Y_AXIS] += gc.raster.dot_size;
+	  else if (gc.raster.y_off != 0.0)
+	    target[X_AXIS] -= gc.raster.dot_size;
+	}
+	break;
     case NEXT_ACTION_DWELL:
       planner_dwell(p, gc.nominal_laser_intensity);
       break;
@@ -507,12 +594,12 @@ static int next_statement(char *letter, double *double_ptr, char *line, uint8_t 
   
   *letter = line[*char_counter];
   if((*letter < 'A') || (*letter > 'Z')) {
-    FAIL(STATUS_EXPECTED_COMMAND_LETTER);
+    FAIL(GCODE_STATUS_EXPECTED_COMMAND_LETTER);
     return(0);
   }
   (*char_counter)++;
   if (!read_double(line, char_counter, double_ptr)) {
-    FAIL(STATUS_BAD_NUMBER_FORMAT); 
+    FAIL(GCODE_STATUS_BAD_NUMBER_FORMAT);
     return(0);
   };
   return(1);
@@ -525,19 +612,35 @@ static int next_statement(char *letter, double *double_ptr, char *line, uint8_t 
 static int read_double(char *line, uint8_t *char_counter, double *double_ptr) {
   char *start = line + *char_counter;
   char *end;
-  
+  char *search;
+  char mod_char = 0;
+
+  // Quick search for any X's (don't want G0X0Y0 interpreting as a hex value!).
+  // The alternative was sscanf, but that adds 15K of code.
+  for (search = line + *char_counter; *search != 0x00; search++)
+  {
+    if (*search == 'X' || *search == 'Y' || *search == 'Z' || *search == 'E') {
+      // Temporarily replace this with string terminator
+      mod_char = *search;
+      *search = 0;
+      break;
+    }
+  }
+
   *double_ptr = strtod(start, &end);
-  if(end == start) { 
-    return(false); 
-  };
+  // Revert the string (if needed)
+  if (mod_char != 0)
+    *search = mod_char;
 
+  // Nothing found
+  if (end == start)
+    return (false);
+
+  // Update our char counter
   *char_counter = end - line;
-  return(true);
+
+  return (true);
 }
-
-
-
-
 
 
 /* 

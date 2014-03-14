@@ -28,7 +28,7 @@
 								<option id="gnu.c.compiler.option.preprocessor.def.symbols.187083462" name="Defined symbols (-D)" superClass="gnu.c.compiler.option.preprocessor.def.symbols" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="F_CPU=16000000"/>
 								</option>
-								<option id="gnu.c.compiler.option.optimization.flags.2066834248" name="Other optimization flags" superClass="gnu.c.compiler.option.optimization.flags" value="-ffunction-sections" valueType="string"/>
+								<option id="gnu.c.compiler.option.optimization.flags.2066834248" name="Other optimization flags" superClass="gnu.c.compiler.option.optimization.flags" value="-ffunction-sections -fdata-sections" valueType="string"/>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.269697060" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.cross.cpp.compiler.1093472167" name="Cross G++ Compiler" superClass="cdt.managedbuild.tool.gnu.cross.cpp.compiler">
@@ -45,7 +45,7 @@
 									<listOptionValue builtIn="false" value="--gc-sections"/>
 									<listOptionValue builtIn="false" value="-Map=out.map"/>
 								</option>
-								<option id="gnu.c.link.option.userobjs.633290363" name="Other objects" superClass="gnu.c.link.option.userobjs" valueType="userObjs"/>
+								<option id="gnu.c.link.option.userobjs.633290363" name="Other objects" superClass="gnu.c.link.option.userobjs"/>
 								<option id="gnu.c.link.option.ldflags.609722198" name="Linker flags" superClass="gnu.c.link.option.ldflags" value="-mmcu=atmega328p -T ../atmega328p.ld" valueType="string"/>
 								<inputType id="cdt.managedbuild.tool.gnu.c.linker.input.1596232884" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
