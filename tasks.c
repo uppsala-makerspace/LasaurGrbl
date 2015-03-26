@@ -83,9 +83,11 @@ uint8_t task_running(TASK task) {
 
 void tasks_loop(void) {
 	uint8_t serial_active = 0;
+#ifdef ENABLE_LCD
 	double last_x = 0;
 	double last_y = 0;
 	double last_z = 0;
+#endif
 
 	// Main task loop, does not return
 	// None of the tasks should block, other than

@@ -303,7 +303,10 @@ void stepper_isr (void) {
   #ifndef DEBUG_IGNORE_SENSORS
 	// stop program when any limit is hit or the e-stop turned the power off
 	if (SENSE_LIMITS && SENSE_LIMITS) {
-		stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
+    	// Turn off the laser
+    	control_laser(0, 0);
+
+    	stepper_request_stop(GCODE_STATUS_LIMIT_HIT);
 		busy = false;
 		return;
 	}

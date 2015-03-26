@@ -128,15 +128,32 @@ void gcode_init() {
 	gc.raster.buffer = raster_buffer;
 }
 
-static void check_ppi_feedrate(void) {
-	  // Check that the configured PPI and Feedrate are compatible
-	  // Prefer PPI (and slow down) if not.
-	  uint32_t pulses_per_min = gc.laser_ppi * gc.feed_rate / MM_PER_INCH;
+static double limit_feedrate_vector(double feedrate, uint16_t ppi) {
+	if (ppi > 0) {
+		// Check that the configured PPI and Feedrate are compatible
+		// Prefer PPI (and slow down) if not.
+		uint32_t pulses_per_min = ppi * feedrate / MM_PER_INCH;
 
-	  // Set the Feedrate to the maximum it can be for this PPI.
-	  if (pulses_per_min > CONFIG_LASER_PPI_MAX_PPM) {
-		  gc.feed_rate = CONFIG_LASER_PPI_MAX_PPM * MM_PER_INCH / gc.laser_ppi;
-	  }
+		// Set the Feedrate to the maximum it can be for this PPI.
+		if (pulses_per_min > CONFIG_LASER_PPI_MAX_PPM) {
+			feedrate = CONFIG_LASER_PPI_MAX_PPM * MM_PER_INCH / ppi;
+		}
+	}
+
+	return feedrate;
+}
+
+static double limit_feedrate_raster(double feedrate, uint16_t ppi) {
+	if (ppi > 0) {
+		double max_feedrate = 60000.0 / CONFIG_LASER_PPI_PULSE_MS * MM_PER_INCH / ppi;
+
+		// Set the Feedrate to the maximum it can be for this PPI.
+		if (max_feedrate < feedrate) {
+			feedrate = max_feedrate;
+		}
+	}
+
+	return feedrate;
 }
 
 static float to_millimeters(float value)
@@ -553,7 +570,6 @@ uint8_t gcode_execute_line(char *line) {
 					gc.seek_rate = min(CONFIG_MAX_SEEKRATE, to_millimeters(value));
 				} else {
 					gc.feed_rate = min(CONFIG_MAX_FEEDRATE, to_millimeters(value));
-					check_ppi_feedrate();
 				}
 				break;
 			case 'I': case 'J': case 'K': offset[letter-'I'] = to_millimeters(value); break;
@@ -573,7 +589,6 @@ uint8_t gcode_execute_line(char *line) {
 				}
 				else if (next_action == NEXT_ACTION_SET_PPI) {
 					gc.laser_ppi = value;
-					check_ppi_feedrate();
 				}
 				else {
 					gc.laser_pwm = value;
@@ -617,7 +632,7 @@ uint8_t gcode_execute_line(char *line) {
 			planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 					target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 					target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-					gc.feed_rate, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
+					limit_feedrate_vector(gc.feed_rate, gc.laser_ppi), gc.acceleration, gc.laser_pwm, gc.laser_ppi);
 		}
 		break;
 	case NEXT_ACTION_CW_ARC:
@@ -731,7 +746,7 @@ uint8_t gcode_execute_line(char *line) {
 			arc_position[Y_AXIS] = gc.position[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS];
 			arc_position[Z_AXIS] = gc.position[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS];
 
-			mc_arc(arc_position, arc_target, offset, X_AXIS, Y_AXIS, Z_AXIS, gc.feed_rate, r, (next_action==NEXT_ACTION_CW_ARC)?true:false, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
+			mc_arc(arc_position, arc_target, offset, X_AXIS, Y_AXIS, Z_AXIS, limit_feedrate_vector(gc.feed_rate, gc.laser_ppi), r, (next_action==NEXT_ACTION_CW_ARC)?true:false, gc.acceleration, gc.laser_pwm, gc.laser_ppi);
 		}
 		break;
 	case NEXT_ACTION_RASTER:
@@ -754,13 +769,14 @@ uint8_t gcode_execute_line(char *line) {
 				planner_raster(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 						target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 						target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-						gc.feed_rate, gc.acceleration, gc.laser_pwm, &gc.raster);
-
-				if (gc.raster.x_off != 0.0)
-					target[Y_AXIS] += gc.raster.dot_size;
-				else if (gc.raster.y_off != 0.0)
-					target[X_AXIS] -= gc.raster.dot_size;
+						limit_feedrate_raster(gc.feed_rate, gc.laser_ppi), gc.acceleration, gc.laser_pwm, &gc.raster);
 			}
+
+			// Always increment (no point sending blank lines)
+			if (gc.raster.x_off != 0.0)
+				target[Y_AXIS] += gc.raster.dot_size;
+			else if (gc.raster.y_off != 0.0)
+				target[X_AXIS] -= gc.raster.dot_size;
 
 			// Reset the buffer.
 			gc.raster.length = 0;

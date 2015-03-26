@@ -28,7 +28,7 @@
 
 // The number of linear motions that can be in the plan at any give time
 #define BLOCK_BUFFER_SIZE 48  // do not make bigger than uint8_t
-#define NUM_RASTERS	4
+#define NUM_RASTERS	3
 
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // ring buffer for motion instructions
 static volatile uint8_t block_buffer_head;       // index of the next block to be pushed
@@ -258,7 +258,6 @@ void planner_raster(double x, double y, double z,
 	double raster_len = 0;
 	double head = 0;
 
-	/*
 	uint8_t *ptr = raster->buffer;
 	uint32_t count = raster->length;
 
@@ -274,26 +273,30 @@ void planner_raster(double x, double y, double z,
 	ptr = raster->buffer + count - 1;
 	for (; *ptr == '0' && count > 1; ptr--, count--);
 	raster->length = count;
-*/
+
+	// Blank line
+	if (count == 0)
+		return;
+
 	raster_len = raster->dot_size * raster->length;
 
 	// Work out the starting point. A negative offset will flip/mirror the raster in that direction.
 	// Move to the starting point. (Assumes we have space before the limits are hit)
 	if (raster->x_off > 0) {
 		x += head;
-		planner_movement(x - raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x - raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
 	} else if (raster->x_off < 0) {
 		x += head;
-		planner_movement(x + raster_len - raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x + raster_len - raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, NULL);
 	} else if (raster->y_off > 0) {
 		y += head;
-		planner_movement(x, y - raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y - raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
 	} else if (raster->y_off < 0) {
 		y += head;
-		planner_movement(x, y + raster_len - raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster_len - raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, NULL);
 	}
 
@@ -316,17 +319,17 @@ void planner_raster(double x, double y, double z,
 
 	if (raster->x_off > 0) {
 		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x + raster_len + raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x + raster_len + raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 	} else if (raster->x_off < 0) {
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x + raster->x_off, y, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x + raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 	} else if (raster->y_off > 0) {
 		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x, y + raster_len + raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster_len + raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 	} else if (raster->y_off < 0) {
 		y += head;
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x, y + raster->y_off, z, feed_rate, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
 	}
 }
 

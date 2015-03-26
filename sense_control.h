@@ -26,7 +26,7 @@ void sense_init();
 #define SENSE_X_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << X_LIMIT_BIT)) != 0)
 #define SENSE_Y_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << Y_LIMIT_BIT)) != 0)
 #define SENSE_Z_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << Z_LIMIT_BIT)) == 0)
-#define SENSE_E_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << E_LIMIT_BIT)) == 0)
+#define SENSE_E_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << E_LIMIT_BIT)) != 0)
 #define SENSE_DOOR_OPEN (GPIOPinRead(SENSE_PORT, (1 << DOOR_BIT)) != 0)
 #define SENSE_CHILLER_OFF (temperature_read(0) > (20 * 16))
 // invert door, remove power, add z_limits
