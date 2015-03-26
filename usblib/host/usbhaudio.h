@@ -2,7 +2,7 @@
 //
 // usbhaudio.h - USB host audio class driver.
 //
-// Copyright (c) 2010-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2010-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -43,17 +43,6 @@ extern "C"
 //
 //*****************************************************************************
 
-typedef void (* tUSBHostAudioCallback)(void *pvBuffer,
-                                       unsigned long ulParam,
-                                       unsigned long ulEvent);
-
-//*****************************************************************************
-//
-//! This is the size in bytes of the private data for the host audio class.
-//
-//*****************************************************************************
-#define USB_HOST_AUDIO_INSTANCE_SIZE sizeof(tHostAudioInstance);
-
 //*****************************************************************************
 //
 // USB host audio specific events
@@ -63,7 +52,7 @@ typedef void (* tUSBHostAudioCallback)(void *pvBuffer,
 //*****************************************************************************
 //
 //! This USB host audio event indicates that the device is connected and
-//! ready to send or receive buffers.  The \e pvBuffer and \e ulParam
+//! ready to send or receive buffers.  The \e pvBuffer and \e ui32Param
 //! values are not used in this event.
 //
 //*****************************************************************************
@@ -72,7 +61,7 @@ typedef void (* tUSBHostAudioCallback)(void *pvBuffer,
 //*****************************************************************************
 //
 //! This USB host audio event indicates that the previously connected device
-//! has been disconnected. The \e pvBuffer and \e ulParam values are not used
+//! has been disconnected. The \e pvBuffer and \e ui32Param values are not used
 //! in this event.
 //
 //*****************************************************************************
@@ -90,58 +79,68 @@ typedef void (* tUSBHostAudioCallback)(void *pvBuffer,
 
 typedef struct
 {
-    unsigned char ucChannels;
-    unsigned char ucBits;
-    unsigned long ulSampleRate;
-} tUSBAudioFormat;
+    uint8_t ui8Channels;
+    uint8_t ui8Bits;
+    uint32_t ui32SampleRate;
+}
+tUSBAudioFormat;
+
+typedef struct tUSBHostAudioInstance tUSBHostAudioInstance;
+
+//*****************************************************************************
+//
+// The prototype for the host USB Audio driver callback function.
+//
+//*****************************************************************************
+typedef void (*tUSBHostAudioCallback)(tUSBHostAudioInstance *psAudioInstance,
+                                      uint32_t ui32Event,
+                                      uint32_t ui32MsgParam,
+                                      void *pvMsgData);
 
 //*****************************************************************************
 //
 // API Function Prototypes
 //
 //*****************************************************************************
-extern unsigned long USBHostAudioOpen(unsigned long ulIndex,
-                                      tUSBHostAudioCallback pfnCallback);
-extern void USBHostAudioClose(unsigned long ulInstance);
-extern long USBHostAudioPlay(unsigned long ulInstance, void *pvBuffer,
-                             unsigned long ulSize,
-                             tUSBHostAudioCallback pfnCallback);
+extern tUSBHostAudioInstance * USBHostAudioOpen(uint32_t ui32Index,
+                                           tUSBHostAudioCallback pfnCallback);
+extern void USBHostAudioClose(tUSBHostAudioInstance *psAudioInstance);
+extern int32_t USBHostAudioPlay(tUSBHostAudioInstance *psAudioInstance,
+                                void *pvBuffer, uint32_t ui32Size,
+                                tUSBHostAudioCallback pfnCallback);
 
-extern unsigned long USBHostAudioFormatGet(unsigned long ulInstance,
-                                           unsigned long ulSampleRate,
-                                           unsigned long ulBits,
-                                           unsigned long ulChannels,
-                                           unsigned long ulFlags);
-extern unsigned long USBHostAudioFormatSet(unsigned long ulInstance,
-                                           unsigned long ulSampleRate,
-                                           unsigned long ulBits,
-                                           unsigned long ulChannels,
-                                           unsigned long ulFlags);
+extern uint32_t USBHostAudioFormatGet(tUSBHostAudioInstance *psAudioInstance,
+                                      uint32_t ui32SampleRate,
+                                      uint32_t ui32Bits, uint32_t ui32Channels,
+                                      uint32_t ui32Flags);
+extern uint32_t USBHostAudioFormatSet(tUSBHostAudioInstance *psAudioInstance,
+                                      uint32_t ui32SampleRate,
+                                      uint32_t ui32Bits, uint32_t ui32Channels,
+                                      uint32_t ui32Flags);
 
-extern long USBHostAudioRecord(unsigned long ulInstance, void *pvBuffer,
-                               unsigned long ulSize,
-                               tUSBHostAudioCallback);
+extern int32_t USBHostAudioRecord(tUSBHostAudioInstance *psAudioInstance,
+                                  void *pvBuffer, uint32_t ui32Size,
+                                  tUSBHostAudioCallback pfnAudioCallback);
 
-extern unsigned long USBHostAudioVolumeGet(unsigned long ulInstance,
-                                           unsigned long ulInterface,
-                                           unsigned long ulChannel);
+extern uint32_t USBHostAudioVolumeGet(tUSBHostAudioInstance *psAudioInstance,
+                                      uint32_t ui32Interface,
+                                      uint32_t ui32Channel);
 
-extern void USBHostAudioVolumeSet(unsigned long ulInstance,
-                                  unsigned ulInterface,
-                                  unsigned long ulChannel,
-                                  unsigned long ulValue);
+extern void USBHostAudioVolumeSet(tUSBHostAudioInstance *psAudioInstance,
+                                  uint32_t ui32Interface, uint32_t ui32Channel,
+                                  uint32_t ui32Value);
 
-extern unsigned long USBHostAudioVolumeMaxGet(unsigned long ulInstance,
-                                              unsigned long ulInterface,
-                                              unsigned long ulChannel);
+extern uint32_t USBHostAudioVolumeMaxGet(tUSBHostAudioInstance *psAudioInstance,
+                                         uint32_t ui32Interface,
+                                         uint32_t ui32Channel);
 
-extern unsigned long USBHostAudioVolumeMinGet(unsigned long ulInstance,
-                                              unsigned long ulInterface,
-                                              unsigned long ulChannel);
+extern uint32_t USBHostAudioVolumeMinGet(tUSBHostAudioInstance *psAudioInstance,
+                                         uint32_t ui32Interface,
+                                         uint32_t ui32Channel);
 
-extern unsigned long USBHostAudioVolumeResGet(unsigned long ulInstance,
-                                              unsigned long ulInterface,
-                                              unsigned long ulChannel);
+extern uint32_t USBHostAudioVolumeResGet(tUSBHostAudioInstance *psAudioInstance,
+                                           uint32_t ui32Interface,
+                                           uint32_t ui32Channel);
 
 //*****************************************************************************
 //

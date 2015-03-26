@@ -2,7 +2,7 @@
 //
 // usbmsc.h - Generic types and defines use by the mass storage class.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -86,7 +86,7 @@ typedef struct
     // field shall contain the value 0x43425355 (little endian), indicating a
     // CBW.
     //
-    unsigned long dCBWSignature;
+    uint32_t dCBWSignature;
 
     //
     // The Command Block Tag sent by the host controller.  The device shall
@@ -94,7 +94,7 @@ typedef struct
     // of the associated CSW.  The dCSWTag positively associates a CSW with the
     // corresponding CBW.
     //
-    unsigned long dCBWTag;
+    uint32_t dCBWTag;
 
     //
     // The number of bytes of data that the host expects to transfer on the
@@ -104,7 +104,7 @@ typedef struct
     // and the device will ignore the value of the Direction bit in
     // bmCBWFlags.
     //
-    unsigned long dCBWDataTransferLength;
+    uint32_t dCBWDataTransferLength;
 
     //
     // The device will ignore these bits if the dCBWDataTransferLength value
@@ -117,7 +117,7 @@ typedef struct
     // Bit 6 Obsolete - The host shall set this bit to zero.
     // Bits 5..0 Reserved - the host shall set these bits to zero.
     //
-    unsigned char bmCBWFlags;
+    uint8_t bmCBWFlags;
 
     //
     // The device Logical Unit Number (LUN) to which the command block is being
@@ -125,14 +125,14 @@ typedef struct
     // this field the LUN to which this command block is addressed.  Otherwise,
     // the host shall set this field to zero.
     //
-    unsigned char bCBWLUN;
+    uint8_t bCBWLUN;
 
     //
     // The valid length of the CBWCB in bytes.  This defines the valid length
     // of the command block.  The only legal values are 1 through 16.  All
     // other values are reserved.
     //
-    unsigned char bCBWCBLength;
+    uint8_t bCBWCBLength;
 
     //
     // This array holds the command block to be executed by the device.  The
@@ -144,7 +144,7 @@ typedef struct
     // device will ignore the content of the CBWCB field past the byte at
     // offset (15 + bCBWCBLength - 1).
     //
-    unsigned char CBWCB[16];
+    uint8_t CBWCB[16];
 }
 PACKED tMSCCBW;
 
@@ -169,13 +169,13 @@ typedef struct
     // Signature that identifies this data packet as a CSW.  The signature
     // field must contain the value 53425355h (little endian) to indicate CSW.
     //
-    unsigned long dCSWSignature;
+    uint32_t dCSWSignature;
 
     //
     // The device will set this field to the value received in the dCBWTag of
     // the associated CBW.
     //
-    unsigned long dCSWTag;
+    uint32_t dCSWTag;
 
     //
     // For OUT transactions the device will fill the dCSWDataResidue field with
@@ -187,7 +187,7 @@ typedef struct
     // sent by the device.  The dCSWDataResidue will not exceed the value sent
     // in the dCBWDataTransferLength.
     //
-    unsigned long dCSWDataResidue;
+    uint32_t dCSWDataResidue;
 
     //
     // The bCSWStatus field indicates the success or failure of the command.
@@ -195,7 +195,7 @@ typedef struct
     // successfully.  A non-zero value shall indicate a failure during command
     // execution.
     //
-    unsigned char bCSWStatus;
+    uint8_t bCSWStatus;
 }
 PACKED tMSCCSW;
 
@@ -272,8 +272,8 @@ PACKED tMSCCSW;
 // Macro to check if removeable.
 //
 //*****************************************************************************
-#define SCSIIsRemovable(pData)                       \
-        (((unsigned char *)pData)[1] & SCSI_INQ_RMB)
+#define SCSIIsRemovable(pData)                                                \
+                                (((uint8_t *)pData)[1] & SCSI_INQ_RMB)
 
 //*****************************************************************************
 //
@@ -290,7 +290,7 @@ PACKED tMSCCSW;
 
 //*****************************************************************************
 //
-// SCSI Mode Sense definitions, these are passed in via the ulFlags parameter
+// SCSI Mode Sense definitions, these are passed in via the ui32Flags parameter
 // of the SCSIModeSense() function call.
 //
 //*****************************************************************************

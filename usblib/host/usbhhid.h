@@ -2,7 +2,7 @@
 //
 // usbhhid.h - This hold the host driver for hid class.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -43,9 +43,11 @@ extern "C"
 //
 //*****************************************************************************
 
+typedef struct tHIDInstance tHIDInstance;
+
 //*****************************************************************************
 //
-// These defines are the the events that will be passed in the ulEvent
+// These defines are the the events that will be passed in the ui32Event
 // parameter of the callback from the driver.
 //
 //*****************************************************************************
@@ -99,22 +101,22 @@ typedef enum
     //! No device should be used.  This value should not be used by
     //! applications.
     //
-    USBH_HID_DEV_NONE =         0,
+    eUSBHHIDClassNone = 0,
 
     //
     //! This is a keyboard device.
     //
-    USBH_HID_DEV_KEYBOARD,
+    eUSBHHIDClassKeyboard,
 
     //
     //! This is a mouse device.
     //
-    USBH_HID_DEV_MOUSE,
+    eUSBHHIDClassMouse,
 
     //
     //! This is a vendor specific device.
     //
-    USBH_HID_DEV_VENDOR
+    eUSBHHIDClassVendor
 }
 tHIDSubClassProtocol;
 
@@ -130,27 +132,25 @@ tHIDSubClassProtocol;
 // Prototypes.
 //
 //*****************************************************************************
-extern unsigned long USBHHIDOpen(tHIDSubClassProtocol eDeviceType,
-                                 tUSBCallback pfnCallback,
-                                 unsigned long ulCBData);
-extern void USBHHIDClose(unsigned long ulInstance);
-extern unsigned long USBHHIDGetReportDescriptor(unsigned long ulInstance,
-                                                unsigned char *pucBuffer,
-                                                unsigned long ulSize);
-extern unsigned long USBHHIDSetIdle(unsigned long ulInstance,
-                                    unsigned char ucDuration,
-                                    unsigned char ucReportID);
-extern unsigned long USBHHIDSetProtocol(unsigned long ulInstance,
-                                        unsigned long ulBootProtocol);
-extern unsigned long USBHHIDSetReport(unsigned long ulInstance,
-                                      unsigned long ulInterface,
-                                      unsigned char *pucData,
-                                      unsigned long ulSize);
-extern unsigned long USBHHIDGetReport(unsigned long ulInstance,
-                                      unsigned long ulInterface,
-                                      unsigned char *pucData,
-                                      unsigned long ulSize);
-extern const tUSBHostClassDriver g_USBHIDClassDriver;
+extern tHIDInstance * USBHHIDOpen(tHIDSubClassProtocol iDeviceType,
+                                  tUSBCallback pfnCallback,
+                                  void *pvCBData);
+extern void USBHHIDClose(tHIDInstance *psHIDInstance);
+extern uint32_t USBHHIDGetReportDescriptor(tHIDInstance *psHIDInstance,
+                                           uint8_t *pui8Buffer,
+                                           uint32_t ui32Size);
+extern uint32_t USBHHIDSetIdle(tHIDInstance *psHIDInstance, uint8_t ui8Duration,
+                               uint8_t ui8ReportID);
+extern uint32_t USBHHIDSetProtocol(tHIDInstance *psHIDInstance,
+                                   uint32_t ui32BootProtocol);
+extern uint32_t USBHHIDSetReport(tHIDInstance *psHIDInstance,
+                                 uint32_t ui32Interface, uint8_t *pui8Data,
+                                 uint32_t ui32Size);
+extern uint32_t USBHHIDGetReport(tHIDInstance *psHIDInstance,
+                                 uint32_t ui32Interface, uint8_t *pui8Data,
+                                 uint32_t ui32Size);
+
+extern const tUSBHostClassDriver g_sUSBHIDClassDriver;
 
 //*****************************************************************************
 //

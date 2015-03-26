@@ -2,7 +2,7 @@
 //
 // usbdmsc.c - USB mass storage device class driver.
 //
-// Copyright (c) 2009-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2009-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
@@ -29,8 +31,8 @@
 #include "driverlib/rom_map.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/usb.h"
-#include "driverlib/udma.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/usbmsc.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdmsc.h"
@@ -44,7 +46,7 @@
 
 //*****************************************************************************
 //
-// These are the internal flags used with the ulFlags member variable.
+// These are the internal flags used with the ui32Flags member variable.
 //
 //*****************************************************************************
 #define USBD_FLAG_DMA_IN        0x00000001
@@ -75,9 +77,7 @@
 //
 //*****************************************************************************
 #define DATA_IN_ENDPOINT        USB_EP_1
-#define DATA_IN_DMA_CHANNEL     UDMA_CHANNEL_USBEP1TX
 #define DATA_OUT_ENDPOINT       USB_EP_1
-#define DATA_OUT_DMA_CHANNEL    UDMA_CHANNEL_USBEP1RX
 
 //*****************************************************************************
 //
@@ -100,7 +100,7 @@
 // The local buffer used to read in commands and process them.
 //
 //*****************************************************************************
-static unsigned char g_pucCommand[COMMAND_BUFFER_SIZE];
+static uint8_t g_pui8Command[COMMAND_BUFFER_SIZE];
 
 //*****************************************************************************
 //
@@ -112,7 +112,7 @@ static tMSCCSW g_sSCSICSW;
 //*****************************************************************************
 //
 // The current state for the SCSI commands that are being handled and are
-// stored in the tMSCInstance.ucSCSIState structure member.
+// stored in the tMSCInstance.ui8SCSIState structure member.
 //
 //*****************************************************************************
 
@@ -147,23 +147,26 @@ static tMSCCSW g_sSCSICSW;
 // changed at runtime based on the client's requirements.
 //
 //*****************************************************************************
-static unsigned char g_pMSCDeviceDescriptor[] =
+static uint8_t g_pui8MSCDeviceDescriptor[] =
 {
-    18,                     // Size of this structure.
-    USB_DTYPE_DEVICE,       // Type of this structure.
-    USBShort(0x110),        // USB version 1.1 (if we say 2.0, hosts assume
-                            // high-speed - see USB 2.0 spec 9.2.6.6)
-    0,                      // USB Device Class (spec 5.1.1)
-    0,                      // USB Device Sub-class (spec 5.1.1)
-    0,                      // USB Device protocol (spec 5.1.1)
-    64,                     // Maximum packet size for default pipe.
-    USBShort(0),            // Vendor ID (filled in during USBDCDCInit).
-    USBShort(0),            // Product ID (filled in during USBDCDCInit).
-    USBShort(0x100),        // Device Version BCD.
-    1,                      // Manufacturer string identifier.
-    2,                      // Product string identifier.
-    3,                      // Product serial number.
-    1                       // Number of configurations.
+    18,                             // Size of this structure.
+    USB_DTYPE_DEVICE,               // Type of this structure.
+    USBShort(0x110),                // USB version 1.1 (if we say 2.0, hosts
+                                    // assume
+                                    // high-speed - see USB 2.0 spec 9.2.6.6)
+    0,                              // USB Device Class (spec 5.1.1)
+    0,                              // USB Device Sub-class (spec 5.1.1)
+    0,                              // USB Device protocol (spec 5.1.1)
+    64,                             // Maximum packet size for default pipe.
+    USBShort(0),                    // Vendor ID (filled in during
+                                    // USBDCDCInit).
+    USBShort(0),                    // Product ID (filled in during
+                                    // USBDCDCInit).
+    USBShort(0x100),                // Device Version BCD.
+    1,                              // Manufacturer string identifier.
+    2,                              // Product string identifier.
+    3,                              // Product serial number.
+    1                               // Number of configurations.
 };
 
 //*****************************************************************************
@@ -180,21 +183,22 @@ static unsigned char g_pMSCDeviceDescriptor[] =
 // be able to patch some values in it based on client requirements.
 //
 //*****************************************************************************
-static unsigned char g_pMSCDescriptor[] =
+static uint8_t g_pui8MSCDescriptor[] =
 {
     //
     // Configuration descriptor header.
     //
-    9,                          // Size of the configuration descriptor.
-    USB_DTYPE_CONFIGURATION,    // Type of this descriptor.
-    USBShort(32),               // The total size of this full structure.
-    1,                          // The number of interfaces in this
-                                // configuration.
-    1,                          // The unique value for this configuration.
-    0,                          // The string identifier that describes this
-                                // configuration.
-    USB_CONF_ATTR_SELF_PWR,     // Bus Powered, Self Powered, remote wake up.
-    250,                        // The maximum power in 2mA increments.
+    9,                              // Size of the configuration descriptor.
+    USB_DTYPE_CONFIGURATION,        // Type of this descriptor.
+    USBShort(32),                   // The total size of this full structure.
+    1,                              // The number of interfaces in this
+                                    // configuration.
+    1,                              // The unique value for this configuration.
+    0,                              // The string identifier that describes
+                                    // this configuration.
+    USB_CONF_ATTR_SELF_PWR,         // Bus Powered, Self Powered, remote wake
+                                    // up.
+    250,                            // The maximum power in 2mA increments.
 };
 
 //*****************************************************************************
@@ -203,42 +207,43 @@ static unsigned char g_pMSCDescriptor[] =
 // don't need to modify anything in it at runtime.
 //
 //*****************************************************************************
-const unsigned char g_pMSCInterface[] =
+const uint8_t g_pui8MSCInterface[MSCINTERFACE_SIZE] =
 {
     //
     // Vendor-specific Interface Descriptor.
     //
-    9,                          // Size of the interface descriptor.
-    USB_DTYPE_INTERFACE,        // Type of this descriptor.
-    0,                          // The index for this interface.
-    0,                          // The alternate setting for this interface.
-    2,                          // The number of endpoints used by this
-                                // interface.
-    USB_CLASS_MASS_STORAGE,     // The interface class
-    USB_MSC_SUBCLASS_SCSI,      // The interface sub-class.
-    USB_MSC_PROTO_BULKONLY,     // The interface protocol for the sub-class
-                                // specified above.
-    0,                          // The string index for this interface.
+    9,                              // Size of the interface descriptor.
+    USB_DTYPE_INTERFACE,            // Type of this descriptor.
+    0,                              // The index for this interface.
+    0,                              // The alternate setting for this
+                                    // interface.
+    2,                              // The number of endpoints used by this
+                                    // interface.
+    USB_CLASS_MASS_STORAGE,         // The interface class
+    USB_MSC_SUBCLASS_SCSI,          // The interface sub-class.
+    USB_MSC_PROTO_BULKONLY,         // The interface protocol for the sub-class
+                                    // specified above.
+    0,                              // The string index for this interface.
 
     //
     // Endpoint Descriptor
     //
-    7,                               // The size of the endpoint descriptor.
-    USB_DTYPE_ENDPOINT,              // Descriptor type is an endpoint.
-    USB_EP_DESC_IN | USB_EP_TO_INDEX(DATA_IN_ENDPOINT),
-    USB_EP_ATTR_BULK,                // Endpoint is a bulk endpoint.
-    USBShort(DATA_IN_EP_MAX_SIZE),   // The maximum packet size.
-    0,                               // The polling interval for this endpoint.
+    7,                              // The size of the endpoint descriptor.
+    USB_DTYPE_ENDPOINT,             // Descriptor type is an endpoint.
+    USB_EP_DESC_IN | USBEPToIndex(DATA_IN_ENDPOINT),
+    USB_EP_ATTR_BULK,               // Endpoint is a bulk endpoint.
+    USBShort(DATA_IN_EP_MAX_SIZE),  // The maximum packet size.
+    0,                              // The polling interval for this endpoint.
 
     //
     // Endpoint Descriptor
     //
-    7,                               // The size of the endpoint descriptor.
-    USB_DTYPE_ENDPOINT,              // Descriptor type is an endpoint.
-    USB_EP_DESC_OUT | USB_EP_TO_INDEX(DATA_OUT_ENDPOINT),
-    USB_EP_ATTR_BULK,                // Endpoint is a bulk endpoint.
-    USBShort(DATA_OUT_EP_MAX_SIZE),  // The maximum packet size.
-    0,                               // The polling interval for this endpoint.
+    7,                              // The size of the endpoint descriptor.
+    USB_DTYPE_ENDPOINT,             // Descriptor type is an endpoint.
+    USB_EP_DESC_OUT | USBEPToIndex(DATA_OUT_ENDPOINT),
+    USB_EP_ATTR_BULK,               // Endpoint is a bulk endpoint.
+    USBShort(DATA_OUT_EP_MAX_SIZE), // The maximum packet size.
+    0,                              // The polling interval for this endpoint.
 };
 
 //*****************************************************************************
@@ -250,14 +255,14 @@ const unsigned char g_pMSCInterface[] =
 //*****************************************************************************
 const tConfigSection g_sMSCConfigSection =
 {
-    sizeof(g_pMSCDescriptor),
-    g_pMSCDescriptor
+    sizeof(g_pui8MSCDescriptor),
+    g_pui8MSCDescriptor
 };
 
 const tConfigSection g_sMSCInterfaceSection =
 {
-    sizeof(g_pMSCInterface),
-    g_pMSCInterface
+    sizeof(g_pui8MSCInterface),
+    g_pui8MSCInterface
 };
 
 //*****************************************************************************
@@ -272,7 +277,8 @@ const tConfigSection *g_psMSCSections[] =
     &g_sMSCInterfaceSection
 };
 
-#define NUM_MSC_SECTIONS (sizeof(g_psMSCSections) / sizeof(tConfigSection *))
+#define NUM_MSC_SECTIONS        (sizeof(g_psMSCSections) /                    \
+                                 sizeof(g_psMSCSections[0]))
 
 //*****************************************************************************
 //
@@ -292,7 +298,7 @@ const tConfigHeader g_sMSCConfigHeader =
 // Configuration Descriptor.
 //
 //*****************************************************************************
-const tConfigHeader * const g_pMSCConfigDescriptors[] =
+const tConfigHeader * const g_ppsMSCConfigDescriptors[] =
 {
     &g_sMSCConfigHeader
 };
@@ -302,142 +308,81 @@ const tConfigHeader * const g_pMSCConfigDescriptors[] =
 // Various internal handlers needed by this class.
 //
 //*****************************************************************************
-static void HandleDisconnect(void *pvInstance);
-static void ConfigChangeHandler(void *pvInstance, unsigned long ulValue);
-static void HandleEndpoints(void *pvInstance, unsigned long ulStatus);
-static void HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest);
-static void USBDSCSISendStatus(const tUSBDMSCDevice *psDevice);
-unsigned long USBDSCSICommand(const tUSBDMSCDevice *psDevice,
-                              tMSCCBW *pSCSICBW);
-static void HandleDevice(void *pvInstance, unsigned long ulRequest,
+static void HandleDisconnect(void *pvMSCDevice);
+static void ConfigChangeHandler(void *pvMSCDevice, uint32_t ui32Value);
+static void HandleEndpoints(void *pvMSCDevice, uint32_t ui32Status);
+static void HandleRequests(void *pvMSCDevice, tUSBRequest *psUSBRequest);
+static void USBDSCSISendStatus(tUSBDMSCDevice *psMSCDevice);
+uint32_t USBDSCSICommand(tUSBDMSCDevice *psMSCDevice, tMSCCBW *psSCSICBW);
+static void HandleDevice(void *pvMSCDevice, uint32_t ui32Request,
                          void *pvRequestData);
-
-//*****************************************************************************
-//
-// The FIFO configuration for USB mass storage class device.
-//
-//*****************************************************************************
-const tFIFOConfig g_sUSBMSCFIFOConfig =
-{
-    //
-    // IN endpoints.
-    //
-    {
-        { false, USB_EP_DEV_IN | USB_EP_DMA_MODE_1 | USB_EP_AUTO_SET },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN }
-    },
-
-    //
-    // OUT endpoints.
-    //
-    {
-        { false, USB_EP_DEV_OUT | USB_EP_DMA_MODE_1 | USB_EP_AUTO_CLEAR },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT }
-    },
-};
 
 //*****************************************************************************
 //
 // The device information structure for the USB MSC device.
 //
 //*****************************************************************************
-tDeviceInfo g_sMSCDeviceInfo =
+const tCustomHandlers g_sMSCHandlers =
 {
     //
-    // Device event handler callbacks.
+    // GetDescriptor
     //
-    {
-        //
-        // GetDescriptor
-        //
-        0,
-
-        //
-        // RequestHandler
-        //
-        HandleRequests,
-
-        //
-        // InterfaceChange
-        //
-        0,
-
-        //
-        // ConfigChange
-        //
-        ConfigChangeHandler,
-
-        //
-        // DataReceived
-        //
-        0,
-
-        //
-        // DataSentCallback
-        //
-        0,
-
-        //
-        // ResetHandler
-        //
-        0,
-
-        //
-        // SuspendHandler
-        //
-        0,
-
-        //
-        // ResumeHandler
-        //
-        0,
-
-        //
-        // DisconnectHandler
-        //
-        HandleDisconnect,
-
-        //
-        // EndpointHandler
-        //
-        HandleEndpoints,
-
-        //
-        // Device handler
-        //
-        HandleDevice
-    },
-    g_pMSCDeviceDescriptor,
-    g_pMSCConfigDescriptors,
     0,
+
+    //
+    // RequestHandler
+    //
+    HandleRequests,
+
+    //
+    // InterfaceChange
+    //
     0,
-    &g_sUSBMSCFIFOConfig
+
+    //
+    // ConfigChange
+    //
+    ConfigChangeHandler,
+
+    //
+    // DataReceived
+    //
+    0,
+
+    //
+    // DataSentCallback
+    //
+    0,
+
+    //
+    // ResetHandler
+    //
+    0,
+
+    //
+    // SuspendHandler
+    //
+    0,
+
+    //
+    // ResumeHandler
+    //
+    0,
+
+    //
+    // DisconnectHandler
+    //
+    HandleDisconnect,
+
+    //
+    // EndpointHandler
+    //
+    HandleEndpoints,
+
+    //
+    // Device handler
+    //
+    HandleDevice
 };
 
 //*****************************************************************************
@@ -445,26 +390,26 @@ tDeviceInfo g_sMSCDeviceInfo =
 //! This function is used by an application if it can detect insertion or
 //! removal of the media.
 //!
-//! \param pvInstance is the mass storage device instance that had a media
+//! \param pvMSCDevice is the mass storage device instance that had a media
 //! change.
-//! \param eMediaStatus is the updated status for the media.
+//! \param iMediaStatus is the updated status for the media.
 //!
 //! This function should be called by an application when it detects a change
 //! in the status of the media in use by the USB mass storage class.  The
-//! \e eMediaStatus parameter will indicate the new status of the media and
+//! \e iMediaStatus parameter will indicate the new status of the media and
 //! can also indicate that the application has no knowledge of the media state.
 //!
-//! There are currently the three following values for the \e eMediaStatus
+//! There are currently the three following values for the \e iMediaStatus
 //! parameter:
-//! - USBDMSC_MEDIA_PRESENT indicates that the media is present or has been
+//! - eUSBDMSCMediaPresent indicates that the media is present or has been
 //! added.
-//! - USBDMSC_MEDIA_NOTPRESENT indicates that the media is not present or was
+//! - eUSBDMSCMediaNotPresent indicates that the media is not present or was
 //! removed.
-//! - USBDMSC_MEDIA_UNKNOWN indicates that the application has no knowledge of
+//! - eUSBDMSCMediaUnknown indicates that the application has no knowledge of
 //! the media state and the USB mass storage class.
 //!
 //! It will be left up to the application to call this function whenever it
-//! detects a change or simply call it once with USBDMSC_MEDIA_UNKNOWN and
+//! detects a change or simply call it once with eUSBDMSCMediaUnknown and
 //! allow the mass storage class to infer the state from the remaining device
 //! APIs.
 //!
@@ -476,19 +421,19 @@ tDeviceInfo g_sMSCDeviceInfo =
 //
 //*****************************************************************************
 void
-USBDMSCMediaChange(void *pvInstance, tUSBDMSCMediaStatus eMediaStatus)
+USBDMSCMediaChange(void *pvMSCDevice, tUSBDMSCMediaStatus iMediaStatus)
 {
-    const tUSBDMSCDevice *psDevice;
+    tUSBDMSCDevice *psMSCDevice;
 
     //
     // Create a device instance pointer.
     //
-    psDevice = pvInstance;
+    psMSCDevice = pvMSCDevice;
 
     //
     // Save the current media status.
     //
-    psDevice->psPrivateData->eMediaStatus = eMediaStatus;
+    psMSCDevice->sPrivateData.iMediaStatus = iMediaStatus;
 }
 
 //*****************************************************************************
@@ -498,40 +443,40 @@ USBDMSCMediaChange(void *pvInstance, tUSBDMSCMediaStatus eMediaStatus)
 //
 //*****************************************************************************
 static void
-HandleEndpoints(void *pvInstance, unsigned long ulStatus)
+HandleEndpoints(void *pvMSCDevice, uint32_t ui32Status)
 {
-    const tUSBDMSCDevice *psDevice;
+    tUSBDMSCDevice *psMSCDevice;
     tMSCInstance *psInst;
-    tMSCCBW *pSCSICBW;
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    tMSCCBW *psSCSICBW;
+    uint32_t ui32EPStatus, ui32Size;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvMSCDevice != 0);
 
     //
     // Determine if the serial device is in single or composite mode because
-    // the meaning of ulIndex is different in both cases.
+    // the meaning of ui32Index is different in both cases.
     //
-    psDevice = pvInstance;
+    psMSCDevice = pvMSCDevice;
 
     //
     // Initialize the workspace in the passed instance structure.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // Get the endpoints status.
     //
-    ulEPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ucOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ui8OUTEndpoint);
 
     //
     // Handler for the bulk IN data endpoint.
     //
-    if((ulStatus & (1 << USB_EP_TO_INDEX(psInst->ucINEndpoint))) ||
-       ((psInst->ulFlags & USBD_FLAG_DMA_IN) &&
-        (MAP_uDMAChannelModeGet(psInst->ucINDMA) == UDMA_MODE_STOP)))
+    if((ui32Status & (1 << USBEPToIndex(psInst->ui8INEndpoint))) ||
+       ((psInst->ui32Flags & USBD_FLAG_DMA_IN) &&
+       (USBLibDMAChannelStatus(psInst->psDMAInstance, psInst->ui8INDMA) &
+        USBLIBSTATUS_DMA_COMPLETE)))
     {
-        switch(psInst->ucSCSIState)
+        switch(psInst->ui8SCSIState)
         {
             //
             // Handle the case where we are sending out data due to a read
@@ -542,12 +487,12 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                 //
                 // Decrement the number of bytes left to send.
                 //
-                psInst->ulBytesToTransfer -= MAX_TRANSFER_SIZE;
+                psInst->ui32BytesToTransfer -= MAX_TRANSFER_SIZE;
 
                 //
                 // If we are done then move on to the status phase.
                 //
-                if(psInst->ulBytesToTransfer == 0)
+                if(psInst->ui32BytesToTransfer == 0)
                 {
                     //
                     // Set the status so that it can be sent when this
@@ -559,23 +504,39 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                     //
                     // DMA has completed for the IN endpoint.
                     //
-                    psInst->ulFlags &= ~USBD_FLAG_DMA_IN;
+                    psInst->ui32Flags &= ~USBD_FLAG_DMA_IN;
 
                     //
                     // Disable uDMA on the endpoint
                     //
-                    MAP_USBEndpointDMADisable(USB0_BASE, psInst->ucINEndpoint,
+                    MAP_USBEndpointDMADisable(USB0_BASE, psInst->ui8INEndpoint,
                                               USB_EP_DEV_IN);
 
-                    //
-                    // Send back the status once this transfer is complete.
-                    //
-                    psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
-
-                    if(psDevice->pfnEventCallback)
+                    if(psMSCDevice->pfnEventCallback)
                     {
-                        psDevice->pfnEventCallback(0, USBD_MSC_EVENT_IDLE, 0,
-                                                   0);
+                        psMSCDevice->pfnEventCallback(0, USBD_MSC_EVENT_IDLE,
+                                                      0, 0);
+                    }
+
+                    //
+                    // Make sure that the transfer has actually finished.  If
+                    // it has not there will be another interrupt to send
+                    // out the status.
+                    //
+                    if(USBEndpointStatus(USB0_BASE,psInst->ui8INEndpoint) &
+                       USB_DEV_TX_TXPKTRDY)
+                    {
+                        //
+                        // Send back the status once this transfer is complete.
+                        //
+                        psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
+                    }
+                    else
+                    {
+                        //
+                        // Indicate success and no extra data coming.
+                        //
+                        USBDSCSISendStatus(psMSCDevice);
                     }
 
                     //
@@ -587,27 +548,29 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                 //
                 // Move on to the next Logical Block.
                 //
-                psInst->ulCurrentLBA++;
+                psInst->ui32CurrentLBA++;
 
                 //
                 // Read the new data and send it out.
                 //
-                if(psDevice->sMediaFunctions.BlockRead(psInst->pvMedia,
-                        (unsigned char *)psInst->pulBuffer,
-                        psInst->ulCurrentLBA, 1) == 0)
+                if(psMSCDevice->sMediaFunctions.pfnBlockRead(psInst->pvMedia,
+                                              (uint8_t *)psInst->pui32Buffer,
+                                              psInst->ui32CurrentLBA, 1) == 0)
                 {
                 }
 
                 //
-                // Reset the DMA transfer and enable the DMA channel.
+                // Configure and enable DMA for the IN transfer.
                 //
-                MAP_uDMAChannelTransferSet(psInst->ucINDMA,
-                                           UDMA_MODE_BASIC,
-                                           psInst->pulBuffer,
-                                           (void *)USBFIFOAddrGet(USB0_BASE,
-                                               psInst->ucINEndpoint),
-                                           (MAX_TRANSFER_SIZE >> 2));
-                MAP_uDMAChannelEnable(psInst->ucINDMA);
+                USBLibDMATransfer(psInst->psDMAInstance,
+                                  psInst->ui8INDMA, psInst->pui32Buffer,
+                                  MAX_TRANSFER_SIZE);
+
+                //
+                // Start the DMA transfer.
+                //
+                USBLibDMAChannelEnable(psInst->psDMAInstance,
+                                       psInst->ui8INDMA);
 
                 break;
             }
@@ -620,7 +583,7 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                 //
                 // Indicate success and no extra data coming.
                 //
-                USBDSCSISendStatus(psDevice);
+                USBDSCSISendStatus(psMSCDevice);
 
                 break;
             }
@@ -630,7 +593,7 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
             //
             case STATE_SCSI_SENT_STATUS:
             {
-                psInst->ucSCSIState = STATE_SCSI_IDLE;
+                psInst->ui8SCSIState = STATE_SCSI_IDLE;
 
                 break;
             }
@@ -650,16 +613,18 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
     //
     // Handler for the bulk OUT data endpoint.
     //
-    if((ulStatus & (0x10000 << USB_EP_TO_INDEX(psInst->ucOUTEndpoint))) ||
-        ((psInst->ulFlags & USBD_FLAG_DMA_OUT) &&
-         (MAP_uDMAChannelModeGet(psInst->ucOUTDMA) == UDMA_MODE_STOP)))
+    if((ui32Status & (0x10000 << USBEPToIndex(psInst->ui8OUTEndpoint))) ||
+        ((psInst->ui32Flags & USBD_FLAG_DMA_OUT) &&
+       (USBLibDMAChannelStatus(psInst->psDMAInstance, psInst->ui8OUTDMA) &
+        USBLIBSTATUS_DMA_COMPLETE)))
     {
         //
         // Get the endpoint status to see why we were called.
         //
-        ulEPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ucOUTEndpoint);
+        ui32EPStatus = MAP_USBEndpointStatus(USB0_BASE,
+                                             psInst->ui8OUTEndpoint);
 
-        switch(psInst->ucSCSIState)
+        switch(psInst->ui8SCSIState)
         {
             //
             // Receiving and writing bytes to the storage device.
@@ -669,24 +634,24 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                 //
                 // Update the current status for the buffer.
                 //
-                psInst->ulBytesToTransfer -= MAX_TRANSFER_SIZE;
+                psInst->ui32BytesToTransfer -= MAX_TRANSFER_SIZE;
 
                 //
                 // Write the new data.
                 //
-                psDevice->sMediaFunctions.BlockWrite(psInst->pvMedia,
-                    (unsigned char *)psInst->pulBuffer,
-                    psInst->ulCurrentLBA, 1);
+                psMSCDevice->sMediaFunctions.pfnBlockWrite(psInst->pvMedia,
+                                                (uint8_t *)psInst->pui32Buffer,
+                                                psInst->ui32CurrentLBA, 1);
 
                 //
                 // Move on to the next Logical Block.
                 //
-                psInst->ulCurrentLBA++;
+                psInst->ui32CurrentLBA++;
 
                 //
                 // Check if all bytes have been received.
                 //
-                if(psInst->ulBytesToTransfer == 0)
+                if(psInst->ui32BytesToTransfer == 0)
                 {
                     //
                     // Set the status so that it can be sent when this response
@@ -698,27 +663,28 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                     //
                     // DMA has completed for the OUT endpoint.
                     //
-                    psInst->ulFlags &= ~USBD_FLAG_DMA_OUT;
+                    psInst->ui32Flags &= ~USBD_FLAG_DMA_OUT;
 
                     //
                     // Indicate success and no extra data coming.
                     //
-                    USBDSCSISendStatus(psDevice);
+                    USBDSCSISendStatus(psMSCDevice);
 
                     //
                     // Disable uDMA on the endpoint
                     //
-                    MAP_USBEndpointDMADisable(USB0_BASE, psInst->ucOUTEndpoint,
+                    MAP_USBEndpointDMADisable(USB0_BASE,
+                                              psInst->ui8OUTEndpoint,
                                               USB_EP_DEV_OUT);
 
                     //
                     // If there is an event callback then call it to notify
                     // that last operation has completed.
                     //
-                    if(psDevice->pfnEventCallback)
+                    if(psMSCDevice->pfnEventCallback)
                     {
-                        psDevice->pfnEventCallback(0, USBD_MSC_EVENT_IDLE, 0,
-                                                   0);
+                        psMSCDevice->pfnEventCallback(0, USBD_MSC_EVENT_IDLE,
+                                                      0, 0);
                     }
                 }
                 else
@@ -726,17 +692,9 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                     //
                     // Configure and enable DMA for the OUT transfer.
                     //
-                    MAP_uDMAChannelTransferSet(psInst->ucOUTDMA,
-                                               UDMA_MODE_BASIC,
-                                               (void *)USBFIFOAddrGet(USB0_BASE,
-                                                   psInst->ucOUTEndpoint),
-                                               psInst->pulBuffer,
-                                               (MAX_TRANSFER_SIZE >> 2));
-
-                    //
-                    // Start the DMA transfer.
-                    //
-                    MAP_uDMAChannelEnable(psInst->ucOUTDMA);
+                    USBLibDMATransfer(psInst->psDMAInstance,
+                                      psInst->ui8OUTDMA, psInst->pui32Buffer,
+                                      MAX_TRANSFER_SIZE);
                 }
 
                 break;
@@ -755,29 +713,29 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                 //
                 // Receive the command.
                 //
-                ulSize = COMMAND_BUFFER_SIZE;
-                MAP_USBEndpointDataGet(psInst->ulUSBBase, psInst->ucOUTEndpoint,
-                                       g_pucCommand, &ulSize);
-                pSCSICBW = (tMSCCBW *)g_pucCommand;
+                ui32Size = COMMAND_BUFFER_SIZE;
+                MAP_USBEndpointDataGet(psInst->ui32USBBase,
+                                       psInst->ui8OUTEndpoint,
+                                       g_pui8Command, &ui32Size);
+                psSCSICBW = (tMSCCBW *)g_pui8Command;
 
                 //
                 // Acknowledge the OUT data packet.
                 //
-                MAP_USBDevEndpointDataAck(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint,
-                                          false);
+                MAP_USBDevEndpointDataAck(psInst->ui32USBBase,
+                                          psInst->ui8OUTEndpoint, false);
 
                 //
                 // If this is a valid CBW then handle it.
                 //
-                if(pSCSICBW->dCBWSignature == CBW_SIGNATURE)
+                if(psSCSICBW->dCBWSignature == CBW_SIGNATURE)
                 {
                     g_sSCSICSW.dCSWSignature = CSW_SIGNATURE;
-                    g_sSCSICSW.dCSWTag = pSCSICBW->dCBWTag;
+                    g_sSCSICSW.dCSWTag = psSCSICBW->dCBWTag;
                     g_sSCSICSW.dCSWDataResidue = 0;
                     g_sSCSICSW.bCSWStatus = 0;
 
-                    USBDSCSICommand(psDevice, pSCSICBW);
+                    USBDSCSICommand(psMSCDevice, psSCSICBW);
                 }
                 else
                 {
@@ -787,7 +745,7 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
                     // should allow the device to synchronize with the host
                     // controller.
                     //
-                    psInst->ucSCSIState = STATE_SCSI_IDLE;
+                    psInst->ui8SCSIState = STATE_SCSI_IDLE;
                 }
 
                 break;
@@ -801,8 +759,8 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
         //
         // Clear the status bits.
         //
-        MAP_USBDevEndpointStatusClear(USB0_BASE, psInst->ucOUTEndpoint,
-                                      ulEPStatus);
+        MAP_USBDevEndpointStatusClear(USB0_BASE, psInst->ui8OUTEndpoint,
+                                      ui32EPStatus);
     }
 }
 
@@ -812,30 +770,30 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
 //
 //*****************************************************************************
 static void
-HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
+HandleDevice(void *pvMSCDevice, uint32_t ui32Request, void *pvRequestData)
 {
     tMSCInstance *psInst;
-    unsigned char *pucData;
+    uint8_t *pui8Data;
 
     //
-    // Create the serial instance data.
+    // Get the instance data pointers.
     //
-    psInst = ((tUSBDMSCDevice *)pvInstance)->psPrivateData;
+    psInst = &((tUSBDMSCDevice *)pvMSCDevice)->sPrivateData;
 
     //
-    // Create the char array used by the events supported by the USB CDC
-    // serial class.
+    // Create the 8-bit array used by the events supported by the USB MSC
+    // class.
     //
-    pucData = (unsigned char *)pvRequestData;
+    pui8Data = (uint8_t *)pvRequestData;
 
-    switch(ulRequest)
+    switch(ui32Request)
     {
         //
         // This was an interface change event.
         //
         case USB_EVENT_COMP_IFACE_CHANGE:
         {
-            psInst->ucInterface = pucData[1];
+            psInst->ui8Interface = pui8Data[1];
             break;
         }
 
@@ -847,49 +805,73 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
             //
             // Determine if this is an IN or OUT endpoint that has changed.
             //
-            if(pucData[0] & USB_EP_DESC_IN)
+            if(pui8Data[0] & USB_EP_DESC_IN)
             {
-                psInst->ucINEndpoint = INDEX_TO_USB_EP((pucData[1] & 0x7f));
-
-                psInst->ucINDMA = UDMA_CHANNEL_USBEP1TX +
-                                  (((pucData[1] & 0x7f) - 1) * 2);
+                psInst->ui8INEndpoint = IndexToUSBEP((pui8Data[1] & 0x7f));
 
                 //
-                // Basic configuration for DMA on the IN endpoint.
+                // If the DMA channel has already been allocated then clear
+                // that channel and prepare to possibly use a new one.
                 //
-                MAP_uDMAChannelControlSet(psInst->ucINDMA,
-                                          (UDMA_SIZE_32 | UDMA_SRC_INC_32|
-                                           UDMA_DST_INC_NONE | UDMA_ARB_16));
+                if(psInst->ui8INDMA != 0)
+                {
+                    USBLibDMAChannelRelease(psInst->psDMAInstance,
+                                            psInst->ui8INDMA);
+                }
 
                 //
-                // Select this channel for this endpoint, this only affects
-                // devices that have this feature.
+                // Allocate a DMA channel to the endpoint.
                 //
-                MAP_USBEndpointDMAChannel(USB0_BASE, psInst->ucINEndpoint,
-                                          psInst->ucINDMA);
+                psInst->ui8INDMA =
+                    USBLibDMAChannelAllocate(psInst->psDMAInstance,
+                                             psInst->ui8INEndpoint, 0,
+                                             USB_DMA_EP_TX |
+                                             USB_DMA_EP_DEVICE);
+
+                //
+                // Set the DMA individual transfer size.
+                //
+                USBLibDMAUnitSizeSet(psInst->psDMAInstance, psInst->ui8INDMA,
+                                     32);
+
+                //
+                // Set the DMA arbitration size.
+                //
+                USBLibDMAArbSizeSet(psInst->psDMAInstance, psInst->ui8INDMA,
+                                    16);
             }
             else
             {
                 //
-                // Extract the new endpoint number.
+                // If the DMA channel has already been allocated then clear
+                // that channel and prepare to possibly use a new one.
                 //
-                psInst->ucOUTEndpoint = INDEX_TO_USB_EP(pucData[1] & 0x7f);
-                psInst->ucOUTDMA = UDMA_CHANNEL_USBEP1RX +
-                                   (((pucData[1] & 0x7f) - 1) * 2);
+                if(psInst->ui8OUTDMA != 0)
+                {
+                    USBLibDMAChannelRelease(psInst->psDMAInstance,
+                                            psInst->ui8OUTDMA);
+                }
 
                 //
-                // Basic configuration for DMA on the OUT endpoint.
+                // Allocate a DMA channel to the endpoint.
                 //
-                MAP_uDMAChannelControlSet(psInst->ucOUTDMA,
-                                          (UDMA_SIZE_32 | UDMA_SRC_INC_NONE|
-                                           UDMA_DST_INC_32 | UDMA_ARB_16));
+                psInst->ui8OUTDMA =
+                    USBLibDMAChannelAllocate(psInst->psDMAInstance,
+                                             psInst->ui8OUTEndpoint, 0,
+                                             USB_DMA_EP_RX |
+                                             USB_DMA_EP_DEVICE);
 
                 //
-                // Select this channel for this endpoint, this only affects
-                // devices that have this feature.
+                // Set the DMA individual transfer size.
                 //
-                MAP_USBEndpointDMAChannel(USB0_BASE, psInst->ucOUTEndpoint,
-                                          psInst->ucOUTDMA);
+                USBLibDMAUnitSizeSet(psInst->psDMAInstance, psInst->ui8OUTDMA,
+                                     32);
+
+                //
+                // Set the DMA arbitration size.
+                //
+                USBLibDMAArbSizeSet(psInst->psDMAInstance, psInst->ui8OUTDMA,
+                                    16);
             }
             break;
         }
@@ -907,36 +889,37 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
 //
 //*****************************************************************************
 static void
-HandleDisconnect(void *pvInstance)
+HandleDisconnect(void *pvMSCDevice)
 {
-    const tUSBDMSCDevice *psDevice;
+    tUSBDMSCDevice *psMSCDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvMSCDevice != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = (const tUSBDMSCDevice *)pvInstance;
+    psMSCDevice = (tUSBDMSCDevice *)pvMSCDevice;
 
     //
     // Close the drive requested.
     //
-    if(psDevice->psPrivateData->pvMedia != 0)
+    if(psMSCDevice->sPrivateData.pvMedia != 0)
     {
-        psDevice->psPrivateData->pvMedia = 0;
-        psDevice->sMediaFunctions.Close(0);
+        psMSCDevice->sPrivateData.pvMedia = 0;
+        psMSCDevice->sMediaFunctions.pfnClose(0);
     }
 
     //
     // If we have a control callback, let the client know we are open for
     // business.
     //
-    if(psDevice->pfnEventCallback)
+    if(psMSCDevice->pfnEventCallback)
     {
         //
         // Pass the connected event to the client.
         //
-        psDevice->pfnEventCallback(pvInstance, USB_EVENT_DISCONNECTED, 0, 0);
+        psMSCDevice->pfnEventCallback(pvMSCDevice, USB_EVENT_DISCONNECTED, 0,
+                                      0);
     }
 }
 
@@ -947,65 +930,75 @@ HandleDisconnect(void *pvInstance)
 //
 //*****************************************************************************
 static void
-ConfigChangeHandler(void *pvInstance, unsigned long ulValue)
+ConfigChangeHandler(void *pvMSCDevice, uint32_t ui32Value)
 {
-    tMSCInstance *psInst;
-    const tUSBDMSCDevice *psDevice;
+    tUSBDMSCDevice *psMSCDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvMSCDevice != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = (const tUSBDMSCDevice *)pvInstance;
+    psMSCDevice = (tUSBDMSCDevice *)pvMSCDevice;
 
     //
-    // Create the serial instance data.
+    // If the DMA channel has already been allocated then clear
+    // that channel and prepare to possibly use a new one.
     //
-    psInst = psDevice->psPrivateData;
+    if(psMSCDevice->sPrivateData.ui8OUTDMA != 0)
+    {
+        USBLibDMAChannelRelease(psMSCDevice->sPrivateData.psDMAInstance,
+                                psMSCDevice->sPrivateData.ui8OUTDMA);
+    }
 
     //
-    // Insure that DMA is disable whenever the configuration is set.
+    // Configure the DMA for the OUT endpoint.
     //
-    MAP_USBEndpointDMADisable(USB0_BASE, psInst->ucINEndpoint, USB_EP_DEV_IN);
-    MAP_USBEndpointDMADisable(USB0_BASE, psInst->ucOUTEndpoint, USB_EP_DEV_OUT);
+    psMSCDevice->sPrivateData.ui8OUTDMA =
+        USBLibDMAChannelAllocate(psMSCDevice->sPrivateData.psDMAInstance,
+                                 psMSCDevice->sPrivateData.ui8OUTEndpoint, 64,
+                                 USB_DMA_EP_RX | USB_DMA_EP_DEVICE);
+
+    USBLibDMAUnitSizeSet(psMSCDevice->sPrivateData.psDMAInstance,
+                         psMSCDevice->sPrivateData.ui8OUTDMA, 32);
+
+    USBLibDMAArbSizeSet(psMSCDevice->sPrivateData.psDMAInstance,
+                        psMSCDevice->sPrivateData.ui8OUTDMA, 16);
 
     //
-    // Basic configuration for DMA on the OUT endpoint.
+    // If the DMA channel has already been allocated then clear
+    // that channel and prepare to possibly use a new one.
     //
-    MAP_uDMAChannelControlSet(psInst->ucOUTDMA, UDMA_SIZE_32 |
-                                                UDMA_SRC_INC_NONE|
-                                                UDMA_DST_INC_32 |
-                                                UDMA_ARB_16);
+    if(psMSCDevice->sPrivateData.ui8INDMA != 0)
+    {
+        USBLibDMAChannelRelease(psMSCDevice->sPrivateData.psDMAInstance,
+                                psMSCDevice->sPrivateData.ui8INDMA);
+    }
 
     //
-    // Select this channel for this endpoint, this only affects devices that
-    // have this feature.
+    // Configure the DMA for the IN endpoint.
     //
-    MAP_USBEndpointDMAChannel(USB0_BASE, psInst->ucOUTEndpoint, psInst->ucOUTDMA);
+    psMSCDevice->sPrivateData.ui8INDMA =
+        USBLibDMAChannelAllocate(psMSCDevice->sPrivateData.psDMAInstance,
+                                 psMSCDevice->sPrivateData.ui8INEndpoint, 64,
+                                 USB_DMA_EP_TX | USB_DMA_EP_DEVICE);
 
-    //
-    // Basic configuration for DMA on the IN endpoint.
-    //
-    MAP_uDMAChannelControlSet(psInst->ucINDMA, UDMA_SIZE_32 | UDMA_SRC_INC_32|
-                                               UDMA_DST_INC_NONE | UDMA_ARB_16);
+    USBLibDMAUnitSizeSet(psMSCDevice->sPrivateData.psDMAInstance,
+                         psMSCDevice->sPrivateData.ui8INDMA, 32);
 
-    //
-    // Select this channel for this endpoint, this only affects devices that
-    // have this feature.
-    //
-    MAP_USBEndpointDMAChannel(USB0_BASE, psInst->ucINEndpoint, psInst->ucINDMA);
+    USBLibDMAArbSizeSet(psMSCDevice->sPrivateData.psDMAInstance,
+                        psMSCDevice->sPrivateData.ui8INDMA, 16);
 
     //
     // If we have a control callback, let the client know we are open for
     // business.
     //
-    if(psDevice->pfnEventCallback)
+    if(psMSCDevice->pfnEventCallback)
     {
         //
         // Pass the connected event to the client.
         //
-        psDevice->pfnEventCallback(pvInstance, USB_EVENT_CONNECTED, 0, 0);
+        psMSCDevice->pfnEventCallback(pvMSCDevice, USB_EVENT_CONNECTED, 0, 0);
     }
 }
 
@@ -1014,14 +1007,14 @@ ConfigChangeHandler(void *pvInstance, unsigned long ulValue)
 //! This function should be called once for the mass storage class device to
 //! initialized basic operation and prepare for enumeration.
 //!
-//! \param ulIndex is the index of the USB controller to initialize for
+//! \param ui32Index is the index of the USB controller to initialize for
 //! mass storage class device operation.
-//! \param psDevice points to a structure containing parameters customizing
+//! \param psMSCDevice points to a structure containing parameters customizing
 //! the operation of the mass storage device.
 //!
 //! In order for an application to initialize the USB device mass storage
 //! class, it must first call this function with the a valid mass storage
-//! device class structure in the \e psDevice parameter.  This allows this
+//! device class structure in the \e psMSCDevice parameter.  This allows this
 //! function to initialize the USB controller and device code to be prepared to
 //! enumerate and function as a USB mass storage device.
 //!
@@ -1035,28 +1028,45 @@ ConfigChangeHandler(void *pvInstance, unsigned long ulValue)
 //
 //*****************************************************************************
 void *
-USBDMSCInit(unsigned long ulIndex, const tUSBDMSCDevice *psDevice)
+USBDMSCInit(uint32_t ui32Index, tUSBDMSCDevice *psMSCDevice)
 {
+    tDeviceDescriptor *psDevDesc;
+    tConfigDescriptor *pConfDesc;
+
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateData);
+    ASSERT(ui32Index == 0);
+    ASSERT(psMSCDevice);
+    ASSERT(psMSCDevice->ppui8StringDescriptors);
 
-    USBDMSCCompositeInit(ulIndex, psDevice);
+    USBDMSCCompositeInit(ui32Index, psMSCDevice, 0);
+
+    //
+    // Fix up the device descriptor with the client-supplied values.
+    //
+    psDevDesc = (tDeviceDescriptor *)g_pui8MSCDeviceDescriptor;
+    psDevDesc->idVendor = psMSCDevice->ui16VID;
+    psDevDesc->idProduct = psMSCDevice->ui16PID;
+
+    //
+    // Fix up the configuration descriptor with client-supplied values.
+    //
+    pConfDesc = (tConfigDescriptor *)g_pui8MSCDescriptor;
+    pConfDesc->bmAttributes = psMSCDevice->ui8PwrAttributes;
+    pConfDesc->bMaxPower = (uint8_t)(psMSCDevice->ui16MaxPowermA / 2);
 
     //
     // All is well so now pass the descriptors to the lower layer and put
     // the bulk device on the bus.
     //
-    USBDCDInit(ulIndex, psDevice->psPrivateData->psDevInfo);
+    USBDCDInit(ui32Index, &psMSCDevice->sPrivateData.sDevInfo,
+               (void *)psMSCDevice);
 
     //
     // Return the pointer to the instance indicating that everything went well.
     //
-    return((void *)psDevice);
+    return((void *)psMSCDevice);
 }
 
 //*****************************************************************************
@@ -1064,16 +1074,21 @@ USBDMSCInit(unsigned long ulIndex, const tUSBDMSCDevice *psDevice)
 //! This function should be called once for the mass storage class device to
 //! initialized basic operation and prepare for enumeration.
 //!
-//! \param ulIndex is the index of the USB controller to initialize for
+//! \param ui32Index is the index of the USB controller to initialize for
 //! mass storage class device operation.
-//! \param psDevice points to a structure containing parameters customizing
+//! \param psMSCDevice points to a structure containing parameters customizing
 //! the operation of the mass storage device.
+//! \param psCompEntry is the composite device entry to initialize when
+//! creating a composite device.
 //!
 //! In order for an application to initialize the USB device mass storage
 //! class, it must first call this function with the a valid mass storage
-//! device class structure in the \e psDevice parameter.  This allows this
+//! device class structure in the \e psMSCDevice parameter.  This allows this
 //! function to initialize the USB controller and device code to be prepared to
-//! enumerate and function as a USB mass storage device.
+//! enumerate and function as a USB mass storage device.  If this mass storage
+//! device is part of a composite device, then the \e psCompEntry should
+//! point to the composite device entry to initialize.  This is part of the
+//! array that is passed to the USBDCompositeInit() function.
 //!
 //! This function returns a void pointer that must be passed in to all other
 //! APIs used by the mass storage class.
@@ -1081,96 +1096,97 @@ USBDMSCInit(unsigned long ulIndex, const tUSBDMSCDevice *psDevice)
 //! See the documentation on the tUSBDMSCDevice structure for more information
 //! on how to properly fill the structure members.
 //!
-//! \return Returns 0 on failure or a non-zero void pointer on success.
+//! \return Returns zero on failure or a non-zero instance value that should be
+//! used with the remaining USB mass storage APIs.
 //
 //*****************************************************************************
 void *
-USBDMSCCompositeInit(unsigned long ulIndex, const tUSBDMSCDevice *psDevice)
+USBDMSCCompositeInit(uint32_t ui32Index, tUSBDMSCDevice *psMSCDevice,
+                     tCompositeEntry *psCompEntry)
 {
     tMSCInstance *psInst;
-    tDeviceDescriptor *psDevDesc;
 
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateData);
+    ASSERT(ui32Index == 0);
+    ASSERT(psMSCDevice);
+    ASSERT(psMSCDevice->ppui8StringDescriptors);
+    ASSERT(psCompEntry != 0);
 
     //
     // Initialize the workspace in the passed instance structure.
     //
-    psInst = psDevice->psPrivateData;
-    psInst->psConfDescriptor = (tConfigDescriptor *)g_pMSCDescriptor;
-    psInst->psDevInfo = &g_sMSCDeviceInfo;
-    psInst->ulUSBBase = USB0_BASE;
+    psInst = &psMSCDevice->sPrivateData;
+    psInst->ui32USBBase = USB0_BASE;
     psInst->bConnected = false;
-    psInst->eMediaStatus = USBDMSC_MEDIA_UNKNOWN;
+    psInst->iMediaStatus = eUSBDMSCMediaUnknown;
+
+    //
+    // Initialize the composite entry that is used by the composite device
+    // class.
+    //
+    if(psCompEntry != 0)
+    {
+        psCompEntry->psDevInfo = &psInst->sDevInfo;
+        psCompEntry->pvInstance = (void *)psMSCDevice;
+    }
+
+    //
+    // Initialize the device information structure.
+    //
+    psInst->sDevInfo.psCallbacks = &g_sMSCHandlers;
+    psInst->sDevInfo.pui8DeviceDescriptor = g_pui8MSCDeviceDescriptor;
+    psInst->sDevInfo.ppsConfigDescriptors = g_ppsMSCConfigDescriptors;
+    psInst->sDevInfo.ppui8StringDescriptors = 0;
+    psInst->sDevInfo.ui32NumStringDescriptors = 0;
+
+    //
+    // Initialize the device info structure for the mass storage device.
+    //
+    USBDCDDeviceInfoInit(0, &psInst->sDevInfo);
 
     //
     // Set the initial interface and endpoints.
     //
-    psInst->ucInterface = 0;
-    psInst->ucOUTEndpoint = DATA_OUT_ENDPOINT;
-    psInst->ucOUTDMA = DATA_OUT_DMA_CHANNEL;
-    psInst->ucINEndpoint = DATA_IN_ENDPOINT;
-    psInst->ucINDMA = DATA_IN_DMA_CHANNEL;
+    psInst->ui8Interface = 0;
+    psInst->ui8OUTEndpoint = DATA_OUT_ENDPOINT;
+    psInst->ui8INEndpoint = DATA_IN_ENDPOINT;
 
     //
     // Set the initial SCSI state to idle.
     //
-    psInst->ucSCSIState = STATE_SCSI_IDLE;
-
-    //
-    // Fix up the device descriptor with the client-supplied values.
-    //
-    psDevDesc = (tDeviceDescriptor *)psInst->psDevInfo->pDeviceDescriptor;
-    psDevDesc->idVendor = psDevice->usVID;
-    psDevDesc->idProduct = psDevice->usPID;
-
-    //
-    // Fix up the configuration descriptor with client-supplied values.
-    //
-    psInst->psConfDescriptor->bmAttributes = psDevice->ucPwrAttributes;
-    psInst->psConfDescriptor->bMaxPower =
-                        (unsigned char)(psDevice->usMaxPowermA / 2);
+    psInst->ui8SCSIState = STATE_SCSI_IDLE;
 
     //
     // Plug in the client's string stable to the device information
     // structure.
     //
-    psInst->psDevInfo->ppStringDescriptors = psDevice->ppStringDescriptors;
-    psInst->psDevInfo->ulNumStringDescriptors
-        = psDevice->ulNumStringDescriptors;
-    psInst->psDevInfo->pvInstance = (void *)psDevice;
-
-    //
-    // If DMA is in use then clear all DMA attributes.
-    //
-    MAP_uDMAChannelAttributeDisable(psInst->ucINDMA, UDMA_ATTR_ALL);
-    MAP_uDMAChannelAttributeDisable(psInst->ucOUTDMA, UDMA_ATTR_ALL);
+    psInst->sDevInfo.ppui8StringDescriptors =
+                                        psMSCDevice->ppui8StringDescriptors;
+    psInst->sDevInfo.ui32NumStringDescriptors =
+                                        psMSCDevice->ui32NumStringDescriptors;
 
     //
     // Open the drive requested.
     //
-    psInst->pvMedia = psDevice->sMediaFunctions.Open(0);
+    psInst->pvMedia = psMSCDevice->sMediaFunctions.pfnOpen(0);
 
     if(psInst->pvMedia == 0)
     {
         //
         // There is no media currently present.
         //
-        psInst->ucSenseKey = SCSI_RS_KEY_NOT_READY;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOT_PRSNT;
+        psInst->ui8SenseKey = SCSI_RS_KEY_NOT_READY;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOT_PRSNT;
     }
     else
     {
         //
         // Media is now ready for use.
         //
-        psInst->ucSenseKey = SCSI_RS_KEY_UNIT_ATTN;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOTRDY2RDY;
+        psInst->ui8SenseKey = SCSI_RS_KEY_UNIT_ATTN;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOTRDY2RDY;
     }
 
     //
@@ -1184,32 +1200,37 @@ USBDMSCCompositeInit(unsigned long ulIndex, const tUSBDMSCDevice *psDevice)
     MAP_SysCtlUSBPLLEnable();
 
     //
+    // Get the DMA instance pointer.
+    //
+    psInst->psDMAInstance = USBLibDMAInit(0);
+
+    //
     // Return the pointer to the instance indicating that everything went well.
     //
-    return((void *)psDevice);
+    return((void *)psMSCDevice);
 }
 
 //*****************************************************************************
 //
 //! Shuts down the mass storage device.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvMSCDevice is the pointer to the device instance structure as
 //! returned by USBDMSCInit() or USBDMSCInitComposite().
 //!
 //! This function terminates mass storage operation for the instance supplied
 //! and removes the device from the USB bus.  Following this call, the
-//! \e psDevice instance may not me used in any other call to the mass storage
-//! device other than USBDMSCInit() or USBDMSCInitComposite().
+//! \e pvMSCDevice instance may not me used in any other call to the mass
+//! storage device other than USBDMSCInit() or USBDMSCInitComposite().
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBDMSCTerm(void *pvInstance)
+USBDMSCTerm(void *pvMSCDevice)
 {
-    const tUSBDMSCDevice *psDevice;
+    tUSBDMSCDevice *psMSCDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvMSCDevice != 0);
 
     //
     // Cleanly exit device mode.
@@ -1219,15 +1240,15 @@ USBDMSCTerm(void *pvInstance)
     //
     // Create a device instance pointer.
     //
-    psDevice = pvInstance;
+    psMSCDevice = pvMSCDevice;
 
     //
     // If the media was opened the close it out.
     //
-    if(psDevice->psPrivateData->pvMedia != 0)
+    if(psMSCDevice->sPrivateData.pvMedia != 0)
     {
-        psDevice->psPrivateData->pvMedia = 0;
-        psDevice->sMediaFunctions.Close(0);
+        psMSCDevice->sPrivateData.pvMedia = 0;
+        psMSCDevice->sMediaFunctions.pfnClose(0);
     }
 }
 
@@ -1236,7 +1257,7 @@ USBDMSCTerm(void *pvInstance)
 // This function is called by the USB device stack whenever a non-standard
 // request is received.
 //
-// \param pvInstance is instance data for this request.
+// \param pvMSCDevice is instance data for this request.
 // \param pUSBRequest points to the request received.
 //
 // This call parses the provided request structure to determine the command.
@@ -1247,14 +1268,14 @@ USBDMSCTerm(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
+HandleRequests(void *pvMSCDevice, tUSBRequest *pUSBRequest)
 {
     //
     // This class only support a single LUN.
     //
-    const static unsigned char ucMaxLun = 0;
+    static const uint8_t ui8MaxLun = 0;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvMSCDevice != 0);
 
     //
     // Determine the type of request.
@@ -1270,7 +1291,7 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // Send our response to the host.
             //
-            USBDCDSendDataEP0(0, (unsigned char *)&ucMaxLun, 1);
+            USBDCDSendDataEP0(0, (uint8_t *)&ui8MaxLun, 1);
 
             break;
         }
@@ -1293,65 +1314,66 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
 //
 //*****************************************************************************
 static void
-USBDSCSIInquiry(const tUSBDMSCDevice *psDevice)
+USBDSCSIInquiry(tUSBDMSCDevice *psMSCDevice)
 {
-    long lIdx;
+    int32_t i32Idx;
     tMSCInstance *psInst;
-    unsigned long *pulData;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)g_pucCommand;
+    pui32Data = (uint32_t *)g_pui8Command;
 
     //
     // Create the serial instance data.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // Direct Access device, Removable storage and SCSI 1 responses.
     //
-    pulData[0] = SCSI_INQ_PDT_SBC | (SCSI_INQ_RMB << 8);
+    pui32Data[0] = SCSI_INQ_PDT_SBC | (SCSI_INQ_RMB << 8);
 
     //
     // Additional Length is fixed at 31 bytes.
     //
-    pulData[1] = 31;
+    pui32Data[1] = 31;
 
     //
     // Copy the Vendor string.
     //
-    for(lIdx = 0; lIdx < 8; lIdx++)
+    for(i32Idx = 0; i32Idx < 8; i32Idx++)
     {
-        g_pucCommand[lIdx + 8] = psDevice->pucVendor[lIdx];
+        g_pui8Command[i32Idx + 8] = psMSCDevice->pui8Vendor[i32Idx];
     }
 
     //
     // Copy the Product string.
     //
-    for(lIdx = 0; lIdx < 16; lIdx++)
+    for(i32Idx = 0; i32Idx < 16; i32Idx++)
     {
-        g_pucCommand[lIdx + 16] = psDevice->pucProduct[lIdx];
+        g_pui8Command[i32Idx + 16] = psMSCDevice->pui8Product[i32Idx];
     }
 
     //
     // Copy the Version string.
     //
-    for(lIdx = 0; lIdx < 4; lIdx++)
+    for(i32Idx = 0; i32Idx < 4; i32Idx++)
     {
-        g_pucCommand[lIdx + 32] = psDevice->pucVersion[lIdx];
+        g_pui8Command[i32Idx + 32] = psMSCDevice->pui8Version[i32Idx];
     }
 
     //
     // Send the SCSI Inquiry Response.
     //
-    MAP_USBEndpointDataPut(USB0_BASE, psInst->ucINEndpoint, g_pucCommand, 36);
+    MAP_USBEndpointDataPut(USB0_BASE, psInst->ui8INEndpoint, g_pui8Command,
+                           36);
 
     //
     // Send the data to the host.
     //
-    MAP_USBEndpointDataSend(USB0_BASE, psInst->ucINEndpoint, USB_TRANS_IN);
+    MAP_USBEndpointDataSend(USB0_BASE, psInst->ui8INEndpoint, USB_TRANS_IN);
 
     //
     // Set the status so that it can be sent when this response has
@@ -1360,7 +1382,7 @@ USBDSCSIInquiry(const tUSBDMSCDevice *psDevice)
     g_sSCSICSW.bCSWStatus = 0;
     g_sSCSICSW.dCSWDataResidue = 0;
 
-    psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+    psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
 }
 
 //*****************************************************************************
@@ -1370,54 +1392,56 @@ USBDSCSIInquiry(const tUSBDMSCDevice *psDevice)
 //
 //*****************************************************************************
 static void
-USBDSCSIReadCapacities(const tUSBDMSCDevice *psDevice)
+USBDSCSIReadCapacities(tUSBDMSCDevice *psMSCDevice)
 {
-    unsigned long ulBlocks;
+    uint32_t ui32Blocks;
     tMSCInstance *psInst;
-    unsigned long *pulData;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)g_pucCommand;
+    pui32Data = (uint32_t *)g_pui8Command;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     if(psInst->pvMedia != 0)
     {
-        ulBlocks = psDevice->sMediaFunctions.NumBlocks(psInst->pvMedia);
+        ui32Blocks =
+                    psMSCDevice->sMediaFunctions.pfnNumBlocks(psInst->pvMedia);
 
-        pulData[0] = 0x08000000;
+        pui32Data[0] = 0x08000000;
 
         //
         // Fill in the number of blocks, the bytes endianness must be changed.
         //
-        g_pucCommand[4] = ulBlocks >> 24;
-        g_pucCommand[5] = 0xff & (ulBlocks >> 16);
-        g_pucCommand[6] = 0xff & (ulBlocks >> 8);
-        g_pucCommand[7] = 0xff & (ulBlocks);
+        g_pui8Command[4] = ui32Blocks >> 24;
+        g_pui8Command[5] = 0xff & (ui32Blocks >> 16);
+        g_pui8Command[6] = 0xff & (ui32Blocks >> 8);
+        g_pui8Command[7] = 0xff & (ui32Blocks);
 
         //
         // Current media capacity
         //
-        g_pucCommand[8] = 0x2;
+        g_pui8Command[8] = 0x2;
 
         //
         // Fill in the block size, which is fixed at DEVICE_BLOCK_SIZE.
         //
-        g_pucCommand[9] = 0xff & (DEVICE_BLOCK_SIZE >> 16);
-        g_pucCommand[10] = 0xff & (DEVICE_BLOCK_SIZE >> 8);
-        g_pucCommand[11] = 0xff & DEVICE_BLOCK_SIZE;
+        g_pui8Command[9] = 0xff & (DEVICE_BLOCK_SIZE >> 16);
+        g_pui8Command[10] = 0xff & (DEVICE_BLOCK_SIZE >> 8);
+        g_pui8Command[11] = 0xff & DEVICE_BLOCK_SIZE;
 
         //
         // Send out the 12 bytes that are in this response.
         //
-        MAP_USBEndpointDataPut(USB0_BASE, psInst->ucINEndpoint, g_pucCommand,
+        MAP_USBEndpointDataPut(USB0_BASE, psInst->ui8INEndpoint, g_pui8Command,
                                12);
-        MAP_USBEndpointDataSend(USB0_BASE, psInst->ucINEndpoint, USB_TRANS_IN);
+        MAP_USBEndpointDataSend(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_TRANS_IN);
 
         //
         // Set the status so that it can be sent when this response has
@@ -1438,18 +1462,19 @@ USBDSCSIReadCapacities(const tUSBDMSCDevice *psDevice)
         //
         // Stall the IN endpoint
         //
-        MAP_USBDevEndpointStall(USB0_BASE, psInst->ucINEndpoint, USB_EP_DEV_IN);
+        MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_EP_DEV_IN);
 
         //
         // Mark the sense code as valid and indicate that these is no media
         // present.
         //
-        psInst->ucErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
-        psInst->ucSenseKey = SCSI_RS_KEY_NOT_READY;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOT_PRSNT;
+        psInst->ui8ErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
+        psInst->ui8SenseKey = SCSI_RS_KEY_NOT_READY;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOT_PRSNT;
     }
 
-    psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+    psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
 }
 
 //*****************************************************************************
@@ -1459,28 +1484,28 @@ USBDSCSIReadCapacities(const tUSBDMSCDevice *psDevice)
 //
 //*****************************************************************************
 static void
-USBDSCSIReadCapacity(const tUSBDMSCDevice *psDevice)
+USBDSCSIReadCapacity(tUSBDMSCDevice *psMSCDevice)
 {
-    unsigned long ulBlocks;
+    uint32_t ui32Blocks;
     tMSCInstance *psInst;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
-    ulBlocks = psDevice->sMediaFunctions.NumBlocks(psInst->pvMedia);
+    ui32Blocks = psMSCDevice->sMediaFunctions.pfnNumBlocks(psInst->pvMedia);
 
     //
     // Only decrement if any blocks were found.
     //
-    if(ulBlocks != 0)
+    if(ui32Blocks != 0)
     {
         //
         // One less than the maximum number is the last addressable
         // block.
         //
-        ulBlocks--;
+        ui32Blocks--;
     }
 
     if(psInst->pvMedia != 0)
@@ -1488,26 +1513,27 @@ USBDSCSIReadCapacity(const tUSBDMSCDevice *psDevice)
         //
         // Fill in the number of blocks, the bytes endianness must be changed.
         //
-        g_pucCommand[0] = 0xff & (ulBlocks >> 24);
-        g_pucCommand[1] = 0xff & (ulBlocks >> 16);
-        g_pucCommand[2] = 0xff & (ulBlocks >> 8);
-        g_pucCommand[3] = 0xff & (ulBlocks);
+        g_pui8Command[0] = 0xff & (ui32Blocks >> 24);
+        g_pui8Command[1] = 0xff & (ui32Blocks >> 16);
+        g_pui8Command[2] = 0xff & (ui32Blocks >> 8);
+        g_pui8Command[3] = 0xff & (ui32Blocks);
 
-        g_pucCommand[4] = 0;
+        g_pui8Command[4] = 0;
 
         //
         // Fill in the block size, which is fixed at DEVICE_BLOCK_SIZE.
         //
-        g_pucCommand[5] = 0xff & (DEVICE_BLOCK_SIZE >> 16);
-        g_pucCommand[6] = 0xff & (DEVICE_BLOCK_SIZE >> 8);
-        g_pucCommand[7] = 0xff & DEVICE_BLOCK_SIZE;
+        g_pui8Command[5] = 0xff & (DEVICE_BLOCK_SIZE >> 16);
+        g_pui8Command[6] = 0xff & (DEVICE_BLOCK_SIZE >> 8);
+        g_pui8Command[7] = 0xff & DEVICE_BLOCK_SIZE;
 
         //
         // Send the SCSI Inquiry Response.
         //
-        MAP_USBEndpointDataPut(USB0_BASE, psInst->ucINEndpoint, g_pucCommand,
+        MAP_USBEndpointDataPut(USB0_BASE, psInst->ui8INEndpoint, g_pui8Command,
                                8);
-        MAP_USBEndpointDataSend(USB0_BASE, psInst->ucINEndpoint, USB_TRANS_IN);
+        MAP_USBEndpointDataSend(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_TRANS_IN);
 
         //
         // Set the status so that it can be sent when this response has
@@ -1528,18 +1554,19 @@ USBDSCSIReadCapacity(const tUSBDMSCDevice *psDevice)
         //
         // Stall the IN endpoint
         //
-        MAP_USBDevEndpointStall(USB0_BASE, psInst->ucINEndpoint, USB_EP_DEV_IN);
+        MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_EP_DEV_IN);
 
         //
         // Mark the sense code as valid and indicate that these is no media
         // present.
         //
-        psInst->ucErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
-        psInst->ucSenseKey = SCSI_RS_KEY_NOT_READY;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOT_PRSNT;
+        psInst->ui8ErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
+        psInst->ui8SenseKey = SCSI_RS_KEY_NOT_READY;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOT_PRSNT;
     }
 
-    psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+    psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
 }
 
 //*****************************************************************************
@@ -1549,46 +1576,47 @@ USBDSCSIReadCapacity(const tUSBDMSCDevice *psDevice)
 //
 //*****************************************************************************
 static void
-USBDSCSIRequestSense(const tUSBDMSCDevice *psDevice)
+USBDSCSIRequestSense(tUSBDMSCDevice *psMSCDevice)
 {
     tMSCInstance *psInst;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // The request sense response.
     //
-    g_pucCommand[0] = psInst->ucErrorCode;
-    g_pucCommand[1] = 0;
-    g_pucCommand[2] = psInst->ucSenseKey;
-    *(unsigned long *)&g_pucCommand[3] = 0;
+    g_pui8Command[0] = psInst->ui8ErrorCode;
+    g_pui8Command[1] = 0;
+    g_pui8Command[2] = psInst->ui8SenseKey;
+    *(uint32_t *)&g_pui8Command[3] = 0;
 
     //
     // There are 10 more bytes of data.
     //
-    g_pucCommand[7] = 10;
+    g_pui8Command[7] = 10;
 
-    *(unsigned long *)&g_pucCommand[8] = 0;
+    *(uint32_t *)&g_pui8Command[8] = 0;
 
     //
     // Transition from not ready to ready.
     //
-    *(unsigned short *)&g_pucCommand[12] = psInst->usAddSenseCode;
-    *(unsigned long *)&g_pucCommand[14] = 0;
+    *(uint16_t *)&g_pui8Command[12] = psInst->ui16AddSenseCode;
+    *(uint32_t *)&g_pui8Command[14] = 0;
 
     //
     // Send the SCSI Inquiry Response.
     //
-    MAP_USBEndpointDataPut(USB0_BASE, psInst->ucINEndpoint, g_pucCommand, 18);
-    MAP_USBEndpointDataSend(USB0_BASE, psInst->ucINEndpoint, USB_TRANS_IN);
+    MAP_USBEndpointDataPut(USB0_BASE, psInst->ui8INEndpoint, g_pui8Command,
+                           18);
+    MAP_USBEndpointDataSend(USB0_BASE, psInst->ui8INEndpoint, USB_TRANS_IN);
 
     //
     // Reset the valid flag on errors.
     //
-    psInst->ucErrorCode = SCSI_RS_CUR_ERRORS;
+    psInst->ui8ErrorCode = SCSI_RS_CUR_ERRORS;
 
     //
     // Set the status so that it can be sent when this response has
@@ -1600,7 +1628,7 @@ USBDSCSIRequestSense(const tUSBDMSCDevice *psDevice)
     //
     // Move on to the status phase.
     //
-    psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+    psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
 }
 
 //*****************************************************************************
@@ -1610,20 +1638,20 @@ USBDSCSIRequestSense(const tUSBDMSCDevice *psDevice)
 //
 //*****************************************************************************
 static void
-USBDSCSIRead10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
+USBDSCSIRead10(tUSBDMSCDevice *psMSCDevice, tMSCCBW *psSCSICBW)
 {
-    unsigned short usNumBlocks;
+    uint16_t ui16NumBlocks;
     tMSCInstance *psInst;
 
     //
     // Default the number of blocks.
     //
-    usNumBlocks = 0;
+    ui16NumBlocks = 0;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     if(psInst->pvMedia != 0)
     {
@@ -1631,25 +1659,24 @@ USBDSCSIRead10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         // Get the logical block from the CBW structure. This switching
         // is required to convert from big to little endian.
         //
-        psInst->ulCurrentLBA = (pSCSICBW->CBWCB[2] << 24) |
-                               (pSCSICBW->CBWCB[3] << 16) |
-                               (pSCSICBW->CBWCB[4] << 8) |
-                               (pSCSICBW->CBWCB[5] << 0);
+        psInst->ui32CurrentLBA = (psSCSICBW->CBWCB[2] << 24) |
+                                 (psSCSICBW->CBWCB[3] << 16) |
+                                 (psSCSICBW->CBWCB[4] << 8) |
+                                 (psSCSICBW->CBWCB[5] << 0);
 
         //
         // More bytes to read.
         //
-        usNumBlocks = (pSCSICBW->CBWCB[7] << 8) | pSCSICBW->CBWCB[8];
+        ui16NumBlocks = (psSCSICBW->CBWCB[7] << 8) | psSCSICBW->CBWCB[8];
 
         //
         // Read the next logical block from the storage device.
         //
-        if(psDevice->sMediaFunctions.BlockRead(psInst->pvMedia,
-               (unsigned char *)psInst->pulBuffer,
-               psInst->ulCurrentLBA, 1) == 0)
+        if(psMSCDevice->sMediaFunctions.pfnBlockRead(psInst->pvMedia,
+               (uint8_t *)psInst->pui32Buffer, psInst->ui32CurrentLBA, 1) == 0)
         {
             psInst->pvMedia = 0;
-            psDevice->sMediaFunctions.Close(0);
+            psMSCDevice->sMediaFunctions.pfnClose(0);
         }
     }
 
@@ -1659,44 +1686,29 @@ USBDSCSIRead10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
     if(psInst->pvMedia != 0)
     {
         //
-        // Enable DMA on the endpoint
-        //
-        MAP_USBEndpointDMAEnable(USB0_BASE, psInst->ucINEndpoint,
-                                 USB_EP_DEV_IN);
-
-        //
         // Configure and DMA for the IN transfer.
         //
-        MAP_uDMAChannelTransferSet(psInst->ucINDMA,
-                                   UDMA_MODE_BASIC,
-                                   psInst->pulBuffer,
-                                   (void *)USBFIFOAddrGet(USB0_BASE,
-                                                          psInst->ucINEndpoint),
-                                   (MAX_TRANSFER_SIZE >> 2));
+        USBLibDMATransfer(psInst->psDMAInstance, psInst->ui8INDMA,
+                          psInst->pui32Buffer, MAX_TRANSFER_SIZE);
 
         //
         // Remember that a DMA is in progress.
         //
-        psInst->ulFlags |= USBD_FLAG_DMA_IN;
+        psInst->ui32Flags |= USBD_FLAG_DMA_IN;
 
         //
         // Schedule the remaining bytes to send.
         //
-        psInst->ulBytesToTransfer = (DEVICE_BLOCK_SIZE * usNumBlocks);
-
-        //
-        // Start the DMA transfer.
-        //
-        MAP_uDMAChannelEnable(psInst->ucINDMA);
+        psInst->ui32BytesToTransfer = (DEVICE_BLOCK_SIZE * ui16NumBlocks);
 
         //
         // Move on and start sending blocks.
         //
-        psInst->ucSCSIState = STATE_SCSI_SEND_BLOCKS;
+        psInst->ui8SCSIState = STATE_SCSI_SEND_BLOCKS;
 
-        if(psDevice->pfnEventCallback)
+        if(psMSCDevice->pfnEventCallback)
         {
-            psDevice->pfnEventCallback(0, USBD_MSC_EVENT_READING, 0, 0);
+            psMSCDevice->pfnEventCallback(0, USBD_MSC_EVENT_READING, 0, 0);
         }
     }
     else
@@ -1711,17 +1723,18 @@ USBDSCSIRead10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         // Stall the IN endpoint
         //
-        MAP_USBDevEndpointStall(USB0_BASE, psInst->ucINEndpoint, USB_EP_DEV_IN);
+        MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_EP_DEV_IN);
 
         //
         // Mark the sense code as valid and indicate that these is no media
         // present.
         //
-        psInst->ucErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
-        psInst->ucSenseKey = SCSI_RS_KEY_NOT_READY;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOT_PRSNT;
+        psInst->ui8ErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
+        psInst->ui8SenseKey = SCSI_RS_KEY_NOT_READY;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOT_PRSNT;
 
-        psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+        psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
     }
 }
 
@@ -1732,15 +1745,15 @@ USBDSCSIRead10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
 //
 //*****************************************************************************
 static void
-USBDSCSIWrite10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
+USBDSCSIWrite10(tUSBDMSCDevice *psMSCDevice, tMSCCBW *psSCSICBW)
 {
-    unsigned short usNumBlocks;
+    uint16_t ui16NumBlocks;
     tMSCInstance *psInst;
 
     //
-    // Get our instance data pointer.
+    // Get instance data pointers.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // If there is media present then start transferring the data.
@@ -1751,56 +1764,41 @@ USBDSCSIWrite10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         // Get the logical block from the CBW structure. This switching
         // is required to convert from big to little endian.
         //
-        psInst->ulCurrentLBA = (pSCSICBW->CBWCB[2] << 24) |
-                         (pSCSICBW->CBWCB[3] << 16) |
-                         (pSCSICBW->CBWCB[4] << 8) |
-                         (pSCSICBW->CBWCB[5] << 0);
+        psInst->ui32CurrentLBA = (psSCSICBW->CBWCB[2] << 24) |
+                                 (psSCSICBW->CBWCB[3] << 16) |
+                                 (psSCSICBW->CBWCB[4] << 8) |
+                                 (psSCSICBW->CBWCB[5] << 0);
 
         //
         // More bytes to read.
         //
-        usNumBlocks = (pSCSICBW->CBWCB[7] << 8) | pSCSICBW->CBWCB[8];
+        ui16NumBlocks = (psSCSICBW->CBWCB[7] << 8) | psSCSICBW->CBWCB[8];
 
-        psInst->ulBytesToTransfer = DEVICE_BLOCK_SIZE * usNumBlocks;
+        psInst->ui32BytesToTransfer = DEVICE_BLOCK_SIZE * ui16NumBlocks;
 
         //
         // Start sending logical blocks, these are always multiples of
         // DEVICE_BLOCK_SIZE bytes.
         //
-        psInst->ucSCSIState = STATE_SCSI_RECEIVE_BLOCKS;
+        psInst->ui8SCSIState = STATE_SCSI_RECEIVE_BLOCKS;
 
         //
-        // Enable uDMA on the endpoint
+        // Configure and enable DMA for the OUT transfer.
         //
-        MAP_USBEndpointDMAEnable(USB0_BASE, psInst->ucOUTEndpoint,
-                                 USB_EP_DEV_OUT);
-
-        //
-        // Configure the DMA for the OUT transfer.
-        //
-        MAP_uDMAChannelTransferSet(psInst->ucOUTDMA,
-                                   UDMA_MODE_BASIC,
-                                   (void *)USBFIFOAddrGet(USB0_BASE,
-                                                         psInst->ucOUTEndpoint),
-                                                         psInst->pulBuffer,
-                                   (MAX_TRANSFER_SIZE >> 2));
+        USBLibDMATransfer(psInst->psDMAInstance, psInst->ui8OUTDMA,
+                          psInst->pui32Buffer, MAX_TRANSFER_SIZE);
 
         //
         // Remember that a DMA is in progress.
         //
-        psInst->ulFlags |= USBD_FLAG_DMA_OUT;
-
-        //
-        // Enable the OUT DMA transfer.
-        //
-        MAP_uDMAChannelEnable(psInst->ucOUTDMA);
+        psInst->ui32Flags |= USBD_FLAG_DMA_OUT;
 
         //
         // Notify the application of the write event.
         //
-        if(psDevice->pfnEventCallback)
+        if(psMSCDevice->pfnEventCallback)
         {
-            psDevice->pfnEventCallback(0, USBD_MSC_EVENT_WRITING, 0, 0);
+            psMSCDevice->pfnEventCallback(0, USBD_MSC_EVENT_WRITING, 0, 0);
         }
     }
     else
@@ -1815,18 +1813,18 @@ USBDSCSIWrite10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         // Stall the IN endpoint
         //
-        MAP_USBDevEndpointStall(USB0_BASE, psInst->ucOUTEndpoint,
+        MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8OUTEndpoint,
                                 USB_EP_DEV_OUT);
 
         //
         // Mark the sense code as valid and indicate that these is no media
         // present.
         //
-        psInst->ucErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
-        psInst->ucSenseKey = SCSI_RS_KEY_NOT_READY;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOT_PRSNT;
+        psInst->ui8ErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
+        psInst->ui8SenseKey = SCSI_RS_KEY_NOT_READY;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOT_PRSNT;
 
-        psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+        psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
     }
 }
 
@@ -1837,14 +1835,14 @@ USBDSCSIWrite10(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
 //
 //*****************************************************************************
 static void
-USBDSCSIModeSense6(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
+USBDSCSIModeSense6(tUSBDMSCDevice *psMSCDevice, tMSCCBW *psSCSICBW)
 {
     tMSCInstance *psInst;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // If there is media present send the response.
@@ -1854,24 +1852,25 @@ USBDSCSIModeSense6(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         // Three extra bytes in this response.
         //
-        g_pucCommand[0] = 3;
-        g_pucCommand[1] = 0;
-        g_pucCommand[2] = 0;
-        g_pucCommand[3] = 0;
+        g_pui8Command[0] = 3;
+        g_pui8Command[1] = 0;
+        g_pui8Command[2] = 0;
+        g_pui8Command[3] = 0;
 
         //
         // Manually send the response back to the host.
         //
-        MAP_USBEndpointDataPut(USB0_BASE, psInst->ucINEndpoint, g_pucCommand,
+        MAP_USBEndpointDataPut(USB0_BASE, psInst->ui8INEndpoint, g_pui8Command,
                                4);
-        MAP_USBEndpointDataSend(USB0_BASE, psInst->ucINEndpoint, USB_TRANS_IN);
+        MAP_USBEndpointDataSend(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_TRANS_IN);
 
         //
         // Set the status so that it can be sent when this response has
         // has be successfully sent.
         //
         g_sSCSICSW.bCSWStatus = 0;
-        g_sSCSICSW.dCSWDataResidue = pSCSICBW->dCBWDataTransferLength - 4;
+        g_sSCSICSW.dCSWDataResidue = psSCSICBW->dCBWDataTransferLength - 4;
     }
     else
     {
@@ -1885,18 +1884,19 @@ USBDSCSIModeSense6(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         // Stall the IN endpoint
         //
-        MAP_USBDevEndpointStall(USB0_BASE, psInst->ucINEndpoint, USB_EP_DEV_IN);
+        MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8INEndpoint,
+                                USB_EP_DEV_IN);
 
         //
         // Mark the sense code as valid and indicate that these is no media
         // present.
         //
-        psInst->ucErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
-        psInst->ucSenseKey = SCSI_RS_KEY_NOT_READY;
-        psInst->usAddSenseCode = SCSI_RS_MED_NOT_PRSNT;
+        psInst->ui8ErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
+        psInst->ui8SenseKey = SCSI_RS_KEY_NOT_READY;
+        psInst->ui16AddSenseCode = SCSI_RS_MED_NOT_PRSNT;
     }
 
-    psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+    psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
 }
 
 //*****************************************************************************
@@ -1906,27 +1906,27 @@ USBDSCSIModeSense6(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
 //
 //*****************************************************************************
 static void
-USBDSCSISendStatus(const tUSBDMSCDevice *psDevice)
+USBDSCSISendStatus(tUSBDMSCDevice *psMSCDevice)
 {
     tMSCInstance *psInst;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // Respond with the requested status.
     //
-    MAP_USBEndpointDataPut(USB0_BASE, psInst->ucINEndpoint,
-                           (unsigned char *)&g_sSCSICSW, 13);
-    MAP_USBEndpointDataSend(USB0_BASE, psInst->ucINEndpoint, USB_TRANS_IN);
+    MAP_USBEndpointDataPut(USB0_BASE, psInst->ui8INEndpoint,
+                           (uint8_t *)&g_sSCSICSW, 13);
+    MAP_USBEndpointDataSend(USB0_BASE, psInst->ui8INEndpoint, USB_TRANS_IN);
 
     //
     // Move the state to status sent so that the next interrupt will move the
     // statue to idle.
     //
-    psInst->ucSCSIState = STATE_SCSI_SENT_STATUS;
+    psInst->ui8SCSIState = STATE_SCSI_SENT_STATUS;
 }
 
 //*****************************************************************************
@@ -1934,36 +1934,35 @@ USBDSCSISendStatus(const tUSBDMSCDevice *psDevice)
 // This function is used to handle all SCSI commands.
 //
 //*****************************************************************************
-unsigned long
-USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
+uint32_t
+USBDSCSICommand(tUSBDMSCDevice *psMSCDevice, tMSCCBW *psSCSICBW)
 {
-    unsigned long ulRetCode;
-    unsigned long ulTransferLength;
+    uint32_t ui32RetCode, ui32TransferLength;
     tMSCInstance *psInst;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateData;
+    psInst = &psMSCDevice->sPrivateData;
 
     //
     // Initialize the return code.
     //
-    ulRetCode = 1;
+    ui32RetCode = 1;
 
     //
     // Save the transfer length because it may be overwritten by some calls.
     //
-    ulTransferLength = pSCSICBW->dCBWDataTransferLength;
+    ui32TransferLength = psSCSICBW->dCBWDataTransferLength;
 
-    switch(pSCSICBW->CBWCB[0])
+    switch(psSCSICBW->CBWCB[0])
     {
         //
         // Respond to the SCSI Inquiry command.
         //
         case SCSI_INQUIRY_CMD:
         {
-            USBDSCSIInquiry(psDevice);
+            USBDSCSIInquiry(psMSCDevice);
 
             break;
         }
@@ -1988,7 +1987,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
                 //
                 // Since there was no media, check for media here.
                 //
-                psInst->pvMedia = psDevice->sMediaFunctions.Open(0);
+                psInst->pvMedia = psMSCDevice->sMediaFunctions.pfnOpen(0);
 
                 //
                 // If it is still not present then fail this command.
@@ -2010,7 +2009,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         case SCSI_READ_CAPACITIES:
         {
-            USBDSCSIReadCapacities(psDevice);
+            USBDSCSIReadCapacities(psMSCDevice);
 
             break;
         }
@@ -2020,7 +2019,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         case SCSI_READ_CAPACITY:
         {
-            USBDSCSIReadCapacity(psDevice);
+            USBDSCSIReadCapacity(psMSCDevice);
 
             break;
         }
@@ -2030,7 +2029,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         case SCSI_REQUEST_SENSE:
         {
-            USBDSCSIRequestSense(psDevice);
+            USBDSCSIRequestSense(psMSCDevice);
 
             break;
         }
@@ -2040,7 +2039,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         case SCSI_READ_10:
         {
-            USBDSCSIRead10(psDevice, pSCSICBW);
+            USBDSCSIRead10(psMSCDevice, psSCSICBW);
 
             break;
         }
@@ -2050,7 +2049,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         case SCSI_WRITE_10:
         {
-            USBDSCSIWrite10(psDevice, pSCSICBW);
+            USBDSCSIWrite10(psMSCDevice, psSCSICBW);
 
             break;
         }
@@ -2060,7 +2059,7 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
         //
         case SCSI_MODE_SENSE_6:
         {
-            USBDSCSIModeSense6(psDevice, pSCSICBW);
+            USBDSCSIModeSense6(psMSCDevice, psSCSICBW);
 
             break;
         }
@@ -2071,19 +2070,19 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
             // has be successfully sent.
             //
             g_sSCSICSW.bCSWStatus = 1;
-            g_sSCSICSW.dCSWDataResidue = pSCSICBW->dCBWDataTransferLength;
+            g_sSCSICSW.dCSWDataResidue = psSCSICBW->dCBWDataTransferLength;
 
             //
             // If there is data then there is more work to do.
             //
-            if(pSCSICBW->dCBWDataTransferLength != 0)
+            if(psSCSICBW->dCBWDataTransferLength != 0)
             {
-                if(pSCSICBW->bmCBWFlags & CBWFLAGS_DIR_IN)
+                if(psSCSICBW->bmCBWFlags & CBWFLAGS_DIR_IN)
                 {
                     //
                     // Stall the IN endpoint
                     //
-                    MAP_USBDevEndpointStall(USB0_BASE, psInst->ucINEndpoint,
+                    MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8INEndpoint,
                                             USB_EP_DEV_IN);
                 }
                 else
@@ -2091,22 +2090,22 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
                     //
                     // Stall the OUT endpoint
                     //
-                    MAP_USBDevEndpointStall(USB0_BASE, psInst->ucOUTEndpoint,
+                    MAP_USBDevEndpointStall(USB0_BASE, psInst->ui8OUTEndpoint,
                                             USB_EP_DEV_OUT);
 
                 }
                 //
                 // Send the status once the stall occurs.
                 //
-                psInst->ucSCSIState = STATE_SCSI_SEND_STATUS;
+                psInst->ui8SCSIState = STATE_SCSI_SEND_STATUS;
             }
 
             //
             // Set the sense codes.
             //
-            psInst->ucErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
-            psInst->ucSenseKey = SCSI_RS_KEY_ILGL_RQST;
-            psInst->usAddSenseCode = SCSI_RS_PV_INVALID;
+            psInst->ui8ErrorCode = SCSI_RS_VALID | SCSI_RS_CUR_ERRORS;
+            psInst->ui8SenseKey = SCSI_RS_KEY_ILGL_RQST;
+            psInst->ui16AddSenseCode = SCSI_RS_PV_INVALID;
 
             break;
         }
@@ -2115,11 +2114,11 @@ USBDSCSICommand(const tUSBDMSCDevice *psDevice, tMSCCBW *pSCSICBW)
     //
     // If there is no data then send out the current status.
     //
-    if(ulTransferLength == 0)
+    if(ui32TransferLength == 0)
     {
-        USBDSCSISendStatus(psDevice);
+        USBDSCSISendStatus(psMSCDevice);
     }
-    return(ulRetCode);
+    return(ui32RetCode);
 }
 
 //*****************************************************************************

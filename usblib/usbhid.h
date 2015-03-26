@@ -2,7 +2,7 @@
 //
 // usbhid.h - Definitions used by HID class devices and hosts.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -114,6 +114,7 @@ extern "C"
 
 #define USB_HID_PHYSICAL        0x00
 #define USB_HID_APPLICATION     0x01
+#define USB_HID_LOGICAL         0x02
 
 #define USB_HID_USAGE_POINTER   0x0109
 #define USB_HID_USAGE_BUTTONS   0x0509
@@ -233,6 +234,9 @@ extern "C"
 #define HID_KEYB_USAGE_F12      0x45
 #define HID_KEYB_USAGE_SCROLLOCK   \
                                 0x47
+#define HID_KEYB_USAGE_PAGE_UP  0x4B
+#define HID_KEYB_USAGE_PAGE_DOWN   \
+                                0x4E
 #define HID_KEYB_USAGE_RIGHT_ARROW \
                                 0x4F
 #define HID_KEYB_USAGE_LEFT_ARROW \
@@ -502,12 +506,12 @@ extern "C"
 //
 //*****************************************************************************
 #define USBH_HID_MAX_USAGE      256
-#define USBH_HID_CAPS_ARRAY_SZ  (USBH_HID_MAX_USAGE/sizeof(unsigned long))
+#define USBH_HID_CAPS_ARRAY_SZ  (USBH_HID_MAX_USAGE/sizeof(uint32_t))
 
 //*****************************************************************************
 //
 // All structures defined in this section of the header require byte packing of
-// fields.  This is usually a ccomplished using the PACKED macro but, for IAR
+// fields.  This is usually accomplished using the PACKED macro but, for IAR
 // Embedded Workbench, this requires a pragma.
 //
 //*****************************************************************************
@@ -527,12 +531,12 @@ typedef struct
     //! The type of HID class descriptor.  This will be USB_HID_DTYPE_REPORT or
     //! USB_HID_DTYPE_PHYSICAL.
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The total length of the HID class descriptor.
     //
-    unsigned short wDescriptorLength;
+    uint16_t wDescriptorLength;
 }
 PACKED tHIDClassDescriptorInfo;
 
@@ -547,26 +551,26 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For a HID descriptor, this will be
     //! USB_HID_DTYPE_HID (0x21).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! A BCD value identifying the HID Class specification release supported
     //! by the device.  For version 1.11, for example, this value would be
     //! 0x0111.
     //
-    unsigned short bcdHID;
+    uint16_t bcdHID;
 
     //
     //! The country code for which this hardware is localized or 0 if no
     //! localization has been performed.  Valid country (or language) codes are
     //! in labels of the form USB_HID_COUNTRY_xxx.
-    unsigned char bCountryCode;
+    uint8_t bCountryCode;
 
     //
     //! The number of class-specific descriptors that exist for this device.
@@ -574,7 +578,7 @@ typedef struct
     //! that are appended to this structure and must be at least 1 (since all
     //! HID devices must publish at least 1 report descriptor).
     //
-    unsigned char bNumDescriptors;
+    uint8_t bNumDescriptors;
 
     //
     //! A table announcing each of the class-specific descriptors that this
@@ -598,13 +602,13 @@ PACKED tHIDDescriptor;
 //
 //! This structure defines the mapping of USB usage identifiers to printable
 //! characters.  The structure has three members that hold this information.
-//! The ucBytesPerChar, indicates the number of bytes per character in
-//! the table.  The pulCapsLock array holds a packed bit array of usage
+//! The ui8BytesPerChar, indicates the number of bytes per character in
+//! the table.  The pui32CapsLock array holds a packed bit array of usage
 //! identifiers that can be modified by the Caps Lock key.  The pCharMapping
 //! array is treated as a double indexed array with two "columns".  In the case
 //! of a single byte character it is treated as pairs of 8 bit values for
-//! unshifted and shifted values.  In the case of a double byte characters it is
-//! treated as pairs of 16 bit values.
+//! unshifted and shifted values.  In the case of a double byte characters it
+//! is treated as pairs of 16 bit values.
 //
 //*****************************************************************************
 typedef struct
@@ -613,21 +617,21 @@ typedef struct
     //! Number of bytes per character in the pCharMapping table of this
     //! structure.
     //
-    unsigned char ucBytesPerChar;
+    uint8_t ui8BytesPerChar;
 
     //
     //! This is a packed bitmasked structure with a one bit flags that
     //! indicates if the corresponding Usage ID is affected by the Caps Lock
     //! key.
     //
-    unsigned long pulCapsLock[USBH_HID_CAPS_ARRAY_SZ];
+    uint32_t pui32CapsLock[USBH_HID_CAPS_ARRAY_SZ];
 
     //
     //! This is the indexed table of Usage ID to character value.  It must be
-    //! at least ucBytesPerChar * 2 * USBH_HID_MAX_USAGE bytes in size as it
+    //! at least ui8BytesPerChar * 2 * USBH_HID_MAX_USAGE bytes in size as it
     //! is treated as a double indexed array.
     //
-    void *pCharMapping;
+    void *pvCharMapping;
 }
 tHIDKeyboardUsageTable;
 

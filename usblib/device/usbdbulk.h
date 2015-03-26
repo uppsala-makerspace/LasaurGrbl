@@ -2,7 +2,7 @@
 //
 // usbdcdc.h - USBLib support for a generic bulk device.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -64,65 +64,98 @@ extern "C"
 typedef enum
 {
     //
-    // Unconfigured.
+    // Not configured.
     //
-    BULK_STATE_UNCONFIGURED,
+    eBulkStateUnconfigured,
 
     //
     // No outstanding transaction remains to be completed.
     //
-    BULK_STATE_IDLE,
+    eBulkStateIdle,
 
     //
     // Waiting on completion of a send or receive transaction.
     //
-    BULK_STATE_WAIT_DATA,
+    eBulkStateWaitData,
 
     //
     // Waiting for client to process data.
     //
-    BULK_STATE_WAIT_CLIENT
-} tBulkState;
+    eBulkStateWaitClient
+}
+tBulkState;
 
 //*****************************************************************************
 //
 // PRIVATE
 //
 // This structure defines the private instance data and state variables for the
-// Bulk only example device.  The memory for this structure is pointed to by
-// the psPrivateBulkData field in the tUSBDBulkDevice structure passed on
+// Bulk only example device.  The memory for this structure is inlcluded in
+// the sPrivateData field in the tUSBDBulkDevice structure passed on
 // USBDBulkInit().
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulUSBBase;
-    tDeviceInfo *psDevInfo;
-    tConfigDescriptor *psConfDescriptor;
-    volatile tBulkState eBulkRxState;
-    volatile tBulkState eBulkTxState;
-    volatile unsigned short usDeferredOpFlags;
-    unsigned short usLastTxSize;
-    volatile tBoolean bConnected;
-    unsigned char ucINEndpoint;
-    unsigned char ucOUTEndpoint;
-    unsigned char ucInterface;
+    //
+    // Base address for the USB controller.
+    //
+    uint32_t ui32USBBase;
+
+    //
+    // The device info to interact with the lower level DCD code.
+    //
+    tDeviceInfo sDevInfo;
+
+    //
+    // The state of the bulk receive channel.
+    //
+    volatile tBulkState iBulkRxState;
+
+    //
+    // The state of the bulk transmit channel.
+    //
+    volatile tBulkState iBulkTxState;
+
+    //
+    // State of any pending operations that could not be handled immediately
+    // upon receipt.
+    //
+    volatile uint16_t ui16DeferredOpFlags;
+
+    //
+    // Size of the last transmit.
+    //
+    uint16_t ui16LastTxSize;
+
+    //
+    // The connection status of the device.
+    //
+    volatile bool bConnected;
+
+    //
+    // The IN endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8INEndpoint;
+
+    //
+    // The OUT endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8OUTEndpoint;
+
+    //
+    // The bulk class interface number, this is modified in composite devices.
+    //
+    uint8_t ui8Interface;
 }
 tBulkInstance;
 
-#ifndef DEPRECATED
 //*****************************************************************************
 //
-// The number of bytes of workspace required by the bulk device class driver.
-// The client must provide a block of RAM of at least this size in the
-// tBulkInstance field of the tUSBBulkDevice structure passed on USBDBulkInit.
-//
-// This value is deprecated and should not be used, any new code should just
-// pass in a tBulkInstance structure in the psPrivateBulkData field.
+// This is the size of the g_pui8BulkInterface array in bytes.
 //
 //*****************************************************************************
-#define USB_BULK_WORKSPACE_SIZE (sizeof(tBulkInstance))
-#endif
+#define BULKINTERFACE_SIZE      (23)
 
 //*****************************************************************************
 //
@@ -131,11 +164,8 @@ tBulkInstance;
 //! This does not include the configuration descriptor which is automatically
 //! ignored by the composite device class.
 //
-// For reference this is sizeof(g_sCDCSerIfaceHeaderSectionNOINT) +
-// sizeof(g_sCDCSerInterfaceSection) + sizeof(g_sCDCSerIfaceEndpointsNOINT)
-//
 //*****************************************************************************
-#define COMPOSITE_DBULK_SIZE     (23)
+#define COMPOSITE_DBULK_SIZE    (BULKINTERFACE_SIZE)
 
 //*****************************************************************************
 //
@@ -148,30 +178,30 @@ typedef struct
     //
     //! The vendor ID that this device is to present in the device descriptor.
     //
-    unsigned short usVID;
+    const uint16_t ui16VID;
 
     //
     //! The product ID that this device is to present in the device descriptor.
     //
-    unsigned short usPID;
+    const uint16_t ui16PID;
 
     //
     //! The maximum power consumption of the device, expressed in milliamps.
     //
-    unsigned short usMaxPowermA;
+    const uint16_t ui16MaxPowermA;
 
     //
     //! Indicates whether the device is self- or bus-powered and whether or not
     //! it supports remote wakeup.  Valid values are USB_CONF_ATTR_SELF_PWR or
     //! USB_CONF_ATTR_BUS_PWR, optionally ORed with USB_CONF_ATTR_RWAKE.
     //
-    unsigned char ucPwrAttributes;
+    const uint8_t ui8PwrAttributes;
 
     //
     //! A pointer to the callback function which will be called to notify
     //! the application of events related to the device's data receive channel.
     //
-    tUSBCallback pfnRxCallback;
+    const tUSBCallback pfnRxCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
@@ -185,7 +215,7 @@ typedef struct
     //! the application of events related to the device's data transmit
     //! channel.
     //
-    tUSBCallback pfnTxCallback;
+    const tUSBCallback pfnTxCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
@@ -206,49 +236,42 @@ typedef struct
     //! must be repeated for each of the other languages defined in the
     //! language descriptor.
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The number of descriptors provided in the ppStringDescriptors array.
     //! This must be 1 + (5 * number of supported languages).
     //
-    unsigned long ulNumStringDescriptors;
+    const uint32_t ui32NumStringDescriptors;
 
     //
-    //! A pointer to private instance data for this device.  This memory must
-    //! remain accessible for as long as the bulk device is in use and must not
-    //! be modified by any code outside the bulk class driver.
+    //! The private instance data for this device.  This memory must
+    //! not be modified by any code outside the bulk class driver.
     //
-    tBulkInstance *psPrivateBulkData;
+    tBulkInstance sPrivateData;
 }
 tUSBDBulkDevice;
-
-extern tDeviceInfo g_sBulkDeviceInfo;
 
 //*****************************************************************************
 //
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void *USBDBulkInit(unsigned long ulIndex,
-                         const tUSBDBulkDevice *psDevice);
-extern void *USBDBulkCompositeInit(unsigned long ulIndex,
-                                   const tUSBDBulkDevice *psDevice);
-extern void USBDBulkTerm(void *pvInstance);
-extern void *USBDBulkSetRxCBData(void *pvInstance, void *pvCBData);
-extern void *USBDBulkSetTxCBData(void *pvInstance, void *pvCBData);
-extern unsigned long USBDBulkPacketWrite(void *pvInstance,
-                                         unsigned char *pcData,
-                                         unsigned long ulLength,
-                                         tBoolean bLast);
-extern unsigned long USBDBulkPacketRead(void *pvInstance,
-                                        unsigned char *pcData,
-                                        unsigned long ulLength,
-                                        tBoolean bLast);
-extern unsigned long USBDBulkTxPacketAvailable(void *pvInstance);
-extern unsigned long USBDBulkRxPacketAvailable(void *pvInstance);
-extern void USBDBulkPowerStatusSet(void *pvInstance, unsigned char ucPower);
-extern tBoolean USBDBulkRemoteWakeupRequest(void *pvInstance);
+extern void *USBDBulkInit(uint32_t ui32Index, tUSBDBulkDevice *psBulkDevice);
+extern void *USBDBulkCompositeInit(uint32_t ui32Index,
+                                   tUSBDBulkDevice *psBulkDevice,
+                                   tCompositeEntry *psCompEntry);
+extern void USBDBulkTerm(void *pvBulkInstance);
+extern void *USBDBulkSetRxCBData(void *pvBulkInstance, void *pvCBData);
+extern void *USBDBulkSetTxCBData(void *pvBulkInstance, void *pvCBData);
+extern uint32_t USBDBulkPacketWrite(void *pvBulkInstance, uint8_t *pi8Data,
+                                    uint32_t ui32Length, bool bLast);
+extern uint32_t USBDBulkPacketRead(void *pvBulkInstance, uint8_t *pi8Data,
+                                   uint32_t ui32Length, bool bLast);
+extern uint32_t USBDBulkTxPacketAvailable(void *pvBulkInstance);
+extern uint32_t USBDBulkRxPacketAvailable(void *pvBulkInstance);
+extern void USBDBulkPowerStatusSet(void *pvBulkInstance, uint8_t ui8Power);
+extern bool USBDBulkRemoteWakeupRequest(void *pvBulkInstance);
 
 //*****************************************************************************
 //

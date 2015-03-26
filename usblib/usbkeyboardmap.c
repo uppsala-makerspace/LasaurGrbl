@@ -3,7 +3,7 @@
 // usbkeyboardmap.c - This file holds the table to enable USB keyboard usage
 // identifiers to be mapped to printable characters.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -19,10 +19,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "usblib/usblib.h"
 #include "usblib/usbhid.h"
@@ -33,7 +35,7 @@
 // each usage ID.
 //
 //*****************************************************************************
-const unsigned char g_pucKeyBoardMap[USBH_HID_MAX_USAGE][2] =
+const uint8_t g_pui8KeyBoardMap[USBH_HID_MAX_USAGE][2] =
 {
 //
 //  Usage ID to character mapping                      Usage ID     CAPS Lock
@@ -139,5 +141,5 @@ const tHIDKeyboardUsageTable g_sUSKeyboardMap =
     //
     // The large table of the direct mapping of usage id's to ascii characters.
     //
-    (void *)g_pucKeyBoardMap
+    (void *)g_pui8KeyBoardMap
 };

@@ -2,7 +2,7 @@
 //
 // usbddfu-rt.h - Definitions used by runtime DFU class devices.
 //
-// Copyright (c) 2010-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2010-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -45,18 +45,30 @@ extern "C"
 
 //*****************************************************************************
 //
+// This is the size of the g_pui8DFUInterface array in bytes.
+//
+//*****************************************************************************
+#define DFUINTERFACE_SIZE       (9)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8DFUFunctionalDesc array in bytes.
+//
+//*****************************************************************************
+#define DFUFUNCTIONALDESC_SIZE  (9)
+
+//*****************************************************************************
+//
 //! The size of the memory that should be allocated to create a configuration
 //! descriptor for a single instance of the DFU runtime device.  This does not
 //! include the configuration descriptor which is automatically ignored by the
 //! composite device class.
 //!
 //! This label is used to compute the value which will be passed to the
-//! USBDCompositeInit function in the ulSize parameter.
-//
-// For reference this is sizeof(g_pDFUInterface) + sizeof(g_pDFUFunctionalDesc)
+//! USBDCompositeInit function in the ui32Size parameter.
 //
 //*****************************************************************************
-#define COMPOSITE_DDFU_SIZE     (9 + 9)
+#define COMPOSITE_DDFU_SIZE     (DFUINTERFACE_SIZE + DFUFUNCTIONALDESC_SIZE)
 
 //*****************************************************************************
 //
@@ -78,17 +90,32 @@ extern "C"
 // PRIVATE
 //
 // This structure defines the private instance data and state variables for
-// DFU devices.  The memory for this structure is pointed to by the
-// psPrivateDFUData field in the tUSBDDFUDevice structure passed in the
+// DFU devices.  The memory for this structure is included in the
+// sPrivateData field in the tUSBDDFUDevice structure passed in the
 // USBDDFUCompositeInit() function.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulUSBBase;
-    tDeviceInfo *psDevInfo;
-    unsigned char ucInterface;
-    tBoolean bConnected;
+    //
+    // Base address for the USB controller.
+    //
+    uint32_t ui32USBBase;
+
+    //
+    // The device info to interact with the lower level DCD code.
+    //
+    tDeviceInfo sDevInfo;
+
+    //
+    // The DFU class interface number, this is modified in composite devices.
+    //
+    uint8_t ui8Interface;
+
+    //
+    // The connection status of the device.
+    //
+    bool bConnected;
 }
 tDFUInstance;
 
@@ -110,38 +137,32 @@ typedef struct
     //! A pointer to the callback function which will be called to notify
     //! the application of DETACH requests.
     //
-    tUSBCallback pfnCallback;
+    const tUSBCallback pfnCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
     //! parameter in all calls made to the pfnCallback function.
     //
-    void *pvCBData;
+    void * const pvCBData;
 
     //
-    //! A pointer to private instance data for this device instance.  This
+    //! The private instance data for this device class.  This
     //! memory must remain accessible for as long as the DFU device is in use
     //! and must not be modified by any code outside the DFU class driver.
     //
-    tDFUInstance *psPrivateDFUData;
+    tDFUInstance sPrivateData;
 }
 tUSBDDFUDevice;
-
-//*****************************************************************************
-//
-// Device information structure required to construct the composite device.
-//
-//*****************************************************************************
-extern tDeviceInfo g_sDFUDeviceInfo;
 
 //*****************************************************************************
 //
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void *USBDDFUCompositeInit(unsigned long ulIndex,
-                                  const tUSBDDFUDevice *psDevice);
-extern void USBDDFUCompositeTerm(void *pvInstance);
+extern void *USBDDFUCompositeInit(uint32_t ui32Index,
+                                  tUSBDDFUDevice *psDFUDevice,
+                                  tCompositeEntry *psCompEntry);
+extern void USBDDFUCompositeTerm(void *pvDFUInstance);
 extern void USBDDFUUpdateBegin(void);
 
 //*****************************************************************************

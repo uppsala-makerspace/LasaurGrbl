@@ -3,7 +3,7 @@
 // usbhhidmouse.c - This file holds the application interfaces for USB
 //                  mouse devices.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -19,10 +19,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "usblib/usblib.h"
 #include "usblib/host/usbhost.h"
@@ -42,10 +44,8 @@
 // Prototypes for local functions.
 //
 //*****************************************************************************
-static unsigned long USBHMouseCallback(void *pvCBData,
-                                       unsigned long ulEvent,
-                                       unsigned long ulMsgParam,
-                                       void *pvMsgData);
+static uint32_t USBHMouseCallback(void *pvMouse, uint32_t ui32Event,
+                                  uint32_t ui32MsgParam, void *pvMsgData);
 
 //*****************************************************************************
 //
@@ -56,7 +56,7 @@ static unsigned long USBHMouseCallback(void *pvCBData,
 
 //*****************************************************************************
 //
-// These are the flags for the tUSBHMouse.ulHIDFlags member variable.
+// These are the flags for the tUSBHMouse.ui32HIDFlags member variable.
 //
 //*****************************************************************************
 #define USBHMS_DEVICE_PRESENT   0x00000001
@@ -66,47 +66,46 @@ static unsigned long USBHMouseCallback(void *pvCBData,
 // This is the structure definition for a mouse device instance.
 //
 //*****************************************************************************
-typedef struct
+struct tUSBHMouse
 {
     //
     // Global flags for an instance of a mouse.
     //
-    unsigned long ulHIDFlags;
+    uint32_t ui32HIDFlags;
 
     //
     // The applications registered callback.
     //
-    tUSBCallback pfnCallback;
+    tUSBHIDMouseCallback pfnCallback;
 
     //
     // The current state of the buttons.
     //
-    unsigned char ucButtons;
+    uint8_t ui8Buttons;
 
     //
     // This is a local buffer to hold the current HID report that comes up
     // from the HID driver layer.
     //
-    unsigned char pucBuffer[USBHMS_REPORT_SIZE];
+    uint8_t pui8Buffer[USBHMS_REPORT_SIZE];
 
     //
     // Heap data for the mouse currently used to read the HID Report
     // Descriptor.
     //
-    unsigned char *pucHeap;
+    uint8_t *pui8Heap;
 
     //
     // Size of the heap in bytes.
     //
-    unsigned long ulHeapSize;
+    uint32_t ui32HeapSize;
 
     //
     // This is the instance value for the HID device that will be used for the
     // mouse.
     //
-    unsigned long ulMouseInstance;
-}
-tUSBHMouse;
+    tHIDInstance *psHIDInstance;
+};
 
 //*****************************************************************************
 //
@@ -124,13 +123,13 @@ static tUSBHMouse g_sUSBHMouse =
 //!
 //! \param pfnCallback is the callback function to call when new events occur
 //! with the mouse returned.
-//! \param pucBuffer is the memory used by the driver to interact with the
+//! \param pui8Buffer is the memory used by the driver to interact with the
 //! USB mouse.
-//! \param ulSize is the size of the buffer provided by \e pucBuffer.
+//! \param ui32Size is the size of the buffer provided by \e pui8Buffer.
 //!
 //! This function is used to open an instance of the mouse.  The value
 //! returned from this function should be used as the instance identifier for
-//! all other USBHMouse calls.  The \e pucBuffer memory buffer is used to
+//! all other USBHMouse calls.  The \e pui8Buffer memory buffer is used to
 //! access the mouse.  The buffer size required is at least enough to hold
 //! a normal report descriptor for the device.
 //!
@@ -138,9 +137,9 @@ static tUSBHMouse g_sUSBHMouse =
 //! If there is no mouse present this will return 0.
 //
 //*****************************************************************************
-unsigned long
-USBHMouseOpen(tUSBCallback pfnCallback, unsigned char *pucBuffer,
-              unsigned long ulSize)
+tUSBHMouse *
+USBHMouseOpen(tUSBHIDMouseCallback pfnCallback, uint8_t *pui8Buffer,
+              uint32_t ui32Size)
 {
     //
     // Save the callback and data pointers.
@@ -150,51 +149,44 @@ USBHMouseOpen(tUSBCallback pfnCallback, unsigned char *pucBuffer,
     //
     // Save the instance pointer for the HID device that was opened.
     //
-    g_sUSBHMouse.ulMouseInstance = USBHHIDOpen(USBH_HID_DEV_MOUSE,
-                                               USBHMouseCallback,
-                                               (unsigned long)&g_sUSBHMouse);
+    g_sUSBHMouse.psHIDInstance = USBHHIDOpen(eUSBHHIDClassMouse,
+                                             USBHMouseCallback,
+                                             (void *)&g_sUSBHMouse);
 
     //
     // Save the heap buffer and size.
     //
-    g_sUSBHMouse.pucHeap = pucBuffer;
-    g_sUSBHMouse.ulHeapSize = ulSize;
+    g_sUSBHMouse.pui8Heap = pui8Buffer;
+    g_sUSBHMouse.ui32HeapSize = ui32Size;
 
-    return((unsigned long)&g_sUSBHMouse);
+    return(&g_sUSBHMouse);
 }
 
 //*****************************************************************************
 //
 //! This function is used close an instance of a mouse.
 //!
-//! \param ulInstance is the instance value for this mouse.
+//! \param psMsInstance is the instance value for this mouse.
 //!
 //! This function is used to close an instance of the mouse that was opened
-//! with a call to USBHMouseOpen().  The \e ulInstance value is the value
+//! with a call to USBHMouseOpen().  The \e psMsInstance value is the value
 //! that was returned when the application called USBHMouseOpen().
 //!
 //! \return Returns 0.
 //
 //*****************************************************************************
-unsigned long
-USBHMouseClose(unsigned long ulInstance)
+uint32_t
+USBHMouseClose(tUSBHMouse *psMsInstance)
 {
-    tUSBHMouse *pUSBHMouse;
-
-    //
-    // Recover the pointer to the instance data.
-    //
-    pUSBHMouse = (tUSBHMouse *)ulInstance;
-
     //
     // Reset the callback to null.
     //
-    pUSBHMouse->pfnCallback = 0;
+    psMsInstance->pfnCallback = 0;
 
     //
     // Call the HID driver layer to close out this instance.
     //
-    USBHHIDClose(pUSBHMouse->ulMouseInstance);
+    USBHHIDClose(psMsInstance->psHIDInstance);
 
     return(0);
 }
@@ -204,13 +196,13 @@ USBHMouseClose(unsigned long ulInstance)
 //! This function is used to initialize a mouse interface after a mouse has
 //! been detected.
 //!
-//! \param ulInstance is the instance value for this mouse.
+//! \param psMsInstance is the instance value for this mouse.
 //!
 //! This function should be called after receiving a \b USB_EVENT_CONNECTED
 //! event in the callback function provided by USBHMouseOpen(), however it
 //! should only be called outside of the callback function.  This will
 //! initialize the mouse interface and determine how it reports events to the
-//! USB host controller.  The \e ulInstance value is the value that was
+//! USB host controller.  The \e psMsInstance value is the value that was
 //! returned when the application called USBHMouseOpen().  This function only
 //! needs to be called once per connection event but it should be called every
 //! time a \b USB_EVENT_CONNECTED event occurs.
@@ -218,33 +210,26 @@ USBHMouseClose(unsigned long ulInstance)
 //! \return Non-zero values should be assumed to indicate an error condition.
 //
 //*****************************************************************************
-unsigned long
-USBHMouseInit(unsigned long ulInstance)
+uint32_t
+USBHMouseInit(tUSBHMouse *psMsInstance)
 {
-    tUSBHMouse *pUSBHMouse;
-
-    //
-    // Recover the pointer to the instance data.
-    //
-    pUSBHMouse = (tUSBHMouse *)ulInstance;
-
     //
     // Set the initial rate to only update on mouse state changes.
     //
-    USBHHIDSetIdle(pUSBHMouse->ulMouseInstance, 0, 0);
+    USBHHIDSetIdle(psMsInstance->psHIDInstance, 0, 0);
 
     //
     // Read out the Report Descriptor from the mouse and parse it for
     // the format of the reports coming back from the mouse.
     //
-    USBHHIDGetReportDescriptor(pUSBHMouse->ulMouseInstance,
-                               pUSBHMouse->pucHeap,
-                               pUSBHMouse->ulHeapSize);
+    USBHHIDGetReportDescriptor(psMsInstance->psHIDInstance,
+                               psMsInstance->pui8Heap,
+                               psMsInstance->ui32HeapSize);
 
     //
     // Set the mouse to boot protocol.
     //
-    USBHHIDSetProtocol(pUSBHMouse->ulMouseInstance, 1);
+    USBHHIDSetProtocol(psMsInstance->psHIDInstance, 1);
 
     return(0);
 }
@@ -253,7 +238,7 @@ USBHMouseInit(unsigned long ulInstance)
 //
 // This function handles updating the state of the mouse buttons and axis.
 //
-// \param pUSBHMouse is the pointer to an instance of the mouse data.
+// \param psMsInstance is the pointer to an instance of the mouse data.
 //
 // This function will check for updates to buttons or X/Y movements and send
 // callbacks to the mouse callback function.
@@ -262,65 +247,59 @@ USBHMouseInit(unsigned long ulInstance)
 //
 //*****************************************************************************
 static void
-UpdateMouseState(tUSBHMouse *pUSBHMouse)
+UpdateMouseState(tUSBHMouse *psMsInstance)
 {
-    unsigned long ulButton;
+    uint32_t ui32Button;
 
-    if(pUSBHMouse->pucBuffer[0] != pUSBHMouse->ucButtons)
+    if(psMsInstance->pui8Buffer[0] != psMsInstance->ui8Buttons)
     {
-        for(ulButton = 1; ulButton <= 0x4; ulButton <<= 1)
+        for(ui32Button = 1; ui32Button <= 0x4; ui32Button <<= 1)
         {
-            if(((pUSBHMouse->pucBuffer[0] & ulButton) != 0) &&
-               ((pUSBHMouse->ucButtons & ulButton) == 0))
+            if(((psMsInstance->pui8Buffer[0] & ui32Button) != 0) &&
+               ((psMsInstance->ui8Buttons & ui32Button) == 0))
             {
                 //
                 // Send the mouse button press notification to the application.
                 //
-                pUSBHMouse->pfnCallback(0,
-                                        USBH_EVENT_HID_MS_PRESS,
-                                        ulButton,
-                                        0);
+                psMsInstance->pfnCallback(0, USBH_EVENT_HID_MS_PRESS,
+                                          ui32Button, 0);
             }
-            if(((pUSBHMouse->pucBuffer[0] & ulButton) == 0) &&
-               ((pUSBHMouse->ucButtons & ulButton) != 0))
+            if(((psMsInstance->pui8Buffer[0] & ui32Button) == 0) &&
+               ((psMsInstance->ui8Buttons & ui32Button) != 0))
             {
                 //
                 // Send the mouse button release notification to the
                 // application.
                 //
-                pUSBHMouse->pfnCallback(0,
-                                        USBH_EVENT_HID_MS_REL,
-                                        ulButton,
-                                        0);
+                psMsInstance->pfnCallback(0, USBH_EVENT_HID_MS_REL,
+                                         ui32Button, 0);
             }
         }
 
         //
         // Save the new state.
         //
-        pUSBHMouse->ucButtons = pUSBHMouse->pucBuffer[0];
+        psMsInstance->ui8Buttons = psMsInstance->pui8Buffer[0];
     }
-    if(pUSBHMouse->pucBuffer[1] != 0)
+
+    if(psMsInstance->pui8Buffer[1] != 0)
     {
         //
         // Send the mouse button release notification to the
         // application.
         //
-        pUSBHMouse->pfnCallback(0,
-                                USBH_EVENT_HID_MS_X,
-                                (unsigned long)pUSBHMouse->pucBuffer[1],
-                                0);
+        psMsInstance->pfnCallback(0, USBH_EVENT_HID_MS_X,
+                                  (uint32_t)psMsInstance->pui8Buffer[1], 0);
     }
-    if(pUSBHMouse->pucBuffer[2] != 0)
+
+    if(psMsInstance->pui8Buffer[2] != 0)
     {
         //
         // Send the mouse button release notification to the
         // application.
         //
-        pUSBHMouse->pfnCallback(0,
-                                USBH_EVENT_HID_MS_Y,
-                                (unsigned long)pUSBHMouse->pucBuffer[2],
-                                0);
+        psMsInstance->pfnCallback(0, USBH_EVENT_HID_MS_Y,
+                                  (uint32_t)psMsInstance->pui8Buffer[2], 0);
     }
 }
 
@@ -328,11 +307,11 @@ UpdateMouseState(tUSBHMouse *pUSBHMouse)
 //
 //! This function handles event callbacks from the USB HID driver layer.
 //!
-//! \param pvCBData is the pointer that was passed in to the USBHHIDOpen()
+//! \param pvMouse is the pointer that was passed in to the USBHHIDOpen()
 //! call.
-//! \param ulEvent is the event that has been passed up from the HID driver.
-//! \param ulMsgParam has meaning related to the \e ulEvent that occurred.
-//! \param pvMsgData has meaning related to the \e ulEvent that occurred.
+//! \param ui32Event is the event that has been passed up from the HID driver.
+//! \param ui32MsgParam has meaning related to the \e ui32Event that occurred.
+//! \param pvMsgData has meaning related to the \e ui32Event that occurred.
 //!
 //! This function will receive all event updates from the HID driver layer.
 //! The mouse driver itself will mostly be concerned with report callbacks
@@ -343,18 +322,18 @@ UpdateMouseState(tUSBHMouse *pUSBHMouse)
 //! \return Non-zero values should be assumed to indicate an error condition.
 //
 //*****************************************************************************
-unsigned long
-USBHMouseCallback(void *pvCBData, unsigned long ulEvent,
-                  unsigned long ulMsgParam, void *pvMsgData)
+uint32_t
+USBHMouseCallback(void *pvMouse, uint32_t ui32Event,
+                  uint32_t ui32MsgParam, void *pvMsgData)
 {
-    tUSBHMouse *pUSBHMouse;
+    tUSBHMouse *psMsInstance;
 
     //
     // Recover the pointer to the instance data.
     //
-    pUSBHMouse = (tUSBHMouse *)pvCBData;
+    psMsInstance = (tUSBHMouse *)pvMouse;
 
-    switch(ulEvent)
+    switch(ui32Event)
     {
         //
         // New mouse has been connected so notify the application.
@@ -364,12 +343,12 @@ USBHMouseCallback(void *pvCBData, unsigned long ulEvent,
             //
             // Remember that a mouse is present.
             //
-            pUSBHMouse->ulHIDFlags |= USBHMS_DEVICE_PRESENT;
+            psMsInstance->ui32HIDFlags |= USBHMS_DEVICE_PRESENT;
 
             //
             // Notify the application that a new mouse was connected.
             //
-            pUSBHMouse->pfnCallback(0, ulEvent, ulMsgParam, pvMsgData);
+            psMsInstance->pfnCallback(0, ui32Event, ui32MsgParam, pvMsgData);
 
             break;
         }
@@ -378,12 +357,12 @@ USBHMouseCallback(void *pvCBData, unsigned long ulEvent,
             //
             // No mouse is present.
             //
-            pUSBHMouse->ulHIDFlags &= ~USBHMS_DEVICE_PRESENT;
+            psMsInstance->ui32HIDFlags &= ~USBHMS_DEVICE_PRESENT;
 
             //
             // Notify the application that the mouse was disconnected.
             //
-            pUSBHMouse->pfnCallback(0, ulEvent, ulMsgParam, pvMsgData);
+            psMsInstance->pfnCallback(0, ui32Event, ui32MsgParam, pvMsgData);
 
             break;
         }
@@ -392,15 +371,14 @@ USBHMouseCallback(void *pvCBData, unsigned long ulEvent,
             //
             // New mouse report structure was received.
             //
-            USBHHIDGetReport(pUSBHMouse->ulMouseInstance, 0,
-                             pUSBHMouse->pucBuffer,
-                             USBHMS_REPORT_SIZE);
+            USBHHIDGetReport(psMsInstance->psHIDInstance, 0,
+                             psMsInstance->pui8Buffer, USBHMS_REPORT_SIZE);
 
             //
             // Update the current state of the mouse and notify the application
             // of any changes.
             //
-            UpdateMouseState(pUSBHMouse);
+            UpdateMouseState(psMsInstance);
 
             break;
         }

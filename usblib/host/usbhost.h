@@ -2,7 +2,7 @@
 //
 // usbhost.h - Host specific definitions for the USB host library.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -114,85 +114,29 @@ const tUSBHostClassDriver VarName =                                         \
 
 //*****************************************************************************
 //
-// This is the type definition a call back for events on USB Pipes allocated
+// This is the type definition a callback for events on USB Pipes allocated
 // by USBHCDPipeAlloc().
 //
-// \param ulPipe is well the pipe
-// \param ulEvent is well the event
+// \param ui32Pipe is well the pipe
+// \param ui32Event is well the event
 //
-// longer def thand may need more text in order to be recogized what should
-// this really say about ourselves.
+// This prototype is used by any Pipe callbacks that are used in the host
+// class drivers.  These functions typically handle data events like
+// USB_EVENT_RX_AVAILABLE or USB_EVENT_TX_COMPLETE but can be sent other events
+// depending on the USB host class in use.  See the documentation for the
+// individual classes for the valid events for that class.
 //
 // \return None.
 //
 //*****************************************************************************
-typedef void (* tHCDPipeCallback)(unsigned long ulPipe,
-                                  unsigned long ulEvent);
+typedef void (* tHCDPipeCallback)(uint32_t ui32Pipe, uint32_t ui32Event);
 
 //*****************************************************************************
 //
-//! This is the structure that holds all of the information for devices
-//! that are enumerated in the system.   It is passed in to Open function of
-//! USB host class drivers so that they can allocate any endpoints and parse
-//! out other information that the device class needs to complete enumeration.
+// Predeclare the private tUSBHostDevice structure.
 //
 //*****************************************************************************
-typedef struct
-{
-    //
-    //! The current device address for this device.
-    //
-    unsigned long ulAddress;
-
-    //
-    //! The current interface for this device.
-    //
-    unsigned long ulInterface;
-
-    //
-    //! A flag used to determine whether we need to pass an interrupt
-    //! notification on to this device as a result of endpoint activity.
-    //
-    tBoolean bNotifyInt;
-
-    //
-    //! A flag used to record whether this is a low-speed or a full-speed
-    //! device.
-    //
-    tBoolean bLowSpeed;
-
-    //
-    //! A flag indicating whether or not we have read the device's
-    //! configuration descriptor yet.
-    //
-    tBoolean bConfigRead;
-
-    //
-    //! The hub number to which this device is attached.
-    //
-    unsigned char ucHub;
-
-    //
-    //! The hub port number to which the device is attached.
-    //
-    unsigned char ucHubPort;
-
-    //
-    //! The device descriptor for this device.
-    //
-    tDeviceDescriptor DeviceDescriptor;
-
-    //
-    //! A pointer to the configuration descriptor for this device.
-    //
-    tConfigDescriptor *pConfigDescriptor;
-
-    //
-    //! The size of the buffer allocated to pConfigDescriptor.
-    //
-    unsigned long ulConfigDescriptorSize;
-}
-tUSBHostDevice;
+typedef struct tUSBHostDevice tUSBHostDevice;
 
 //*****************************************************************************
 //
@@ -205,12 +149,12 @@ typedef struct
     //
     //! The interface class that this device class driver supports.
     //
-    unsigned long ulInterfaceClass;
+    uint32_t ui32InterfaceClass;
 
     //
     //! The function is called when this class of device has been detected.
     //
-    void * (*pfnOpen)(tUSBHostDevice *pDevice);
+    void *(*pfnOpen)(tUSBHostDevice *psDevice);
 
     //
     //! The function is called when the device, originally opened with a call
@@ -239,7 +183,7 @@ tUSBHostClassDriver;
 // this function must be provided by the application.
 //
 //*****************************************************************************
-void USBHCDEvents(void *pvData);
+extern void USBHCDEvents(void *pvData);
 
 //*****************************************************************************
 //
@@ -247,94 +191,76 @@ void USBHCDEvents(void *pvData);
 //
 //*****************************************************************************
 extern void USBHCDMain(void);
-extern long USBHCDEventEnable(unsigned long ulIndex, void *pvEventDriver,
-                              unsigned long ulEvent);
-extern long USBHCDEventDisable(unsigned long ulIndex, void *pvEventDriver,
-                               unsigned long ulEvent);
-extern void USBHCDInit(unsigned long ulIndex, void *pData,
-                       unsigned long ulSize);
-extern void USBHCDPowerConfigInit(unsigned long ulIndex,
-                                  unsigned long ulFlags);
-extern unsigned long USBHCDPowerConfigGet(unsigned long ulIndex);
-extern unsigned long USBHCDPowerConfigSet(unsigned long ulIndex,
-                                          unsigned long ulConfig);
-extern unsigned long USBHCDPowerAutomatic(unsigned long ulIndex);
-extern void
-       USBHCDRegisterDrivers(unsigned long ulIndex,
-                             const tUSBHostClassDriver * const *ppHClassDrvrs,
-                             unsigned long ulNumDrivers);
-extern void USBHCDTerm(unsigned long ulIndex);
-extern void USBHCDSetConfig(unsigned long ulIndex, unsigned long ulDevice,
-                            unsigned long ulConfiguration);
-extern void USBHCDSetInterface(unsigned long ulIndex, unsigned long ulDevice,
-                               unsigned long ulInterface,
-                               unsigned ulAltSetting);
-extern unsigned long USBHCDHubDeviceConnected(unsigned long ulIndex,
-                                              unsigned char ucHub,
-                                              unsigned char ucPort,
-                                              tBoolean bLowSpeed,
-                                              unsigned char *pucConfigPool,
-                                              unsigned long ulConfigSize);
-extern void USBHCDHubDeviceDisconnected(unsigned long ulIndex,
-                                        unsigned long ulDevIndex);
-extern void USBHCDSuspend(unsigned long ulIndex);
-extern void USBHCDResume(unsigned long ulIndex);
-extern void USBHCDReset(unsigned long ulIndex);
-extern void USBHCDPipeFree(unsigned long ulPipe);
-extern unsigned long USBHCDPipeAlloc(unsigned long ulIndex,
-                                     unsigned long ulEndpointType,
+extern int32_t USBHCDEventEnable(uint32_t ui32Index, void *pvEventDriver,
+                                 uint32_t ui32Event);
+extern int32_t USBHCDEventDisable(uint32_t ui32Index, void *pvEventDriver,
+                                  uint32_t ui32Event);
+extern void USBHCDInit(uint32_t ui32Index, void *pvData,
+                       uint32_t ui32Size);
+extern void USBHCDPowerConfigInit(uint32_t ui32Index,
+                                  uint32_t ui32Flags);
+extern uint32_t USBHCDPowerConfigGet(uint32_t ui32Index);
+extern uint32_t USBHCDPowerConfigSet(uint32_t ui32Index,
+                                     uint32_t ui32Config);
+extern uint32_t USBHCDPowerAutomatic(uint32_t ui32Index);
+extern void USBHCDRegisterDrivers(uint32_t ui32Index,
+                            const tUSBHostClassDriver * const *ppsHClassDrvrs,
+                            uint32_t ui32NumDrivers);
+extern void USBHCDTerm(uint32_t ui32Index);
+extern void USBHCDSetConfig(uint32_t ui32Index, uint32_t ui32Device,
+                            uint32_t ui32Configuration);
+extern void USBHCDSetInterface(uint32_t ui32Index, uint32_t ui32Device,
+                               uint32_t ui32Interface,
+                               uint32_t ui32AltSetting);
+extern void USBHCDSuspend(uint32_t ui32Index);
+extern void USBHCDResume(uint32_t ui32Index);
+extern void USBHCDReset(uint32_t ui32Index);
+extern void USBHCDPipeFree(uint32_t ui32Pipe);
+extern uint32_t USBHCDPipeAlloc(uint32_t ui32Index,
+                                uint32_t ui32EndpointType,
+                                tUSBHostDevice *psDevice,
+                                tHCDPipeCallback pfnCallback);
+extern uint32_t USBHCDPipeAllocSize(uint32_t ui32Index,
+                                     uint32_t ui32EndpointType,
                                      tUSBHostDevice *psDevice,
-                                     tHCDPipeCallback pCallback);
-extern unsigned long USBHCDPipeAllocSize(unsigned long ulIndex,
-                                     unsigned long ulEndpointType,
-                                     tUSBHostDevice *psDevice,
-                                     unsigned long ulFIFOSize,
-                                     tHCDPipeCallback pCallback);
-extern unsigned long USBHCDPipeConfig(unsigned long ulPipe,
-                                      unsigned long ulMaxPayload,
-                                      unsigned long ulInterval,
-                                      unsigned long ulTargetEndpoint);
-extern unsigned long USBHCDPipeStatus(unsigned long ulPipe);
-extern unsigned long USBHCDPipeWrite(unsigned long ulPipe,
-                                     unsigned char *pData,
-                                     unsigned long ulSize);
-extern unsigned long USBHCDPipeRead(unsigned long ulPipe, unsigned char *pData,
-                                    unsigned long ulSize);
-extern unsigned long USBHCDPipeSchedule(unsigned long ulPipe,
-                                        unsigned char *pucData,
-                                        unsigned long ulSize);
-extern void USBHCDPipeDataAck(unsigned long ulPipe);
-extern unsigned long USBHCDPipeReadNonBlocking(unsigned long ulPipe,
-                                               unsigned char *pucData,
-                                               unsigned long ulSize);
-extern unsigned long USBHCDControlTransfer(unsigned long ulIndex,
-                                           tUSBRequest *pSetupPacket,
-                                           tUSBHostDevice *pDevice,
-                                           unsigned char *pData,
-                                           unsigned long ulSize,
-                                           unsigned long ulMaxPacketSize);
+                                     uint32_t ui32FIFOSize,
+                                     tHCDPipeCallback pfnCallback);
+extern uint32_t USBHCDPipeConfig(uint32_t ui32Pipe, uint32_t ui32MaxPayload,
+                                 uint32_t ui32Interval,
+                                 uint32_t ui32TargetEndpoint);
+extern uint32_t USBHCDPipeStatus(uint32_t ui32Pipe);
+extern uint32_t USBHCDPipeWrite(uint32_t ui32Pipe, uint8_t *pui8Data,
+                                uint32_t ui32Size);
+extern uint32_t USBHCDPipeRead(uint32_t ui32Pipe, uint8_t *pui8Data,
+                               uint32_t ui32Size);
+extern uint32_t USBHCDPipeSchedule(uint32_t ui32Pipe, uint8_t *pui8Data,
+                                   uint32_t ui32Size);
+extern void USBHCDPipeDataAck(uint32_t ui32Pipe);
+extern uint32_t USBHCDPipeReadNonBlocking(uint32_t ui32Pipe, uint8_t *pui8Data,
+                                          uint32_t ui32Size);
+extern uint32_t USBHCDControlTransfer(uint32_t ui32Index,
+                                      tUSBRequest *psSetupPacket,
+                                      tUSBHostDevice *psDevice,
+                                      uint8_t *pui8Data, uint32_t ui32Size,
+                                      uint32_t ui32MaxPacketSize);
 extern void USB0HostIntHandler(void);
 
-extern unsigned char USBHCDDevHubPort(unsigned long ulInstance);
-extern unsigned char USBHCDDevAddress(unsigned long ulInstance);
-extern unsigned char USBHCDDevClass(unsigned long ulInstance,
-                                    unsigned long ulInterface);
-extern unsigned char USBHCDDevSubClass(unsigned long ulInstance,
-                                       unsigned long ulInterface);
-extern unsigned char USBHCDDevProtocol(unsigned long ulInstance,
-                                       unsigned long ulInterface);
-
+extern uint8_t USBHCDDevHubPort(uint32_t ui32Instance);
+extern uint8_t USBHCDDevAddress(uint32_t ui32Instance);
+extern uint8_t USBHCDDevClass(uint32_t ui32Instance, uint32_t ui32Interface);
+extern uint8_t USBHCDDevSubClass(uint32_t ui32Instance,
+                                 uint32_t ui32Interface);
+extern uint8_t USBHCDDevProtocol(uint32_t ui32Instance,
+                                 uint32_t ui32Interface);
 
 //*****************************************************************************
 //
 // The host class drivers supported by the USB library.
 //
 //*****************************************************************************
-extern const tUSBHostClassDriver g_USBHostMSCClassDriver;
-extern const tUSBHostClassDriver g_USBHIDClassDriver;
-extern const tUSBHostClassDriver g_USBHostAudioClassDriver;
-
-#include "usbhostpriv.h"
+extern const tUSBHostClassDriver g_sUSBHostMSCClassDriver;
+extern const tUSBHostClassDriver g_sUSBHIDClassDriver;
+extern const tUSBHostClassDriver g_sUSBHostAudioClassDriver;
 
 //*****************************************************************************
 //

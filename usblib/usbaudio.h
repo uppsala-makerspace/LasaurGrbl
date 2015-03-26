@@ -2,7 +2,7 @@
 //
 // usbaudio.h - Definitions used by Audio Class devices.
 //
-// Copyright (c) 2009-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2009-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -180,7 +180,8 @@
 #define USB_ATTYPE_SPEAKER_DT   0x0304  // Desktop or Monitor speaker(s).
 #define USB_ATTYPE_SPEAKER_RM   0x0305  // Larger room speaker(s).
 #define USB_ATTYPE_SPEAKER_COM  0x0306  // Communications Speaker (phone).
-#define USB_ATTYPE_SPEAKER_LFE  0x0307  // Speaker designed for low frequencies.
+#define USB_ATTYPE_SPEAKER_LFE  0x0307  // Speaker designed for low
+                                        // frequencies.
 
 //*****************************************************************************
 //
@@ -290,43 +291,43 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_DSUBTYPE_HEADER for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! Audio Device Class Specification Release Number in Binary-Coded
     //! Decimal.
     //
-    unsigned short bcdADC;
+    uint16_t bcdADC;
 
     //
     //! Total number of bytes returned for the class-specific AudioControl
     //! interface descriptor. Includes the combined length of this descriptor
     //! header and all Unit and Terminal descriptors.
     //
-    unsigned short wTotalLength;
+    uint16_t wTotai32Length;
 
     //
     //! The number of AudioStreaming and MIDIStreaming interfaces in the Audio
     //! Interface Collection to which this AudioControl interface belongs.
     //
-    unsigned char bInCollection;
+    uint8_t bInCollection;
 
     //
     //! Interface number of the first AudioStreaming or MIDIStreaming interface
     //! in the Collection.
     //
-    unsigned char baInterfaceNr;
+    uint8_t baInterfaceNr;
 }
 PACKED tACHeader;
 
@@ -360,34 +361,34 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_DSUBTYPE_IN_TERM for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! Constant uniquely identifying the Unit within the audio function. This
     //! value is used in all requests to address this Unit.
     //
-    unsigned char bUnitID;
+    uint8_t bUnitID;
 
     //
     //! ID of the Unit or Terminal to which this Feature Unit is connected.
     //
-    unsigned char bSourceID;
+    uint8_t bSourceID;
 
     //
     //! ID of the Output Terminal to which this Input Terminal is associated.
     //
-    unsigned char bControlSize;
+    uint8_t bControlSize;
 
     //
     //! A bit set to 1 indicates that the mentioned Control is supported for
@@ -395,7 +396,7 @@ typedef struct
     //! This actually an array of elements of size bControlSize so be
     //! careful when using this value directly.
     //
-    unsigned short bmaControls;
+    uint16_t bmaControls;
 }
 PACKED tACFeatureUnit;
 
@@ -410,46 +411,46 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_DSUBTYPE_OUT_TERM for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! Constant uniquely identifying the Terminal within the audio function.
     //! This value is used in all requests to address this Terminal.
     //
-    unsigned char bTerminalID;
+    uint8_t bTerminalID;
 
     //
     //! Constant characterizing the type of Terminal. See USB Audio Terminal
     //! Types.
     //
-    unsigned short wTerminalType;
+    uint16_t wTerminalType;
 
     //
     //! Constant, identifying the Input Terminal to which this Output Terminal
     //! is associated.
     //
-    unsigned char bAssocTerminal;
+    uint8_t bAssocTerminal;
 
     //
     //! ID of the Unit or Terminal to which this Terminal is connected.
     //
-    unsigned char bSourceID;
+    uint8_t bSourceID;
 
     //
     //! Index of a string descriptor, describing the Output Terminal.
     //
-    unsigned char iTerminal;
+    uint8_t iTerminal;
 }
 PACKED tACOutputTerminal;
 
@@ -464,58 +465,58 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_DSUBTYPE_OUT_TERM for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! Constant uniquely identifying the Terminal within the audio function.
     //! This value is used in all requests to address this Terminal.
     //
-    unsigned char bTerminalID;
+    uint8_t bTerminalID;
 
     //
     //! Constant characterizing the type of Terminal. See USB Audio Terminal
     //! Types.
     //
-    unsigned short wTerminalType;
+    uint16_t wTerminalType;
 
     //
     //! Constant, identifying the Input Terminal to which this Output Terminal
     //! is associated.
     //
-    unsigned char bAssocTerminal;
+    uint8_t bAssocTerminal;
 
     //
     //! Number of logical output channels in the Terminal's output audio
     //! channel cluster.
     //
-    unsigned char bNrChannels;
+    uint8_t bNrChannels;
 
     //
     //! Describes the spatial location of the logical channels.
     //
-    unsigned short wChannelConfig;
+    uint16_t wChannelConfig;
 
     //
     //! Index of a string descriptor, describing the name of the first logical
     //! channel.
     //
-    unsigned char iChannelNames;
+    uint8_t iChannelNames;
 
     //
     //! Index of a string descriptor, describing the Output Terminal.
     //
-    unsigned char iTerminal;
+    uint8_t iTerminal;
 }
 PACKED tACInputTerminal;
 
@@ -530,35 +531,35 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_AI_MIXER_UNIT for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! Constant uniquely identifying the Unit within the audio function. This
     //! value is used in all requests to address this Unit.
     //
-    unsigned char bUnitID;
+    uint8_t bUnitID;
 
     //
     //! Number of Input Pins of this Unit.
     //
-    unsigned char bNrInPins;
+    uint8_t bNrInPins;
 
     //
-    //! ID of the Unit or Terminal to which the first Input Pin of this Mixer Unit is
-    //! connected.
+    //! ID of the Unit or Terminal to which the first Input Pin of this Mixer
+    //! Unit is connected.
     //
-    unsigned char baSourceID;
+    uint8_t baSourceID;
 }
 PACKED tACMixer;
 
@@ -573,35 +574,35 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_AI_MIXER_UNIT for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! Constant uniquely identifying the Unit within the audio function. This
     //! value is used in all requests to address this Unit.
     //
-    unsigned char bUnitID;
+    uint8_t bUnitID;
 
     //
     //! Number of Input Pins of this Unit.
     //
-    unsigned char bNrInPins;
+    uint8_t bNrInPins;
 
     //
-    //! ID of the Unit or Terminal to which the first Input Pin of this Mixer Unit is
-    //! connected.
+    //! ID of the Unit or Terminal to which the first Input Pin of this Mixer
+    //! Unit is connected.
     //
-    unsigned char baSourceID;
+    uint8_t baSourceID;
 }
 PACKED tACSelector;
 
@@ -616,35 +617,35 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_DSUBTYPE_GENERAL for the header.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! The Terminal ID of the Terminal to which the endpoint of this
     //! interface is connected.
     //
-    unsigned char bTerminalLink;
+    uint8_t bTerminalLink;
 
     //
     //! Delay introduced by the data path. Expressed in number of frames.
     //
-    unsigned char bDelay;
+    uint8_t bDelay;
 
     //
     //! The Audio Data Format that has to be used to communicate with this
     //! interface.
     //
-    unsigned short wFormatTag;
+    uint16_t wFormatTag;
 }
 PACKED tACGeneral;
 
@@ -659,48 +660,48 @@ typedef struct
     //
     //! The length of this descriptor in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_CS_INTERFACE (36).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! This will be USB_AS_FORMAT_TYPE.
     //
-    unsigned char bDescriptorSubtype;
+    uint8_t bDescriptorSubtype;
 
     //
     //! This will be USB_AS_FORMAT_TYPE_I.
     //
-    unsigned char bFormatType;
+    uint8_t bFormatType;
 
     //
     //! Number of channels on this streaming interface.
     //
-    unsigned char bNrChannels;
+    uint8_t bNrChannels;
 
     //
     //! Number of bytes per audio sub-frame or channel.
     //
-    unsigned char bSubFrameSize;
+    uint8_t bSubFrameSize;
 
     //
     //! Number of bits per sample.
     //
-    unsigned char bBitResolution;
+    uint8_t bBitResolution;
 
     //
     //! Number of sample rates that are supported.
     //
-    unsigned char bSamFreqType;
+    uint8_t bSamFreqType;
 
     //
     //! Number of bits per sample.
     //
-    unsigned char tSamFreq;
+    uint8_t tSamFreq;
 }
 PACKED tASFormat;
 

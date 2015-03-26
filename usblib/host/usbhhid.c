@@ -2,7 +2,7 @@
 //
 // usbhhid.c - This file contains the host HID driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,18 +18,22 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "driverlib/usb.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/usbhid.h"
 #include "usblib/host/usbhost.h"
+#include "usblib/host/usbhostpriv.h"
 #include "usblib/host/usbhhid.h"
 
-static void * HIDDriverOpen(tUSBHostDevice *pDevice);
+static void * HIDDriverOpen(tUSBHostDevice *psDevice);
 static void HIDDriverClose(void *pvInstance);
 
 //*****************************************************************************
@@ -56,12 +60,12 @@ static void HIDDriverClose(void *pvInstance);
 // a HID device.
 //
 //*****************************************************************************
-typedef struct
+struct tHIDInstance
 {
     //
     // Save the device instance.
     //
-    tUSBHostDevice *pDevice;
+    tUSBHostDevice *psDevice;
 
     //
     // Used to save the callback.
@@ -71,26 +75,25 @@ typedef struct
     //
     // Callback data provided by caller.
     //
-    unsigned long ulCBData;
+    void *pvCBData;
 
     //
     // Used to remember what type of device was registered.
     //
-    tHIDSubClassProtocol eDeviceType;
+    tHIDSubClassProtocol iDeviceType;
 
     //
     // Interrupt IN pipe.
     //
-    unsigned long ulIntInPipe;
-}
-tHIDInstance;
+    uint32_t ui32IntInPipe;
+};
 
 //*****************************************************************************
 //
 // The instance data storage for attached hid devices.
 //
 //*****************************************************************************
-static tHIDInstance g_pHIDDevice[MAX_HID_DEVICES];
+static tHIDInstance g_psHIDDevice[MAX_HID_DEVICES];
 
 //*****************************************************************************
 //
@@ -98,7 +101,7 @@ static tHIDInstance g_pHIDDevice[MAX_HID_DEVICES];
 //! provided with the USB library.
 //
 //*****************************************************************************
-const tUSBHostClassDriver g_USBHIDClassDriver =
+const tUSBHostClassDriver g_sUSBHIDClassDriver =
 {
     USB_CLASS_HID,
     HIDDriverOpen,
@@ -110,15 +113,15 @@ const tUSBHostClassDriver g_USBHIDClassDriver =
 //
 //! This function is used to open an instance of a HID device.
 //!
-//! \param eDeviceType is the type of device that should be loaded for this
+//! \param iDeviceType is the type of device that should be loaded for this
 //! instance of the HID device.
 //! \param pfnCallback is the function that will be called whenever changes
 //! are detected for this device.
-//! \param ulCBData is the data that will be returned in when the pfnCallback
-//! function is called.
+//! \param pvCBData is the data that will be returned in when the
+//! \e pfnCallback function is called.
 //!
 //! This function creates an instance of an specific type of HID device.  The
-//! \e eDeviceType parameter is one subclass/protocol values of the types
+//! \e iDeviceType parameter is one subclass/protocol values of the types
 //! specified in enumerated types tHIDSubClassProtocol.  Only devices that
 //! enumerate with this type will be called back via the \e pfnCallback
 //! function.  The \e pfnCallback parameter is the callback function for any
@@ -133,30 +136,30 @@ const tUSBHostClassDriver g_USBHIDClassDriver =
 //! then the device instance could not be created.
 //
 //*****************************************************************************
-unsigned long
-USBHHIDOpen(tHIDSubClassProtocol eDeviceType, tUSBCallback pfnCallback,
-            unsigned long ulCBData)
+tHIDInstance *
+USBHHIDOpen(tHIDSubClassProtocol iDeviceType, tUSBCallback pfnCallback,
+            void *pvCBData)
 {
-    unsigned long ulLoop;
+    uint32_t ui32Loop;
 
     //
     // Find a free device instance structure.
     //
-    for(ulLoop = 0; ulLoop < MAX_HID_DEVICES; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < MAX_HID_DEVICES; ui32Loop++)
     {
-        if(g_pHIDDevice[ulLoop].eDeviceType == USBH_HID_DEV_NONE)
+        if(g_psHIDDevice[ui32Loop].iDeviceType == eUSBHHIDClassNone)
         {
             //
             // Save the instance data for this device.
             //
-            g_pHIDDevice[ulLoop].pfnCallback = pfnCallback;
-            g_pHIDDevice[ulLoop].eDeviceType = eDeviceType;
-            g_pHIDDevice[ulLoop].ulCBData = ulCBData;
+            g_psHIDDevice[ui32Loop].pfnCallback = pfnCallback;
+            g_psHIDDevice[ui32Loop].iDeviceType = iDeviceType;
+            g_psHIDDevice[ui32Loop].pvCBData = pvCBData;
 
             //
             // Return the device instance pointer.
             //
-            return((unsigned long)&g_pHIDDevice[ulLoop]);
+            return(&g_psHIDDevice[ui32Loop]);
         }
     }
 
@@ -171,36 +174,29 @@ USBHHIDOpen(tHIDSubClassProtocol eDeviceType, tUSBCallback pfnCallback,
 //
 //! This function is used to release an instance of a HID device.
 //!
-//! \param ulHIDInstance is the instance value for a HID device to release.
+//! \param psHIDInstance is the instance value for a HID device to release.
 //!
 //! This function releases an instance of a HID device that was created by a
 //! call to USBHHIDOpen().  This call is required to allow other HID devices
 //! to be enumerated after another HID device has been disconnected.  The
-//! \e ulHIDInstance parameter should hold the value that was returned from the
-//! previous call to USBHHIDOpen().
+//! \e psHIDInstance parameter should hold the value that was returned from
+//! the previous call to USBHHIDOpen().
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBHHIDClose(unsigned long ulHIDInstance)
+USBHHIDClose(tHIDInstance *psHIDInstance)
 {
-    tHIDInstance *pInst;
-
-    //
-    // Get our instance pointer.
-    //
-    pInst = (tHIDInstance *)ulHIDInstance;
-
     //
     // Disable any more notifications from the HID layer.
     //
-    pInst->pfnCallback = 0;
+    psHIDInstance->pfnCallback = 0;
 
     //
     // Mark this device slot as free.
     //
-    pInst->eDeviceType = USBH_HID_DEV_NONE;
+    psHIDInstance->iDeviceType = eUSBHHIDClassNone;
 }
 
 //*****************************************************************************
@@ -209,11 +205,11 @@ USBHHIDClose(unsigned long ulHIDInstance)
 //
 //*****************************************************************************
 static void
-HIDIntINCallback(unsigned long ulPipe, unsigned long ulEvent)
+HIDIntINCallback(uint32_t ui32Pipe, uint32_t ui32Event)
 {
-    long lDev;
+    int32_t i32Dev;
 
-    switch (ulEvent)
+    switch (ui32Event)
     {
         //
         // Handles a request to schedule a new request on the interrupt IN
@@ -221,7 +217,7 @@ HIDIntINCallback(unsigned long ulPipe, unsigned long ulEvent)
         //
         case USB_EVENT_SCHEDULER:
         {
-            USBHCDPipeSchedule(ulPipe, 0, 1);
+            USBHCDPipeSchedule(ui32Pipe, 0, 1);
             break;
         }
         //
@@ -232,22 +228,20 @@ HIDIntINCallback(unsigned long ulPipe, unsigned long ulEvent)
             //
             // Determine which device this notification is intended for.
             //
-            for(lDev = 0; lDev < MAX_HID_DEVICES; lDev++)
+            for(i32Dev = 0; i32Dev < MAX_HID_DEVICES; i32Dev++)
             {
                 //
-                // Does this device own the pipe we've been passed?
+                // Does this device own the pipe we have been passed?
                 //
-                if(g_pHIDDevice[lDev].ulIntInPipe == ulPipe)
+                if(g_psHIDDevice[i32Dev].ui32IntInPipe == ui32Pipe)
                 {
                     //
                     // Yes - send the report data to the USB host HID device
                     // class driver.
                     //
-                    g_pHIDDevice[lDev].pfnCallback(
-                                          (void *)g_pHIDDevice[lDev].ulCBData,
-                                          USB_EVENT_RX_AVAILABLE,
-                                          ulPipe,
-                                          0);
+                    g_psHIDDevice[i32Dev].pfnCallback(
+                                    g_psHIDDevice[i32Dev].pvCBData,
+                                    USB_EVENT_RX_AVAILABLE, ui32Pipe, 0);
                 }
             }
 
@@ -260,10 +254,10 @@ HIDIntINCallback(unsigned long ulPipe, unsigned long ulEvent)
 //
 //! This function is used to open an instance of the HID driver.
 //!
-//! \param pDevice is a pointer to the device information structure.
+//! \param psDevice is a pointer to the device information structure.
 //!
 //! This function will attempt to open an instance of the HID driver based on
-//! the information contained in the pDevice structure.  This call can fail if
+//! the information contained in the psDevice structure.  This call can fail if
 //! there are not sufficient resources to open the device.  The function will
 //! return a value that should be passed back into USBHIDClose() when the
 //! driver is no longer needed.
@@ -272,42 +266,44 @@ HIDIntINCallback(unsigned long ulPipe, unsigned long ulEvent)
 //
 //*****************************************************************************
 static void *
-HIDDriverOpen(tUSBHostDevice *pDevice)
+HIDDriverOpen(tUSBHostDevice *psDevice)
 {
-    long lIdx, lDev;
-    tEndpointDescriptor *pEndpointDescriptor;
-    tInterfaceDescriptor *pInterface;
+    int32_t i32Idx, i32Dev;
+    tEndpointDescriptor *psEndpointDescriptor;
+    tInterfaceDescriptor *psInterface;
 
     //
     // Get the interface descriptor.
     //
-    pInterface = USBDescGetInterface(pDevice->pConfigDescriptor, 0, 0);
+    psInterface = USBDescGetInterface(psDevice->psConfigDescriptor, 0, 0);
 
     //
     // Search the currently open instances for one that supports the protocol
     // of this device.
     //
-    for(lDev = 0; lDev < MAX_HID_DEVICES; lDev++)
+    for(i32Dev = 0; i32Dev < MAX_HID_DEVICES; i32Dev++)
     {
-        if(g_pHIDDevice[lDev].eDeviceType == pInterface->bInterfaceProtocol)
+        if(g_psHIDDevice[i32Dev].iDeviceType ==
+           psInterface->bInterfaceProtocol)
         {
             //
             // Save the device pointer.
             //
-            g_pHIDDevice[lDev].pDevice = pDevice;
+            g_psHIDDevice[i32Dev].psDevice = psDevice;
 
-            for(lIdx = 0; lIdx < 3; lIdx++)
+            for(i32Idx = 0; i32Idx < 3; i32Idx++)
             {
                 //
                 // Get the first endpoint descriptor.
                 //
-                pEndpointDescriptor = USBDescGetInterfaceEndpoint(pInterface,
-                                                                  lIdx, 256);
+                psEndpointDescriptor = USBDescGetInterfaceEndpoint(psInterface,
+                                                                   i32Idx,
+                                                                   256);
 
                 //
                 // If no more endpoints then break out.
                 //
-                if(pEndpointDescriptor == 0)
+                if(psEndpointDescriptor == 0)
                 {
                     break;
                 }
@@ -315,23 +311,22 @@ HIDDriverOpen(tUSBHostDevice *pDevice)
                 //
                 // Interrupt
                 //
-                if((pEndpointDescriptor->bmAttributes & USB_EP_ATTR_TYPE_M) ==
+                if((psEndpointDescriptor->bmAttributes & USB_EP_ATTR_TYPE_M) ==
                    USB_EP_ATTR_INT)
                 {
                     //
                     // Interrupt IN.
                     //
-                    if(pEndpointDescriptor->bEndpointAddress & USB_EP_DESC_IN)
+                    if(psEndpointDescriptor->bEndpointAddress & USB_EP_DESC_IN)
                     {
-                        g_pHIDDevice[lDev].ulIntInPipe = USBHCDPipeAlloc(0,
-                                                          USBHCD_PIPE_INTR_IN,
-                                                          pDevice,
-                                                          HIDIntINCallback);
-                        USBHCDPipeConfig(g_pHIDDevice[lDev].ulIntInPipe,
-                                         pEndpointDescriptor->wMaxPacketSize,
-                                         pEndpointDescriptor->bInterval,
-                                         (pEndpointDescriptor->bEndpointAddress &
-                                          USB_EP_DESC_NUM_M));
+                        g_psHIDDevice[i32Dev].ui32IntInPipe =
+                                USBHCDPipeAlloc(0, USBHCD_PIPE_INTR_IN,
+                                                psDevice, HIDIntINCallback);
+                        USBHCDPipeConfig(g_psHIDDevice[i32Dev].ui32IntInPipe,
+                                    psEndpointDescriptor->wMaxPacketSize,
+                                    psEndpointDescriptor->bInterval,
+                                    (psEndpointDescriptor->bEndpointAddress &
+                                     USB_EP_DESC_NUM_M));
                     }
                 }
             }
@@ -340,20 +335,20 @@ HIDDriverOpen(tUSBHostDevice *pDevice)
             // If there is a callback function call it to inform the application that
             // the device has been enumerated.
             //
-            if(g_pHIDDevice[lDev].pfnCallback != 0)
+            if(g_psHIDDevice[i32Dev].pfnCallback != 0)
             {
-                g_pHIDDevice[lDev].pfnCallback(
-                                        (void *)g_pHIDDevice[lDev].ulCBData,
-                                        USB_EVENT_CONNECTED,
-                                        (unsigned long)&g_pHIDDevice[lDev], 0);
+                g_psHIDDevice[i32Dev].pfnCallback(
+                                    g_psHIDDevice[i32Dev].pvCBData,
+                                    USB_EVENT_CONNECTED,
+                                    (uint32_t)&g_psHIDDevice[i32Dev], 0);
             }
 
             //
             // Save the device pointer.
             //
-            g_pHIDDevice[lDev].pDevice = pDevice;
+            g_psHIDDevice[i32Dev].psDevice = psDevice;
 
-            return (&g_pHIDDevice[lDev]);
+            return (&g_psHIDDevice[i32Dev]);
         }
     }
 
@@ -380,34 +375,33 @@ HIDDriverOpen(tUSBHostDevice *pDevice)
 static void
 HIDDriverClose(void *pvInstance)
 {
-    tHIDInstance *pInst;
+    tHIDInstance *psInst;
 
     //
     // Get our instance pointer.
     //
-    pInst = (tHIDInstance *)pvInstance;
+    psInst = (tHIDInstance *)pvInstance;
 
     //
     // Reset the device pointer.
     //
-    pInst->pDevice = 0;
+    psInst->psDevice = 0;
 
     //
     // Free the Interrupt IN pipe.
     //
-    if(pInst->ulIntInPipe != 0)
+    if(psInst->ui32IntInPipe != 0)
     {
-        USBHCDPipeFree(pInst->ulIntInPipe);
+        USBHCDPipeFree(psInst->ui32IntInPipe);
     }
 
     //
     // If the callback exists, call it with a DISCONNECTED event.
     //
-    if(pInst->pfnCallback != 0)
+    if(psInst->pfnCallback != 0)
     {
-        pInst->pfnCallback((void *)pInst->ulCBData,
-                           USB_EVENT_DISCONNECTED,
-                           (unsigned long)pvInstance, 0);
+        psInst->pfnCallback(psInst->pvCBData, USB_EVENT_DISCONNECTED,
+                            (uint32_t)pvInstance, 0);
     }
 }
 
@@ -415,54 +409,51 @@ HIDDriverClose(void *pvInstance)
 //
 //! This function is used to set the idle timeout for a HID device.
 //!
-//! \param ulInstance is the value that was returned from the call to
+//! \param psHIDInstance is the value that was returned from the call to
 //! USBHHIDOpen().
-//! \param ucDuration is the duration of the timeout in milliseconds.
-//! \param ucReportID is the report identifier to set the timeout on.
+//! \param ui8Duration is the duration of the timeout in milliseconds.
+//! \param ui8ReportID is the report identifier to set the timeout on.
 //!
 //! This function will send the Set Idle command to a HID device to set the
 //! idle timeout for a given report.  The length of the timeout is specified
-//! by the \e ucDuration parameter and the report the timeout for is in the
-//! \e ucReportID value.
+//! by the \e ui8Duration parameter and the report the timeout for is in the
+//! \e ui8ReportID value.
 //!
 //! \return Always returns 0.
 //
 //*****************************************************************************
-unsigned long
-USBHHIDSetIdle(unsigned long ulInstance, unsigned char ucDuration,
-               unsigned char ucReportID)
+uint32_t
+USBHHIDSetIdle(tHIDInstance *psHIDInstance, uint8_t ui8Duration,
+               uint8_t ui8ReportID)
 {
-    tUSBRequest SetupPacket;
-    tHIDInstance *pHIDInstance;
-
-    pHIDInstance = (tHIDInstance *)ulInstance;
+    tUSBRequest sSetupPacket;
 
     //
     // This is a Class specific interface OUT request.
     //
-    SetupPacket.bmRequestType = USB_RTYPE_DIR_OUT | USB_RTYPE_CLASS
-                    | USB_RTYPE_INTERFACE;
+    sSetupPacket.bmRequestType = USB_RTYPE_DIR_OUT | USB_RTYPE_CLASS |
+                                 USB_RTYPE_INTERFACE;
 
     //
     // Request a Device Descriptor.
     //
-    SetupPacket.bRequest = USBREQ_SET_IDLE;
-    SetupPacket.wValue = (ucDuration << 8) | ucReportID;
+    sSetupPacket.bRequest = USBREQ_SET_IDLE;
+    sSetupPacket.wValue = (ui8Duration << 8) | ui8ReportID;
 
     //
     // Set this on interface 1.
     //
-    SetupPacket.wIndex = 0;
+    sSetupPacket.wIndex = 0;
 
     //
     // This is always 0 for this request.
     //
-    SetupPacket.wLength = 0;
+    sSetupPacket.wLength = 0;
 
     //
     // Put the setup packet in the buffer.
     //
-    return(USBHCDControlTransfer(0, &SetupPacket, pHIDInstance->pDevice,
+    return(USBHCDControlTransfer(0, &sSetupPacket, psHIDInstance->psDevice,
                                  0, 0, MAX_PACKET_SIZE_EP0));
 }
 
@@ -471,78 +462,71 @@ USBHHIDSetIdle(unsigned long ulInstance, unsigned char ucDuration,
 //! This function can be used to retrieve the report descriptor for a given
 //! device instance.
 //!
-//! \param ulInstance is the value that was returned from the call to
+//! \param psHIDInstance is the value that was returned from the call to
 //! USBHHIDOpen().
-//! \param pucBuffer is the memory buffer to use to store the report
+//! \param pui8Buffer is the memory buffer to use to store the report
 //! descriptor.
-//! \param ulSize is the size in bytes of the buffer pointed to by
-//! \e pucBuffer.
+//! \param ui32Size is the size in bytes of the buffer pointed to by
+//! \e pui8Buffer.
 //!
 //! This function is used to return a report descriptor from a HID device
 //! instance so that it can determine how to interpret reports that are
-//! returned from the device indicated by the \e ulInstance parameter.
+//! returned from the device indicated by the \e psHIDInstance parameter.
 //! This call is blocking and will return the number of bytes read into the
-//! \e pucBuffer.
+//! \e pui8Buffer.
 //!
-//! \return Returns the number of bytes read into the \e pucBuffer.
+//! \return Returns the number of bytes read into the \e pui8Buffer.
 //
 //*****************************************************************************
-unsigned long
-USBHHIDGetReportDescriptor(unsigned long ulInstance, unsigned char *pucBuffer,
-                           unsigned long ulSize)
+uint32_t
+USBHHIDGetReportDescriptor(tHIDInstance *psHIDInstance, uint8_t *pui8Buffer,
+                           uint32_t ui32Size)
 {
-    tUSBRequest SetupPacket;
-    unsigned long ulBytes;
-    tHIDInstance *pHIDInstance;
-
-    pHIDInstance = (tHIDInstance *)ulInstance;
+    tUSBRequest sSetupPacket;
+    uint32_t ui32Bytes;
 
     //
     // This is a Standard Device IN request.
     //
-    SetupPacket.bmRequestType = USB_RTYPE_DIR_IN | USB_RTYPE_STANDARD
-                    | USB_RTYPE_INTERFACE;
+    sSetupPacket.bmRequestType = USB_RTYPE_DIR_IN | USB_RTYPE_STANDARD |
+                                 USB_RTYPE_INTERFACE;
 
     //
     // Request a Report Descriptor.
     //
-    SetupPacket.bRequest = USBREQ_GET_DESCRIPTOR;
-    SetupPacket.wValue = USB_HID_DTYPE_REPORT << 8;
+    sSetupPacket.bRequest = USBREQ_GET_DESCRIPTOR;
+    sSetupPacket.wValue = USB_HID_DTYPE_REPORT << 8;
 
     //
     // Index is always 0 for device requests.
     //
-    SetupPacket.wIndex = 0;
+    sSetupPacket.wIndex = 0;
 
     //
     // All devices must have at least an 8 byte max packet size so just ask
     // for 8 bytes to start with.
     //
-    SetupPacket.wLength = ulSize;
+    sSetupPacket.wLength = ui32Size;
 
     //
     // Now get the full descriptor now that the actual maximum packet size
     // is known.
     //
-    ulBytes = USBHCDControlTransfer(
-                0,
-                &SetupPacket,
-                pHIDInstance->pDevice,
-                pucBuffer,
-                ulSize,
-                pHIDInstance->pDevice->DeviceDescriptor.bMaxPacketSize0);
+    ui32Bytes = USBHCDControlTransfer(0, &sSetupPacket,
+                psHIDInstance->psDevice, pui8Buffer, ui32Size,
+                psHIDInstance->psDevice->sDeviceDescriptor.bMaxPacketSize0);
 
-    return(ulBytes);
+    return(ui32Bytes);
 }
 
 //*****************************************************************************
 //
 //! This function is used to set or clear the boot protocol state of a device.
 //!
-//! \param ulInstance is the value that was returned from the call to
+//! \param psHIDInstance is the value that was returned from the call to
 //! USBHHIDOpen().
-//! \param ulBootProtocol is either zero or non-zero to indicate which protocol
-//! to use for the device.
+//! \param ui32BootProtocol is either zero or non-zero to indicate which
+//! protocol to use for the device.
 //!
 //! A USB host device can use this function to set the protocol for a connected
 //! HID device.  This is commonly used to set keyboards and mice into their
@@ -552,61 +536,53 @@ USBHHIDGetReportDescriptor(unsigned long ulInstance, unsigned char *pucBuffer,
 //! \return This function returns 0.
 //
 //*****************************************************************************
-unsigned long
-USBHHIDSetProtocol(unsigned long ulInstance, unsigned long ulBootProtocol)
+uint32_t
+USBHHIDSetProtocol(tHIDInstance *psHIDInstance, uint32_t ui32BootProtocol)
 {
-    tUSBRequest SetupPacket;
-    tHIDInstance *pHIDInstance;
-
-    pHIDInstance = (tHIDInstance *)ulInstance;
+    tUSBRequest sSetupPacket;
 
     //
     // This is a Standard Device IN request.
     //
-    SetupPacket.bmRequestType = USB_RTYPE_DIR_OUT | USB_RTYPE_CLASS
-                    | USB_RTYPE_INTERFACE;
+    sSetupPacket.bmRequestType = USB_RTYPE_DIR_OUT | USB_RTYPE_CLASS |
+                                 USB_RTYPE_INTERFACE;
 
     //
     // Request a Report Descriptor.
     //
-    SetupPacket.bRequest = USBREQ_SET_PROTOCOL;
+    sSetupPacket.bRequest = USBREQ_SET_PROTOCOL;
 
-    if(ulBootProtocol)
+    if(ui32BootProtocol)
     {
         //
         // Boot Protocol.
         //
-        SetupPacket.wValue = 0;
+        sSetupPacket.wValue = 0;
     }
     else
     {
         //
         // Report Protocol.
         //
-        SetupPacket.wValue = 1;
+        sSetupPacket.wValue = 1;
     }
 
     //
     // Index is always 0 for device requests.
     //
-    SetupPacket.wIndex = 0;
+    sSetupPacket.wIndex = 0;
 
     //
     // Always 0.
     //
-    SetupPacket.wLength = 0;
+    sSetupPacket.wLength = 0;
 
     //
     // Now get the full descriptor now that the actual maximum packet size
     // is known.
     //
-    USBHCDControlTransfer(
-        0,
-        &SetupPacket,
-        pHIDInstance->pDevice,
-        0,
-        0,
-        pHIDInstance->pDevice->DeviceDescriptor.bMaxPacketSize0);
+    USBHCDControlTransfer(0, &sSetupPacket, psHIDInstance->psDevice, 0, 0,
+                psHIDInstance->psDevice->sDeviceDescriptor.bMaxPacketSize0);
 
     return(0);
 }
@@ -615,12 +591,12 @@ USBHHIDSetProtocol(unsigned long ulInstance, unsigned long ulBootProtocol)
 //
 //! This function is used to retrieve a report from a HID device.
 //!
-//! \param ulInstance is the value that was returned from the call to
+//! \param psHIDInstance is the value that was returned from the call to
 //! USBHHIDOpen().
-//! \param ulInterface is the interface to retrieve the report from.
-//! \param pucData is the memory buffer to use to store the report.
-//! \param ulSize is the size in bytes of the buffer pointed to by
-//! \e pucBuffer.
+//! \param ui32Interface is the interface to retrieve the report from.
+//! \param pui8Data is the memory buffer to use to store the report.
+//! \param ui32Size is the size in bytes of the buffer pointed to by
+//! \e pui8Buffer.
 //!
 //! This function is used to retrieve a report from a USB pipe.  It is usually
 //! called when the USB HID layer has detected a new data available in a USB
@@ -631,41 +607,32 @@ USBHHIDSetProtocol(unsigned long ulInstance, unsigned long ulBootProtocol)
 //! \return Returns the number of bytes read from report.
 //
 //*****************************************************************************
-unsigned long
-USBHHIDGetReport(unsigned long ulInstance,
-                 unsigned long ulInterface,
-                 unsigned char *pucData,
-                 unsigned long ulSize)
+uint32_t
+USBHHIDGetReport(tHIDInstance *psHIDInstance, uint32_t ui32Interface,
+                 uint8_t *pui8Data, uint32_t ui32Size)
 {
-    tHIDInstance *pHIDInstance;
-
-    //
-    // Cast the instance pointer to the correct type for ease of use.
-    //
-    pHIDInstance = (tHIDInstance *)ulInstance;
-
     //
     // Read the Data out.
     //
-    ulSize = USBHCDPipeReadNonBlocking(pHIDInstance->ulIntInPipe, pucData,
-                                       ulSize);
+    ui32Size = USBHCDPipeReadNonBlocking(psHIDInstance->ui32IntInPipe,
+                                         pui8Data, ui32Size);
 
     //
     // Return the number of bytes read from the interrupt in pipe.
     //
-    return(ulSize);
+    return(ui32Size);
 }
 
 //*****************************************************************************
 //
 //! This function is used to send a report to a HID device.
 //!
-//! \param ulInstance is the value that was returned from the call to
+//! \param psHIDInstance is the value that was returned from the call to
 //! USBHHIDOpen().
-//! \param ulInterface is the interface to send the report to.
-//! \param pucData is the memory buffer to use to store the report.
-//! \param ulSize is the size in bytes of the buffer pointed to by
-//! \e pucBuffer.
+//! \param ui32Interface is the interface to send the report to.
+//! \param pui8Data is the memory buffer to use to store the report.
+//! \param ui32Size is the size in bytes of the buffer pointed to by
+//! \e pui8Buffer.
 //!
 //! This function is used to send a report to a USB HID device.  It can be
 //! only be called from outside the callback context as this function will not
@@ -674,46 +641,43 @@ USBHHIDGetReport(unsigned long ulInstance,
 //! \return Returns the number of bytes sent to the device.
 //
 //*****************************************************************************
-unsigned long
-USBHHIDSetReport(unsigned long ulInstance, unsigned long ulInterface,
-                 unsigned char *pucData, unsigned long ulSize)
+uint32_t
+USBHHIDSetReport(tHIDInstance *psHIDInstance, uint32_t ui32Interface,
+                 uint8_t *pui8Data, uint32_t ui32Size)
 {
-    tUSBRequest SetupPacket;
-    tHIDInstance *pHIDInstance;
-
-    pHIDInstance = (tHIDInstance *)ulInstance;
+    tUSBRequest sSetupPacket;
 
     //
-    // This is a Standard Device IN request.
+    // This is a class specific OUT request.
     //
-    SetupPacket.bmRequestType = USB_RTYPE_DIR_OUT | USB_RTYPE_CLASS
-                    | USB_RTYPE_INTERFACE;
+    sSetupPacket.bmRequestType = USB_RTYPE_DIR_OUT | USB_RTYPE_CLASS |
+                                 USB_RTYPE_INTERFACE;
 
     //
     // Request a Report Descriptor.
     //
-    SetupPacket.bRequest = USBREQ_SET_REPORT;
-    SetupPacket.wValue = USB_HID_REPORT_OUTPUT << 8;
+    sSetupPacket.bRequest = USBREQ_SET_REPORT;
+    sSetupPacket.wValue = USB_HID_REPORT_OUTPUT << 8;
 
     //
     // Index is always 0 for device requests.
     //
-    SetupPacket.wIndex = (unsigned short)ulInterface;
+    sSetupPacket.wIndex = (uint16_t)ui32Interface;
 
     //
     // Always 0.
     //
-    SetupPacket.wLength = ulSize;
+    sSetupPacket.wLength = ui32Size;
 
     //
     // Now get the full descriptor now that the actual maximum packet size
     // is known.
     //
-    USBHCDControlTransfer(0, &SetupPacket, pHIDInstance->pDevice,
-            pucData, ulSize,
-            pHIDInstance->pDevice->DeviceDescriptor.bMaxPacketSize0);
+    USBHCDControlTransfer(0, &sSetupPacket, psHIDInstance->psDevice,
+            pui8Data, ui32Size,
+            psHIDInstance->psDevice->sDeviceDescriptor.bMaxPacketSize0);
 
-    return(ulSize);
+    return(ui32Size);
 }
 
 //*****************************************************************************

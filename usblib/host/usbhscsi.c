@@ -2,7 +2,7 @@
 //
 // usbhscsi.c - USB host SCSI layer used by the USB host MSC driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "usblib/usblib.h"
 #include "usblib/usbmsc.h"
@@ -47,63 +49,62 @@
 //
 //! This function is used to issue SCSI commands via USB.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param pSCSICmd is the SCSI command structure to send.
-//! \param pucData is pointer to the command data to be sent.
-//! \param pulSize is the number of bytes is the number of bytes expected or
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param psSCSICmd is the SCSI command structure to send.
+//! \param pui8Data is pointer to the command data to be sent.
+//! \param pui32Size is the number of bytes is the number of bytes expected or
 //! sent by the command.
 //!
 //! This internal function is used to handle SCSI commands sent by other
 //! functions.  It serves as a layer between the SCSI command and the USB
 //! interface being used to send the command.  The \e pSCSI parameter contains
 //! the SCSI command to send.  For commands that expect data back, the
-//! \e pucData is the buffer to store the data into and \e pulSize is used to
-//! store the amount of data to request as well as used to indicate how many
-//! bytes were filled into the \e pucData buffer on return.  For commands that
-//! are sending data, \e pucData is the data to be sent and \e pulSize is the
-//! number of bytes to send.
+//! \e pui8Data is the buffer to store the data into and \e pui32Size is used
+//! to store the amount of data to request as well as used to indicate how many
+//! bytes were filled into the \e pui8Data buffer on return.  For commands that
+//! are sending data, \e pui8Data is the data to be sent and \e pui32Size is
+//! the number of bytes to send.
 //!
 //! \return This function returns the SCSI status from the command.  The value
 //! will be either \b SCSI_CMD_STATUS_PASS or \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-static unsigned long
-USBHSCSISendCommand(unsigned long ulInPipe, unsigned long ulOutPipe,
-                    tMSCCBW *pSCSICmd, unsigned char *pucData,
-                    unsigned long *pulSize)
+static uint32_t
+USBHSCSISendCommand(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                    tMSCCBW *psSCSICmd, uint8_t *pui8Data, uint32_t *pui32Size)
 {
-    tMSCCSW CmdStatus;
-    unsigned long ulBytes;
+    tMSCCSW sCmdStatus;
+    uint32_t ui32Bytes;
 
     //
     // Initialize the command status.
     //
-    CmdStatus.dCSWSignature = 0;
-    CmdStatus.dCSWTag = 0;
-    CmdStatus.bCSWStatus = SCSI_CMD_STATUS_FAIL;
+    sCmdStatus.dCSWSignature = 0;
+    sCmdStatus.dCSWTag = 0;
+    sCmdStatus.bCSWStatus = SCSI_CMD_STATUS_FAIL;
 
     //
     // Set the CBW signature and tag.
     //
-    pSCSICmd->dCBWSignature = CBW_SIGNATURE;
-    pSCSICmd->dCBWTag = CBW_TAG_VALUE;
+    psSCSICmd->dCBWSignature = CBW_SIGNATURE;
+    psSCSICmd->dCBWTag = CBW_TAG_VALUE;
 
     //
     // Set the size of the data to be returned by the device.
     //
-    pSCSICmd->dCBWDataTransferLength = *pulSize;
+    psSCSICmd->dCBWDataTransferLength = *pui32Size;
 
     //
     // Send the command.
     //
-    ulBytes = USBHCDPipeWrite(ulOutPipe,
-                              (unsigned char*)pSCSICmd, sizeof(tMSCCBW));
+    ui32Bytes = USBHCDPipeWrite(ui32OutPipe, (uint8_t*)psSCSICmd,
+                                sizeof(tMSCCBW));
 
     //
     // If no bytes went out then the command failed.
     //
-    if(ulBytes == 0)
+    if(ui32Bytes == 0)
     {
         return(SCSI_CMD_STATUS_FAIL);
     }
@@ -111,40 +112,40 @@ USBHSCSISendCommand(unsigned long ulInPipe, unsigned long ulOutPipe,
     //
     // Only request data if there is data to request.
     //
-    if(pSCSICmd->dCBWDataTransferLength != 0)
+    if(psSCSICmd->dCBWDataTransferLength != 0)
     {
         //
         // See if this is a read or a write.
         //
-        if(pSCSICmd->bmCBWFlags & CBWFLAGS_DIR_IN)
+        if(psSCSICmd->bmCBWFlags & CBWFLAGS_DIR_IN)
         {
             //
             // Read the data back.
             //
-            *pulSize = USBHCDPipeRead(ulInPipe, pucData, *pulSize);
+            *pui32Size = USBHCDPipeRead(ui32InPipe, pui8Data, *pui32Size);
         }
         else
         {
             //
             // Write the data out.
             //
-            *pulSize = USBHCDPipeWrite(ulOutPipe, pucData, *pulSize);
+            *pui32Size = USBHCDPipeWrite(ui32OutPipe, pui8Data, *pui32Size);
         }
     }
 
     //
     // Get the status of the command.
     //
-    ulBytes = USBHCDPipeRead(ulInPipe, (unsigned char *)&CmdStatus,
-                             sizeof(tMSCCSW));
+    ui32Bytes = USBHCDPipeRead(ui32InPipe, (uint8_t *)&sCmdStatus,
+                               sizeof(tMSCCSW));
 
 
     //
     // If the status was invalid or did not have the correct signature then
     // indicate a failure.
     //
-    if((ulBytes == 0) || (CmdStatus.dCSWSignature != CSW_SIGNATURE) ||
-       (CmdStatus.dCSWTag != CBW_TAG_VALUE))
+    if((ui32Bytes == 0) || (sCmdStatus.dCSWSignature != CSW_SIGNATURE) ||
+       (sCmdStatus.dCSWTag != CBW_TAG_VALUE))
     {
         return(SCSI_CMD_STATUS_FAIL);
     }
@@ -152,24 +153,24 @@ USBHSCSISendCommand(unsigned long ulInPipe, unsigned long ulOutPipe,
     //
     // Return the status.
     //
-    return((unsigned long)CmdStatus.bCSWStatus);
+    return((uint32_t)sCmdStatus.bCSWStatus);
 }
 
 //*****************************************************************************
 //
 //! This will issue the SCSI inquiry command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param pucData is the data buffer to return the results into.
-//! \param pulSize is the size of buffer that was passed in on entry and the
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param pui8Data is the data buffer to return the results into.
+//! \param pui32Size is the size of buffer that was passed in on entry and the
 //! number of bytes returned.
 //!
 //! This function should be used to issue a SCSI Inquiry command to a mass
-//! storage device.  To allow for multiple devices, the \e ulInPipe and
-//! \e ulOutPipe parameters indicate which USB pipes to use for this call.
+//! storage device.  To allow for multiple devices, the \e ui32InPipe and
+//! \e ui32OutPipe parameters indicate which USB pipes to use for this call.
 //!
-//! \note The \e pucData buffer pointer should have at least
+//! \note The \e pui8Data buffer pointer should have at least
 //! \b SCSI_INQUIRY_DATA_SZ bytes of data or this function will overflow the
 //! buffer.
 //!
@@ -177,17 +178,17 @@ USBHSCSISendCommand(unsigned long ulInPipe, unsigned long ulOutPipe,
 //! will be either \b SCSI_CMD_STATUS_PASS or \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIInquiry(unsigned long ulInPipe, unsigned long ulOutPipe,
-                unsigned char *pucData, unsigned long *pulSize)
+uint32_t
+USBHSCSIInquiry(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                uint8_t *pui8Data, uint32_t *pui32Size)
 {
-    tMSCCBW SCSICmd;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // The number of bytes of data that the host expects to transfer on the
@@ -197,58 +198,58 @@ USBHSCSIInquiry(unsigned long ulInPipe, unsigned long ulOutPipe,
     // and the device shall ignore the value of the Direction bit in
     // bmCBWFlags.
     //
-    *pulSize = SCSI_INQUIRY_DATA_SZ;
+    *pui32Size = SCSI_INQUIRY_DATA_SZ;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // This is the length of the command itself.
     //
-    SCSICmd.bCBWCBLength = 6;
+    sSCSICmd.bCBWCBLength = 6;
 
     //
     // Send Inquiry command with no request for vital product data.
     //
-    pulData[0] = SCSI_INQUIRY_CMD;
+    pui32Data[0] = SCSI_INQUIRY_CMD;
 
     //
     // Allocation length.
     //
-    pulData[1] = SCSI_INQUIRY_DATA_SZ;
-    pulData[2] = 0;
-    pulData[3] = 0;
+    pui32Data[1] = SCSI_INQUIRY_DATA_SZ;
+    pui32Data[2] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************
 //
 //! This will issue the SCSI read capacity command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param pucData is the data buffer to return the results into.
-//! \param pulSize is the size of buffer that was passed in on entry and the
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param pui8Data is the data buffer to return the results into.
+//! \param pui32Size is the size of buffer that was passed in on entry and the
 //! number of bytes returned.
 //!
 //! This function should be used to issue a SCSI Read Capacity command
 //! to a mass storage device that is connected.  To allow for multiple devices,
-//! the \e ulInPipe and \e ulOutPipe parameters indicate which USB pipes to
+//! the \e ui32InPipe and \e ui32OutPipe parameters indicate which USB pipes to
 //! use for this call.
 //!
-//! \note The \e pucData buffer pointer should have at least
+//! \note The \e pui8Data buffer pointer should have at least
 //! \b SCSI_READ_CAPACITY_SZ bytes of data or this function will overflow the
 //! buffer.
 //!
@@ -256,136 +257,136 @@ USBHSCSIInquiry(unsigned long ulInPipe, unsigned long ulOutPipe,
 //! will be either \b SCSI_CMD_STATUS_PASS or \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIReadCapacity(unsigned long ulInPipe, unsigned long ulOutPipe,
-                     unsigned char *pucData, unsigned long *pulSize)
+uint32_t
+USBHSCSIReadCapacity(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                     uint8_t *pui8Data, uint32_t *pui32Size)
 {
-    tMSCCBW SCSICmd;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // Set the size of the command data.
     //
-    *pulSize = SCSI_READ_CAPACITY_SZ;
+    *pui32Size = SCSI_READ_CAPACITY_SZ;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the length of the command itself.
     //
-    SCSICmd.bCBWCBLength = 12;
+    sSCSICmd.bCBWCBLength = 12;
 
     //
     // Only use the first byte and set it to the Read Capacity command.  The
     // rest are set to 0.
     //
-    pulData[0] = SCSI_READ_CAPACITY;
-    pulData[1] = 0;
-    pulData[2] = 0;
-    pulData[3] = 0;
+    pui32Data[0] = SCSI_READ_CAPACITY;
+    pui32Data[1] = 0;
+    pui32Data[2] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************
 //
 //! This will issue the SCSI read capacities command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param pucData is the data buffer to return the results into.
-//! \param pulSize is the size of buffer that was passed in on entry and the
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param pui8Data is the data buffer to return the results into.
+//! \param pui32Size is the size of buffer that was passed in on entry and the
 //! number of bytes returned.
 //!
 //! This function should be used to issue a SCSI Read Capacities command
 //! to a mass storage device that is connected.  To allow for multiple devices,
-//! the \e ulInPipe and \e ulOutPipe parameters indicate which USB pipes to
+//! the \e ui32InPipe and \e ui32OutPipe parameters indicate which USB pipes to
 //! use for this call.
 //!
 //! \return This function returns the SCSI status from the command.  The value
 //! will be either \b SCSI_CMD_STATUS_PASS or \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIReadCapacities(unsigned long ulInPipe, unsigned long ulOutPipe,
-                       unsigned char *pucData, unsigned long *pulSize)
+uint32_t
+USBHSCSIReadCapacities(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                       uint8_t *pui8Data, uint32_t *pui32Size)
 {
-    tMSCCBW SCSICmd;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the length of the command itself.
     //
-    SCSICmd.bCBWCBLength = 12;
+    sSCSICmd.bCBWCBLength = 12;
 
     //
     // Only use the first byte and set it to the Read Capacity command.  The
     // rest are set to 0.
     //
-    pulData[0] = SCSI_READ_CAPACITIES;
-    pulData[1] = 0;
-    pulData[2] = 0;
-    pulData[3] = 0;
+    pui32Data[0] = SCSI_READ_CAPACITIES;
+    pui32Data[1] = 0;
+    pui32Data[2] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************
 //
 //! This will issue the SCSI Mode Sense(6) command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param ulFlags is a combination of flags defining the exact query that is
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param ui32Flags is a combination of flags defining the exact query that is
 //! to be made.
-//! \param pucData is the data buffer to return the results into.
-//! \param pulSize is the size of the buffer on entry and number of bytes read
-//! on exit.
+//! \param pui8Data is the data buffer to return the results into.
+//! \param pui32Size is the size of the buffer on entry and number of bytes
+//! read on exit.
 //!
 //! This function should be used to issue a SCSI Mode Sense(6) command
-//! to a mass storage device.  To allow for multiple devices,the \e ulInPipe
-//! and \e ulOutPipe parameters indicate which USB pipes to use for this call.
-//! The call will return at most the number of bytes in the \e pulSize
-//! parameter, however it can return less and change the \e pulSize parameter
-//! to the number of valid bytes in the \e *pulSize buffer.
+//! to a mass storage device.  To allow for multiple devices,the \e ui32InPipe
+//! and \e ui32OutPipe parameters indicate which USB pipes to use for this
+//! call. The call will return at most the number of bytes in the \e pui32Size
+//! parameter, however it can return less and change the \e pui32Size parameter
+//! to the number of valid bytes in the \e *pui32Size buffer.
 //!
-//! The \e ulFlags parameter is a combination of the following three sets of
+//! The \e ui32Flags parameter is a combination of the following three sets of
 //! definitions:
 //!
 //! One of the following values must be specified:
@@ -413,64 +414,64 @@ USBHSCSIReadCapacities(unsigned long ulInPipe, unsigned long ulOutPipe,
 //! Example: Request for all current settings.
 //!
 //! \verbatim
-//! SCSIModeSense6(ulInPipe, ulOutPipe,
+//! SCSIModeSense6(ui32InPipe, ui32OutPipe,
 //!                SCSI_MS_PC_CURRENT | SCSI_MS_PC_ALL,
-//!                pucData, pulSize);
+//!                pui8Data, pui32Size);
 //! \endverbatim
 //!
 //! \return This function returns the SCSI status from the command.  The value
 //! will be either \b SCSI_CMD_STATUS_PASS or \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIModeSense6(unsigned long ulInPipe, unsigned long ulOutPipe,
-                   unsigned long ulFlags, unsigned char *pucData,
-                   unsigned long *pulSize)
+uint32_t
+USBHSCSIModeSense6(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                   uint32_t ui32Flags, uint8_t *pui8Data,
+                   uint32_t *pui32Size)
 {
-    tMSCCBW SCSICmd;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the size of the command data.
     //
-    SCSICmd.bCBWCBLength = 6;
+    sSCSICmd.bCBWCBLength = 6;
 
     //
     // Set the options for the Mode Sense Command (6).
     //
-    pulData[0] = (SCSI_MODE_SENSE_6 | ulFlags);
-    pulData[1] = (unsigned char)*pulSize;
-    pulData[2] = 0;
-    pulData[3] = 0;
+    pui32Data[0] = (SCSI_MODE_SENSE_6 | ui32Flags);
+    pui32Data[1] = (uint8_t)*pui32Size;
+    pui32Data[2] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************
 //
 //! This function issues a SCSI Test Unit Ready command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
 //!
 //! This function is used to issue a SCSI Test Unit Ready command to a device.
 //! This call will simply return the results of issuing this command.
@@ -480,197 +481,198 @@ USBHSCSIModeSense6(unsigned long ulInPipe, unsigned long ulOutPipe,
 //! \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSITestUnitReady(unsigned long ulInPipe, unsigned long ulOutPipe)
+uint32_t
+USBHSCSITestUnitReady(uint32_t ui32InPipe, uint32_t ui32OutPipe)
 {
-    tMSCCBW SCSICmd;
-    unsigned long ulSize;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t ui32Size;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // No data in this command.
     //
-    ulSize = 0;
+    ui32Size = 0;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the size of the command data.
     //
-    SCSICmd.bCBWCBLength = 6;
+    sSCSICmd.bCBWCBLength = 6;
 
     //
     // Set the parameter options.
     //
-    pulData[0] = SCSI_TEST_UNIT_READY;
-    pulData[1] = 0;
-    pulData[2] = 0;
-    pulData[3] = 0;
+    pui32Data[0] = SCSI_TEST_UNIT_READY;
+    pui32Data[1] = 0;
+    pui32Data[2] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, 0, &ulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, 0,
+                               &ui32Size));
 }
 
 //*****************************************************************************
 //
 //! This function issues a SCSI Request Sense command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param pucData is the data buffer to return the results into.
-//! \param pulSize is the size of the buffer on entry and number of bytes read
-//! on exit.
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param pui8Data is the data buffer to return the results into.
+//! \param pui32Size is the size of the buffer on entry and number of bytes
+//! read on exit.
 //!
 //! This function is used to issue a SCSI Request Sense command to a device.
-//! It will return the data in the buffer pointed to by \e pucData.  The
-//! parameter \e pulSize should have the allocation size in bytes of the buffer
-//! pointed to by pucData.
+//! It will return the data in the buffer pointed to by \e pui8Data.  The
+//! parameter \e pui32Size should have the allocation size in bytes of the
+//! buffer pointed to by \e pui8Data.
 //!
 //! \return This function returns the results of the SCSI Request Sense
 //! command.  The value will be either \b SCSI_CMD_STATUS_PASS or
 //! \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIRequestSense(unsigned long ulInPipe, unsigned long ulOutPipe,
-                     unsigned char *pucData, unsigned long *pulSize)
+uint32_t
+USBHSCSIRequestSense(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                     uint8_t *pui8Data, uint32_t *pui32Size)
 {
-    tMSCCBW SCSICmd;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the size of the command data.
     //
-    SCSICmd.bCBWCBLength = 12;
+    sSCSICmd.bCBWCBLength = 12;
 
     //
     // Set the parameter options.
     //
-    pulData[0] = SCSI_REQUEST_SENSE;
-    pulData[1] = 18;
-    pulData[2] = 0;
-    pulData[3] = 0;
+    pui32Data[0] = SCSI_REQUEST_SENSE;
+    pui32Data[1] = 18;
+    pui32Data[2] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************
 //
 //! This function issues a SCSI Read(10) command to a device.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param ulLBA is the logical block address to read.
-//! \param pucData is the data buffer to return the data.
-//! \param pulSize is the size of the buffer on entry and number of bytes read
-//! on exit.
-//! \param ulNumBlocks is the number of contiguous blocks to read from the
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param ui32LBA is the logical block address to read.
+//! \param pui8Data is the data buffer to return the data.
+//! \param pui32Size is the size of the buffer on entry and number of bytes
+//! read on exit.
+//! \param ui32NumBlocks is the number of contiguous blocks to read from the
 //! device.
 //!
 //! This function is used to issue a SCSI Read(10) command to a device.  The
-//! \e ulLBA parameter specifies the logical block address to read from the
+//! \e ui32LBA parameter specifies the logical block address to read from the
 //! device.  The data from this block will be returned in the buffer pointed to
-//! by \e pucData.  The parameter \e pulSize should indicate enough space to
-//! hold a full block size, or only the first pulSize bytes of the LBA will
-//! be returned.
+//! by \e pui8Data.  The parameter \e pui32Size should indicate enough space to
+//! hold a full block size, or only the first \e pui32Size bytes of the LBA are
+//! returned.
 //!
 //! \return This function returns the results of the SCSI Read(10) command.
 //! The value will be either \b SCSI_CMD_STATUS_PASS or
 //! \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIRead10(unsigned long ulInPipe, unsigned long ulOutPipe,
-               unsigned long ulLBA, unsigned char *pucData,
-               unsigned long *pulSize, unsigned long ulNumBlocks)
+uint32_t
+USBHSCSIRead10(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+               uint32_t ui32LBA, uint8_t *pui8Data,
+               uint32_t *pui32Size, uint32_t ui32NumBlocks)
 {
-    tMSCCBW SCSICmd;
+    tMSCCBW sSCSICmd;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_IN;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the size of the command data.
     //
-    SCSICmd.bCBWCBLength = 10;
+    sSCSICmd.bCBWCBLength = 10;
 
     //
     // Set the parameter options.
     //
-    SCSICmd.CBWCB[0] = SCSI_READ_10;
+    sSCSICmd.CBWCB[0] = SCSI_READ_10;
 
     //
     // Clear the reserved field.
     //
-    SCSICmd.CBWCB[1] = 0;
+    sSCSICmd.CBWCB[1] = 0;
 
     //
     // LBA starts at offset 2.
     //
-    SCSICmd.CBWCB[2] = (unsigned char)(ulLBA >> 24);
-    SCSICmd.CBWCB[3] = (unsigned char)(ulLBA >> 16);
-    SCSICmd.CBWCB[4] = (unsigned char)(ulLBA >> 8);
-    SCSICmd.CBWCB[5] = (unsigned char)ulLBA;
+    sSCSICmd.CBWCB[2] = (uint8_t)(ui32LBA >> 24);
+    sSCSICmd.CBWCB[3] = (uint8_t)(ui32LBA >> 16);
+    sSCSICmd.CBWCB[4] = (uint8_t)(ui32LBA >> 8);
+    sSCSICmd.CBWCB[5] = (uint8_t)ui32LBA;
 
     //
     // Clear the reserved field.
     //
-    SCSICmd.CBWCB[6] = 0;
+    sSCSICmd.CBWCB[6] = 0;
 
     //
     // Transfer length in blocks starts at offset 2.
     // This also sets the Control value to 0 at offset 9.
     //
-    SCSICmd.CBWCB[7] = (ulNumBlocks & 0xFF00) >> 8;
-    *((unsigned long *)&SCSICmd.CBWCB[8]) = (ulNumBlocks & 0xFF);
-    *((unsigned long *)&SCSICmd.CBWCB[12]) = 0;
+    sSCSICmd.CBWCB[7] = (ui32NumBlocks & 0xFF00) >> 8;
+    *((uint32_t *)&sSCSICmd.CBWCB[8]) = (ui32NumBlocks & 0xFF);
+    *((uint32_t *)&sSCSICmd.CBWCB[12]) = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************
@@ -678,17 +680,17 @@ USBHSCSIRead10(unsigned long ulInPipe, unsigned long ulOutPipe,
 //! This function issues a SCSI Write(10) command to a device.
 //!
 //! This function is used to issue a SCSI Write(10) command to a device.  The
-//! \e ulLBA parameter specifies the logical block address on the device.  The
-//! data to write to this block should be in the buffer pointed to by
-//! \e pucData parameter.  The parameter \e pulSize should indicate the amount
-//! of data to write to the specified LBA.
+//! \e ui32LBA parameter specifies the logical block address on the device.
+//! The data to write to this block should be in the buffer pointed to by
+//! \e pui8Data parameter.  The parameter \e pui32Size should indicate the
+//! amount of data to write to the specified LBA.
 //!
-//! \param ulInPipe is the USB IN pipe to use for this command.
-//! \param ulOutPipe is the USB OUT pipe to use for this command.
-//! \param ulLBA is the logical block address to read.
-//! \param pucData is the data buffer to write out.
-//! \param pulSize is the size of the buffer.
-//! \param ulNumBlocks is the number of contiguous blocks to write to the
+//! \param ui32InPipe is the USB IN pipe to use for this command.
+//! \param ui32OutPipe is the USB OUT pipe to use for this command.
+//! \param ui32LBA is the logical block address to read.
+//! \param pui8Data is the data buffer to write out.
+//! \param pui32Size is the size of the buffer.
+//! \param ui32NumBlocks is the number of contiguous blocks to write to the
 //! device.
 //!
 //! \return This function returns the results of the SCSI Write(10) command.
@@ -696,78 +698,78 @@ USBHSCSIRead10(unsigned long ulInPipe, unsigned long ulOutPipe,
 //! \b SCSI_CMD_STATUS_FAIL.
 //
 //*****************************************************************************
-unsigned long
-USBHSCSIWrite10(unsigned long ulInPipe, unsigned long ulOutPipe,
-                unsigned long ulLBA, unsigned char *pucData,
-                unsigned long *pulSize, unsigned long ulNumBlocks)
+uint32_t
+USBHSCSIWrite10(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                uint32_t ui32LBA, uint8_t *pui8Data,
+                uint32_t *pui32Size, uint32_t ui32NumBlocks)
 {
-    tMSCCBW SCSICmd;
-    unsigned long *pulData;
+    tMSCCBW sSCSICmd;
+    uint32_t *pui32Data;
 
     //
-    // Create a local unsigned long pointer to the command.
+    // Create a local 32-bit pointer to the command.
     //
-    pulData = (unsigned long *)SCSICmd.CBWCB;
+    pui32Data = (uint32_t *)sSCSICmd.CBWCB;
 
     //
     // This is an IN request.
     //
-    SCSICmd.bmCBWFlags = CBWFLAGS_DIR_OUT;
+    sSCSICmd.bmCBWFlags = CBWFLAGS_DIR_OUT;
 
     //
     // Only handle LUN 0.
     //
-    SCSICmd.bCBWLUN = 0;
+    sSCSICmd.bCBWLUN = 0;
 
     //
     // Set the size of the command data.
     //
-    SCSICmd.bCBWCBLength = 10;
+    sSCSICmd.bCBWCBLength = 10;
 
     //
     // Set the parameter options.
     //
-    SCSICmd.CBWCB[0] = SCSI_WRITE_10;
+    sSCSICmd.CBWCB[0] = SCSI_WRITE_10;
 
     //
     // Clear the reserved field.
     //
-    SCSICmd.CBWCB[1] = 0;
+    sSCSICmd.CBWCB[1] = 0;
 
     //
     // LBA starts at offset 2.
     //
-    SCSICmd.CBWCB[2] = (unsigned char)(ulLBA >> 24);
-    SCSICmd.CBWCB[3] = (unsigned char)(ulLBA >> 16);
-    SCSICmd.CBWCB[4] = (unsigned char)(ulLBA >> 8);
-    SCSICmd.CBWCB[5] = (unsigned char)ulLBA;
+    sSCSICmd.CBWCB[2] = (uint8_t)(ui32LBA >> 24);
+    sSCSICmd.CBWCB[3] = (uint8_t)(ui32LBA >> 16);
+    sSCSICmd.CBWCB[4] = (uint8_t)(ui32LBA >> 8);
+    sSCSICmd.CBWCB[5] = (uint8_t)ui32LBA;
 
     //
     // Clear the reserved field.
     //
-    SCSICmd.CBWCB[6] = 0;
+    sSCSICmd.CBWCB[6] = 0;
 
     //
     // Set the transfer length in blocks.
     // This also sets the Control value to 0 at offset 9.
     //
-    SCSICmd.CBWCB[7] = (ulNumBlocks & 0xFF00) >> 8;
+    sSCSICmd.CBWCB[7] = (ui32NumBlocks & 0xFF00) >> 8;
 
     //
     // The blocks go into is byte offset 8 or word address 2.
     //
-    pulData[2] = (ulNumBlocks & 0xFF);
+    pui32Data[2] = (ui32NumBlocks & 0xFF);
 
     //
     // The blocks go into is byte offset 12 or word address 3.
     //
-    pulData[3] = 0;
+    pui32Data[3] = 0;
 
     //
     // Send the command and get the results.
     //
-    return(USBHSCSISendCommand(ulInPipe, ulOutPipe, &SCSICmd, pucData,
-                               pulSize));
+    return(USBHSCSISendCommand(ui32InPipe, ui32OutPipe, &sSCSICmd, pui8Data,
+                               pui32Size));
 }
 
 //*****************************************************************************

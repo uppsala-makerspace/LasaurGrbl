@@ -2,7 +2,7 @@
 //
 // usbdhidmouse.c - USB HID Mouse device class driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,14 +18,17 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
 #include "driverlib/usb.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/usbhid.h"
 #include "usblib/device/usbdhid.h"
@@ -40,10 +43,79 @@
 
 //*****************************************************************************
 //
+// HID device configuration descriptor.
+//
+// It is vital that the configuration descriptor bConfigurationValue field
+// (byte 6) is 1 for the first configuration and increments by 1 for each
+// additional configuration defined here.  This relationship is assumed in the
+// device stack for simplicity even though the USB 2.0 specification imposes
+// no such restriction on the bConfigurationValue values.
+//
+// Note that this structure is deliberately located in RAM since we need to
+// be able to patch some values in it based on client requirements.
+//
+//*****************************************************************************
+uint8_t g_pui8MouseDescriptor[] =
+{
+    //
+    // Configuration descriptor header.
+    //
+    9,                          // Size of the configuration descriptor.
+    USB_DTYPE_CONFIGURATION,    // Type of this descriptor.
+    USBShort(34),               // The total size of this full structure.
+    1,                          // The number of interfaces in this
+                                // configuration.
+    1,                          // The unique value for this configuration.
+    5,                          // The string identifier that describes this
+                                // configuration.
+    USB_CONF_ATTR_SELF_PWR,     // Bus Powered, Self Powered, remote wake up.
+    250,                        // The maximum power in 2mA increments.
+};
+
+//*****************************************************************************
+//
+// The remainder of the configuration descriptor is stored in flash since we
+// don't need to modify anything in it at runtime.
+//
+//*****************************************************************************
+uint8_t g_pui8HIDInterface[HIDINTERFACE_SIZE] =
+{
+    //
+    // HID Device Class Interface Descriptor.
+    //
+    9,                          // Size of the interface descriptor.
+    USB_DTYPE_INTERFACE,        // Type of this descriptor.
+    0,                          // The index for this interface.
+    0,                          // The alternate setting for this interface.
+    1,                          // The number of endpoints used by this
+                                // interface.
+    USB_CLASS_HID,              // The interface class
+    USB_HID_SCLASS_BOOT,        // The interface sub-class.
+    USB_HID_PROTOCOL_MOUSE,     // The interface protocol for the sub-class
+                                // specified above.
+    4,                          // The string index for this interface.
+};
+
+const uint8_t g_pui8HIDInEndpoint[HIDINENDPOINT_SIZE] =
+{
+    //
+    // Interrupt IN endpoint descriptor
+    //
+    7,                          // The size of the endpoint descriptor.
+    USB_DTYPE_ENDPOINT,         // Descriptor type is an endpoint.
+    USB_EP_DESC_IN | USBEPToIndex(USB_EP_1),
+    USB_EP_ATTR_INT,            // Endpoint is an interrupt endpoint.
+    USBShort(USBFIFOSizeToBytes(USB_FIFO_SZ_64)),
+                                // The maximum packet size.
+    16,                         // The polling interval for this endpoint.
+};
+
+//*****************************************************************************
+//
 // The report descriptor for the mouse class device.
 //
 //*****************************************************************************
-static const unsigned char g_pucMouseReportDescriptor[]=
+static const uint8_t g_pui8MouseReportDescriptor[] =
 {
     UsagePage(USB_HID_GENERIC_DESKTOP),
     Usage(USB_HID_MOUSE),
@@ -107,33 +179,118 @@ static const unsigned char g_pucMouseReportDescriptor[]=
 
 //*****************************************************************************
 //
-// The HID class descriptor table.  For the mouse class, we have only a single
-// report descriptor.
-//
-//*****************************************************************************
-static const unsigned char * const g_pMouseClassDescriptors[] =
-{
-    g_pucMouseReportDescriptor
-};
-
-//*****************************************************************************
-//
 // The HID descriptor for the mouse device.
 //
 //*****************************************************************************
 static const tHIDDescriptor g_sMouseHIDDescriptor =
 {
-    9,                                 // bLength
-    USB_HID_DTYPE_HID,                 // bDescriptorType
-    0x111,                             // bcdHID (version 1.11 compliant)
-    0,                                 // bCountryCode (not localized)
-    1,                                 // bNumDescriptors
+    9,                              // bLength
+    USB_HID_DTYPE_HID,              // bDescriptorType
+    0x111,                          // bcdHID (version 1.11 compliant)
+    0,                              // bCountryCode (not localized)
+    1,                              // bNumDescriptors
     {
         {
-            USB_HID_DTYPE_REPORT,                  // Report descriptor
-            sizeof(g_pucMouseReportDescriptor)     // Size of report descriptor
+            USB_HID_DTYPE_REPORT,   // Report descriptor
+            sizeof(g_pui8MouseReportDescriptor)
+                                    // Size of report descriptor
         }
     }
+};
+
+//*****************************************************************************
+//
+// The HID configuration descriptor is defined as four or five sections
+// depending upon the client's configuration choice.  These sections are:
+//
+// 1.  The 9 byte configuration descriptor (RAM).
+// 2.  The interface descriptor (RAM).
+// 3.  The HID report and physical descriptors (provided by the client)
+//     (FLASH).
+// 4.  The mandatory interrupt IN endpoint descriptor (FLASH).
+// 5.  The optional interrupt OUT endpoint descriptor (FLASH).
+//
+//*****************************************************************************
+const tConfigSection g_sHIDConfigSection =
+{
+    sizeof(g_pui8MouseDescriptor),
+    g_pui8MouseDescriptor
+};
+
+const tConfigSection g_sHIDInterfaceSection =
+{
+    sizeof(g_pui8HIDInterface),
+    g_pui8HIDInterface
+};
+
+const tConfigSection g_sHIDInEndpointSection =
+{
+    sizeof(g_pui8HIDInEndpoint),
+    g_pui8HIDInEndpoint
+};
+
+//*****************************************************************************
+//
+// Place holder for the user's HID descriptor block.
+//
+//*****************************************************************************
+tConfigSection g_sHIDDescriptorSection =
+{
+   sizeof(g_sMouseHIDDescriptor),
+   (const uint8_t *)&g_sMouseHIDDescriptor
+};
+
+//*****************************************************************************
+//
+// This array lists all the sections that must be concatenated to make a
+// single, complete HID configuration descriptor.
+//
+//*****************************************************************************
+const tConfigSection *g_psHIDSections[] =
+{
+    &g_sHIDConfigSection,
+    &g_sHIDInterfaceSection,
+    &g_sHIDDescriptorSection,
+    &g_sHIDInEndpointSection,
+};
+
+#define NUM_HID_SECTIONS        (sizeof(g_psHIDSections) /                    \
+                                 sizeof(g_psHIDSections[0]))
+
+//*****************************************************************************
+//
+// The header for the single configuration we support.  This is the root of
+// the data structure that defines all the bits and pieces that are pulled
+// together to generate the configuration descriptor.  Note that this must be
+// in RAM since we need to include or exclude the final section based on
+// client supplied initialization parameters.
+//
+//*****************************************************************************
+tConfigHeader g_sHIDConfigHeader =
+{
+    NUM_HID_SECTIONS,
+    g_psHIDSections
+};
+
+//*****************************************************************************
+//
+// Configuration Descriptor.
+//
+//*****************************************************************************
+const tConfigHeader * const g_ppsHIDConfigDescriptors[] =
+{
+    &g_sHIDConfigHeader
+};
+
+//*****************************************************************************
+//
+// The HID class descriptor table.  For the mouse class, we have only a single
+// report descriptor.
+//
+//*****************************************************************************
+static const uint8_t * const g_pui8MouseClassDescriptors[] =
+{
+    g_pui8MouseReportDescriptor
 };
 
 //*****************************************************************************
@@ -141,14 +298,10 @@ static const tHIDDescriptor g_sMouseHIDDescriptor =
 // Forward references for mouse device callback functions.
 //
 //*****************************************************************************
-static unsigned long HIDMouseRxHandler(void *pvCBData,
-                                          unsigned long ulEvent,
-                                          unsigned long ulMsgData,
-                                          void *pvMsgData);
-static unsigned long HIDMouseTxHandler(void *pvCBData,
-                                          unsigned long ulEvent,
-                                          unsigned long ulMsgData,
-                                          void *pvMsgData);
+static uint32_t HIDMouseRxHandler(void *pvMouseDevice, uint32_t ui32Event,
+                                  uint32_t ui32MsgData, void *pvMsgData);
+static uint32_t HIDMouseTxHandler(void *pvMouseDevice, uint32_t ui32Event,
+                                  uint32_t ui32MsgData, void *pvMsgData);
 
 //*****************************************************************************
 //
@@ -163,10 +316,11 @@ static unsigned long HIDMouseTxHandler(void *pvCBData,
 //
 // Main HID device class event handler function.
 //
-// \param pvCBData is the event callback pointer provided during USBDHIDInit().
-// This is a pointer to our HID device structure (&g_sHIDMouseDevice).
-// \param ulEvent identifies the event we are being called back for.
-// \param ulMsgData is an event-specific value.
+// \param pvMouseDevice is the event callback pointer provided during
+// USBDHIDInit().  This is a pointer to our HID device structure
+// (&g_sHIDMouseDevice).
+// \param ui32Event identifies the event we are being called back for.
+// \param ui32MsgData is an event-specific value.
 // \param pvMsgData is an event-specific pointer.
 //
 // This function is called by the HID device class driver to inform the
@@ -176,41 +330,41 @@ static unsigned long HIDMouseTxHandler(void *pvCBData,
 // \return Returns a value which is event-specific.
 //
 //*****************************************************************************
-static unsigned long
-HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
-                  unsigned long ulMsgData, void *pvMsgData)
+static uint32_t
+HIDMouseRxHandler(void *pvMouseDevice, uint32_t ui32Event,
+                  uint32_t ui32MsgData, void *pvMsgData)
 {
     tHIDMouseInstance *psInst;
-    tUSBDHIDMouseDevice *psDevice;
+    tUSBDHIDMouseDevice *psMouseDevice;
 
     //
-    // Make sure we didn't get a NULL pointer.
+    // Make sure we did not get a NULL pointer.
     //
-    ASSERT(pvCBData);
+    ASSERT(pvMouseDevice);
 
     //
     // Get a pointer to our instance data
     //
-    psDevice = (tUSBDHIDMouseDevice *)pvCBData;
-    psInst = psDevice->psPrivateHIDMouseData;
+    psMouseDevice = (tUSBDHIDMouseDevice *)pvMouseDevice;
+    psInst = &psMouseDevice->sPrivateData;
 
     //
     // Which event were we sent?
     //
-    switch (ulEvent)
+    switch(ui32Event)
     {
         //
         // The host has connected to us and configured the device.
         //
         case USB_EVENT_CONNECTED:
         {
-            psInst->ucUSBConfigured = true;
+            psInst->ui8USBConfigured = true;
 
             //
             // Pass the information on to the client.
             //
-            psDevice->pfnCallback(psDevice->pvCBData, USB_EVENT_CONNECTED,
-                                  0, (void *)0);
+            psMouseDevice->pfnCallback(psMouseDevice->pvCBData,
+                                       USB_EVENT_CONNECTED, 0, (void *)0);
 
             break;
         }
@@ -220,13 +374,13 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
         //
         case USB_EVENT_DISCONNECTED:
         {
-            psInst->ucUSBConfigured = false;
+            psInst->ui8USBConfigured = false;
 
             //
             // Pass the information on to the client.
             //
-            psDevice->pfnCallback(psDevice->pvCBData, USB_EVENT_DISCONNECTED,
-                                  0, (void *)0);
+            psMouseDevice->pfnCallback(psMouseDevice->pvCBData,
+                                       USB_EVENT_DISCONNECTED, 0, (void *)0);
 
             break;
         }
@@ -240,10 +394,10 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
         {
             //
             // We only support a single input report so we don't need to check
-            // the ulMsgValue parameter in this case.  Set the report pointer
+            // the ui32MsgValue parameter in this case.  Set the report pointer
             // in *pvMsgData and return the length of the report in bytes.
             //
-            *(unsigned char **)pvMsgData = psInst->pucReport;
+            *(uint8_t **)pvMsgData = psInst->pui8Report;
             return(8);
         }
 
@@ -280,7 +434,7 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
         //
         case USBD_HID_EVENT_SET_PROTOCOL:
         {
-            psInst->ucProtocol = ulMsgData;
+            psInst->ui8Protocol = ui32MsgData;
             break;
         }
 
@@ -290,7 +444,7 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
         //
         case USBD_HID_EVENT_GET_PROTOCOL:
         {
-            return(psInst->ucProtocol);
+            return(psInst->ui8Protocol);
         }
 
         //
@@ -300,8 +454,9 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
         case USB_EVENT_SUSPEND:
         case USB_EVENT_RESUME:
         {
-            return(psDevice->pfnCallback(psDevice->pvCBData, ulEvent,
-                                         ulMsgData, pvMsgData));
+            return(psMouseDevice->pfnCallback(psMouseDevice->pvCBData,
+                                              ui32Event, ui32MsgData,
+                                              pvMsgData));
         }
 
         //
@@ -319,10 +474,11 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
 //
 // HID device class transmit channel event handler function.
 //
-// \param pvCBData is the event callback pointer provided during USBDHIDInit().
-// This is a pointer to our HID device structure (&g_sHIDMouseDevice).
-// \param ulEvent identifies the event we are being called back for.
-// \param ulMsgData is an event-specific value.
+// \param pvMouseDevice is the event callback pointer provided during
+// USBDHIDInit(). This is a pointer to our HID device structure
+// (&g_sHIDMouseDevice).
+// \param ui32Event identifies the event we are being called back for.
+// \param ui32MsgData is an event-specific value.
 // \param pvMsgData is an event-specific pointer.
 //
 // This function is called by the HID device class driver to inform the
@@ -332,28 +488,28 @@ HIDMouseRxHandler(void *pvCBData, unsigned long ulEvent,
 // \return Returns a value which is event-specific.
 //
 //*****************************************************************************
-static unsigned long
-HIDMouseTxHandler(void *pvCBData, unsigned long ulEvent,
-                  unsigned long ulMsgData, void *pvMsgData)
+static uint32_t
+HIDMouseTxHandler(void *pvMouseDevice, uint32_t ui32Event,
+                  uint32_t ui32MsgData, void *pvMsgData)
 {
     tHIDMouseInstance *psInst;
-    tUSBDHIDMouseDevice *psDevice;
+    tUSBDHIDMouseDevice *psMouseDevice;
 
     //
-    // Make sure we didn't get a NULL pointer.
+    // Make sure we did not get a NULL pointer.
     //
-    ASSERT(pvCBData);
+    ASSERT(pvMouseDevice);
 
     //
     // Get a pointer to our instance data
     //
-    psDevice = (tUSBDHIDMouseDevice *)pvCBData;
-    psInst = psDevice->psPrivateHIDMouseData;
+    psMouseDevice = (tUSBDHIDMouseDevice *)pvMouseDevice;
+    psInst = &psMouseDevice->sPrivateData;
 
     //
     // Which event were we sent?
     //
-    switch (ulEvent)
+    switch (ui32Event)
     {
         //
         // A report transmitted via the interrupt IN endpoint was acknowledged
@@ -364,13 +520,14 @@ HIDMouseTxHandler(void *pvCBData, unsigned long ulEvent,
             //
             // Our last transmission is complete.
             //
-            psInst->eMouseState = HID_MOUSE_STATE_IDLE;
+            psInst->iMouseState = eHIDMouseStateIdle;
 
             //
             // Pass the event on to the client.
             //
-            psDevice->pfnCallback(psDevice->pvCBData, USB_EVENT_TX_COMPLETE,
-                                  ulMsgData, (void *)0);
+            psMouseDevice->pfnCallback(psMouseDevice->pvCBData,
+                                       USB_EVENT_TX_COMPLETE, ui32MsgData,
+                                       (void *)0);
 
             break;
         }
@@ -392,19 +549,19 @@ HIDMouseTxHandler(void *pvCBData, unsigned long ulEvent,
 //
 //! Initializes HID mouse device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for HID mouse device operation.
-//! \param psDevice points to a structure containing parameters customizing
-//! the operation of the HID mouse device.
+//! \param psMouseDevice points to a structure containing parameters
+//! customizing the operation of the HID mouse device.
 //!
 //! An application wishing to offer a USB HID mouse interface to a USB host
 //! must call this function to initialize the USB controller and attach the
 //! mouse device to the USB bus.  This function performs all required USB
 //! initialization.
 //!
-//! On successful completion, this function will return the \e psDevice pointer
-//! passed to it.  This must be passed on all future calls to the HID mouse
-//! device driver.
+//! On successful completion, this function will return the \e psMouseDevice
+//! pointer passed to it.  This must be passed on all future calls to the HID
+//! mouse device driver.
 //!
 //! When a host connects and configures the device, the application callback
 //! will receive \b USB_EVENT_CONNECTED after which calls can be made to
@@ -416,32 +573,36 @@ HIDMouseTxHandler(void *pvCBData, unsigned long ulEvent,
 //! Doing so will cause unpredictable (though almost certainly unpleasant)
 //! behavior.
 //!
-//! \return Returns NULL on failure or the psDevice pointer on success.
+//! \return Returns NULL on failure or the psMouseDevice pointer on success.
 //
 //*****************************************************************************
 void *
-USBDHIDMouseInit(unsigned long ulIndex, const tUSBDHIDMouseDevice *psDevice)
+USBDHIDMouseInit(uint32_t ui32Index, tUSBDHIDMouseDevice *psMouseDevice)
 {
     void *pvRetcode;
     tUSBDHIDDevice *psHIDDevice;
+    tConfigDescriptor *pConfigDesc;
 
     //
     // Check parameter validity.
     //
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateHIDMouseData);
-    ASSERT(psDevice->pfnCallback);
+    ASSERT(psMouseDevice);
+    ASSERT(psMouseDevice->ppui8StringDescriptors);
+    ASSERT(psMouseDevice->pfnCallback);
 
     //
     // Get a pointer to the HID device data.
     //
-    psHIDDevice = &psDevice->psPrivateHIDMouseData->sHIDDevice;
+    psHIDDevice = &psMouseDevice->sPrivateData.sHIDDevice;
+
+    pConfigDesc = (tConfigDescriptor *)g_pui8MouseDescriptor;
+    pConfigDesc->bmAttributes = psMouseDevice->ui8PwrAttributes;
+    pConfigDesc->bMaxPower =  (uint8_t)(psMouseDevice->ui16MaxPowermA / 2);
 
     //
     // Call the common initialization routine.
     //
-    pvRetcode = USBDHIDMouseCompositeInit(ulIndex, psDevice);
+    pvRetcode = USBDHIDMouseCompositeInit(ui32Index, psMouseDevice, 0);
 
     //
     // If we initialized the HID layer successfully, pass our device pointer
@@ -454,9 +615,9 @@ USBDHIDMouseInit(unsigned long ulIndex, const tUSBDHIDMouseDevice *psDevice)
         // structures and descriptors necessary to declare that we are a
         // keyboard.
         //
-        pvRetcode = USBDHIDInit(ulIndex, psHIDDevice);
+        pvRetcode = USBDHIDInit(ui32Index, psHIDDevice);
 
-        return((void *)psDevice);
+        return((void *)psMouseDevice);
     }
     else
     {
@@ -468,22 +629,28 @@ USBDHIDMouseInit(unsigned long ulIndex, const tUSBDHIDMouseDevice *psDevice)
 //
 //! Initializes HID mouse device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for HID mouse device operation.
-//! \param psDevice points to a structure containing parameters customizing
-//! the operation of the HID mouse device.
+//! \param psMouseDevice points to a structure containing parameters
+//! customizing the operation of the HID mouse device.
+//! \param psCompEntry is the composite device entry to initialize when
+//! creating a composite device.
 //!
 //! This call is very similar to USBDHIDMouseInit() except that it is used for
 //! initializing an instance of the HID mouse device for use in a composite
-//! device.
+//! device.  If this HID mouse is part of a composite device, then the
+//! \e psCompEntry should point to the composite device entry to initialize.
+//! This is part of the array that is passed to the USBDCompositeInit()
+//! function.
 //!
 //! \return Returns zero on failure or a non-zero instance value that should be
 //! used with the remaining USB HID Mouse APIs.
 //
 //*****************************************************************************
 void *
-USBDHIDMouseCompositeInit(unsigned long ulIndex,
-                          const tUSBDHIDMouseDevice *psDevice)
+USBDHIDMouseCompositeInit(uint32_t ui32Index,
+                          tUSBDHIDMouseDevice *psMouseDevice,
+                          tCompositeEntry *psCompEntry)
 {
     tHIDMouseInstance *psInst;
     tUSBDHIDDevice *psHIDDevice;
@@ -492,98 +659,99 @@ USBDHIDMouseCompositeInit(unsigned long ulIndex,
     //
     // Check parameter validity.
     //
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateHIDMouseData);
-    ASSERT(psDevice->pfnCallback);
+    ASSERT(psMouseDevice);
+    ASSERT(psMouseDevice->ppui8StringDescriptors);
+    ASSERT(psMouseDevice->pfnCallback);
 
     //
     // Get a pointer to our instance data
     //
-    psInst = psDevice->psPrivateHIDMouseData;
+    psInst = &psMouseDevice->sPrivateData;
 
     //
     // Get a pointer to the HID device data.
     //
-    psHIDDevice = &psDevice->psPrivateHIDMouseData->sHIDDevice;
+    psHIDDevice = &psMouseDevice->sPrivateData.sHIDDevice;
 
     //
     // Initialize the various fields in our instance structure.
     //
-    psInst->ucUSBConfigured = 0;
-    psInst->ucProtocol = USB_HID_PROTOCOL_REPORT;
-    psInst->sReportIdle.ucDuration4mS = 0;
-    psInst->sReportIdle.ucReportID = 0;
-    psInst->sReportIdle.ulTimeSinceReportmS = 0;
-    psInst->sReportIdle.usTimeTillNextmS = 0;
-    psInst->eMouseState = HID_MOUSE_STATE_UNCONFIGURED;
+    psInst->ui8USBConfigured = 0;
+    psInst->ui8Protocol = USB_HID_PROTOCOL_REPORT;
+    psInst->sReportIdle.ui8Duration4mS = 0;
+    psInst->sReportIdle.ui8ReportID = 0;
+    psInst->sReportIdle.ui32TimeSinceReportmS = 0;
+    psInst->sReportIdle.ui16TimeTillNextmS = 0;
+    psInst->iMouseState = eHIDMouseStateUnconfigured;
 
     //
     // Initialize the HID device class instance structure based on input from
     // the caller.
     //
-    psHIDDevice->usPID = psDevice->usPID;
-    psHIDDevice->usVID = psDevice->usVID;
-    psHIDDevice->usMaxPowermA = psDevice->usMaxPowermA;
-    psHIDDevice->ucPwrAttributes = psDevice->ucPwrAttributes;
-    psHIDDevice->ucSubclass = USB_HID_SCLASS_BOOT;
-    psHIDDevice->ucProtocol = USB_HID_PROTOCOL_MOUSE;
-    psHIDDevice->ucNumInputReports = 1;
+    psHIDDevice->ui16PID = psMouseDevice->ui16PID;
+    psHIDDevice->ui16VID = psMouseDevice->ui16VID;
+    psHIDDevice->ui16MaxPowermA = psMouseDevice->ui16MaxPowermA;
+    psHIDDevice->ui8PwrAttributes = psMouseDevice->ui8PwrAttributes;
+    psHIDDevice->ui8Subclass = USB_HID_SCLASS_BOOT;
+    psHIDDevice->ui8Protocol = USB_HID_PROTOCOL_MOUSE;
+    psHIDDevice->ui8NumInputReports = 1;
     psHIDDevice->psReportIdle = &psInst->sReportIdle;
     psHIDDevice->pfnRxCallback = HIDMouseRxHandler;
-    psHIDDevice->pvRxCBData = (void *)psDevice;
+    psHIDDevice->pvRxCBData = (void *)psMouseDevice;
     psHIDDevice->pfnTxCallback = HIDMouseTxHandler;
-    psHIDDevice->pvTxCBData = (void *)psDevice;
+    psHIDDevice->pvTxCBData = (void *)psMouseDevice;
     psHIDDevice->bUseOutEndpoint = false;
     psHIDDevice->psHIDDescriptor = &g_sMouseHIDDescriptor;
-    psHIDDevice->ppClassDescriptors= g_pMouseClassDescriptors;
-    psHIDDevice->ppStringDescriptors = psDevice->ppStringDescriptors;
-    psHIDDevice->ulNumStringDescriptors = psDevice->ulNumStringDescriptors;
-    psHIDDevice->psPrivateHIDData = &psInst->sHIDInstance;
+    psHIDDevice->ppui8ClassDescriptors = g_pui8MouseClassDescriptors;
+    psHIDDevice->ppui8StringDescriptors =
+                                    psMouseDevice->ppui8StringDescriptors;
+    psHIDDevice->ui32NumStringDescriptors =
+                                    psMouseDevice->ui32NumStringDescriptors;
+    psHIDDevice->ppsConfigDescriptor = g_ppsHIDConfigDescriptors;
 
     //
     // Initialize the lower layer HID driver and pass it the various structures
     // and descriptors necessary to declare that we are a keyboard.
     //
-    return(USBDHIDCompositeInit(ulIndex, psHIDDevice));
+    return(USBDHIDCompositeInit(ui32Index, psHIDDevice, psCompEntry));
 }
 
 //*****************************************************************************
 //
 //! Shuts down the HID mouse device.
 //!
-//! \param pvInstance is the pointer to the device instance structure.
+//! \param pvMouseDevice is the pointer to the device instance structure.
 //!
 //! This function terminates HID mouse operation for the instance supplied
-//! and removes the device from the USB bus.  Following this call, the \e
-//! pvInstance instance may not me used in any other call to the HID mouse
-//! device other than USBDHIDMouseInit().
+//! and removes the device from the USB bus.  Following this call, the
+//! \e pvMouseDevice instance may not me used in any other call to the HID
+//! mouse device other than USBDHIDMouseInit().
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBDHIDMouseTerm(void *pvInstance)
+USBDHIDMouseTerm(void *pvMouseDevice)
 {
-    tUSBDHIDMouseDevice *psDevice;
+    tUSBDHIDMouseDevice *psMouseDevice;
     tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance);
+    ASSERT(pvMouseDevice);
 
     //
     // Get a pointer to the device.
     //
-    psDevice = (tUSBDHIDMouseDevice *)pvInstance;
+    psMouseDevice = (tUSBDHIDMouseDevice *)pvMouseDevice;
 
     //
     // Get a pointer to the HID device data.
     //
-    psHIDDevice = &psDevice->psPrivateHIDMouseData->sHIDDevice;
+    psHIDDevice = &psMouseDevice->sPrivateData.sHIDDevice;
 
     //
     // Mark our device as no longer configured.
     //
-    psDevice->psPrivateHIDMouseData->ucUSBConfigured = 0;
+    psMouseDevice->sPrivateData.ui8USBConfigured = 0;
 
     //
     // Terminate the low level HID driver.
@@ -595,25 +763,25 @@ USBDHIDMouseTerm(void *pvInstance)
 //
 //! Sets the client-specific pointer parameter for the mouse callback.
 //!
-//! \param pvInstance is the pointer to the mouse device instance structure.
-//! \param pvCBData is the pointer that client wishes to be provided on each
-//! event sent to the mouse callback function.
+//! \param pvMouseDevice is the pointer to the mouse device instance structure.
+//! \param pvCBData is the pointer that client wishes to be provided on
+//! each event sent to the mouse callback function.
 //!
 //! The client uses this function to change the callback pointer passed in
 //! the first parameter on all callbacks to the \e pfnCallback function
 //! passed on USBDHIDMouseInit().
 //!
 //! If a client wants to make runtime changes in the callback pointer, it must
-//! ensure that the pvInstance structure passed to USBDHIDMouseInit() resides
-//! in RAM.  If this structure is in flash, callback data changes will not be
-//! possible.
+//! ensure that the pvMouseDevice structure passed to USBDHIDMouseInit()
+//! resides in RAM.  If this structure is in flash, callback data changes are
+//! not possible.
 //!
 //! \return Returns the previous callback pointer that was set for this
 //! instance.
 //
 //*****************************************************************************
 void *
-USBDHIDMouseSetCBData(void *pvInstance, void *pvCBData)
+USBDHIDMouseSetCBData(void *pvMouseDevice, void *pvCBData)
 {
     void *pvOldCBData;
     tUSBDHIDMouseDevice *psMouse;
@@ -621,12 +789,12 @@ USBDHIDMouseSetCBData(void *pvInstance, void *pvCBData)
     //
     // Check for a NULL pointer in the device parameter.
     //
-    ASSERT(pvInstance);
+    ASSERT(pvMouseDevice);
 
     //
     // Get a pointer to our mouse device.
     //
-    psMouse = (tUSBDHIDMouseDevice *)pvInstance;
+    psMouse = (tUSBDHIDMouseDevice *)pvMouseDevice;
 
     //
     // Save the old callback pointer and replace it with the new value.
@@ -645,17 +813,17 @@ USBDHIDMouseSetCBData(void *pvInstance, void *pvCBData)
 //! Reports a mouse state change, pointer movement or button press, to the USB
 //! host.
 //!
-//! \param pvInstance is the pointer to the mouse device instance structure.
-//! \param cDeltaX is the relative horizontal pointer movement that the
+//! \param pvMouseDevice is the pointer to the mouse device instance structure.
+//! \param i8DeltaX is the relative horizontal pointer movement that the
 //! application wishes to report.  Valid values are in the range [-127, 127]
 //! with positive values indicating movement to the right.
-//! \param cDeltaY is the relative vertical pointer movement that the
+//! \param i8DeltaY is the relative vertical pointer movement that the
 //! application wishes to report.  Valid values are in the range [-127, 127]
 //! with positive values indicating downward movement.
-//! \param ucButtons is a bit mask indicating which (if any) of the three
+//! \param ui8Buttons is a bit mask indicating which (if any) of the three
 //! mouse buttons is pressed.  Valid values are logical OR combinations of
-//! \e MOUSE_REPORT_BUTTON_1, \e MOUSE_REPORT_BUTTON_2 and \e
-//! MOUSE_REPORT_BUTTON_3.
+//! \b MOUSE_REPORT_BUTTON_1, \b MOUSE_REPORT_BUTTON_2 and
+//! \b MOUSE_REPORT_BUTTON_3.
 //!
 //! This function is called to report changes in the mouse state to the USB
 //! host.  These changes can be movement of the pointer, reported relative to
@@ -673,43 +841,42 @@ USBDHIDMouseSetCBData(void *pvInstance, void *pvCBData)
 //! configured the device.
 //
 //*****************************************************************************
-unsigned long
-USBDHIDMouseStateChange(void *pvInstance, char cDeltaX, char cDeltaY,
-                        unsigned char ucButtons)
+uint32_t
+USBDHIDMouseStateChange(void *pvMouseDevice, int8_t i8DeltaX, int8_t i8DeltaY,
+                        uint8_t ui8Buttons)
 {
-    unsigned long ulRetcode;
-    unsigned long ulCount;
+    uint32_t ui32Retcode, ui32Count;
     tHIDMouseInstance *psInst;
-    tUSBDHIDMouseDevice *psDevice;
+    tUSBDHIDMouseDevice *psMouseDevice;
     tUSBDHIDDevice *psHIDDevice;
 
     //
     // Get a pointer to the device.
     //
-    psDevice = (tUSBDHIDMouseDevice *)pvInstance;
+    psMouseDevice = (tUSBDHIDMouseDevice *)pvMouseDevice;
 
     //
     // Get a pointer to the HID device data.
     //
-    psHIDDevice = &psDevice->psPrivateHIDMouseData->sHIDDevice;
+    psHIDDevice = &psMouseDevice->sPrivateData.sHIDDevice;
 
     //
     // Get a pointer to our instance data
     //
-    psInst = psDevice->psPrivateHIDMouseData;
+    psInst = &psMouseDevice->sPrivateData;
 
     //
     // Update the global mouse report with the information passed.
     //
-    psInst->pucReport[HID_REPORT_BUTTONS] = ucButtons;
-    psInst->pucReport[HID_REPORT_X] = (unsigned char)cDeltaX;
-    psInst->pucReport[HID_REPORT_Y] = (unsigned char)cDeltaY;
+    psInst->pui8Report[HID_REPORT_BUTTONS] = ui8Buttons;
+    psInst->pui8Report[HID_REPORT_X] = (uint8_t)i8DeltaX;
+    psInst->pui8Report[HID_REPORT_Y] = (uint8_t)i8DeltaY;
 
     //
     // If we are not configured, return an error here before trying to send
     // anything.
     //
-    if(!psInst->ucUSBConfigured)
+    if(!psInst->ui8USBConfigured)
     {
         return(MOUSE_ERR_NOT_CONFIGURED);
     }
@@ -722,42 +889,42 @@ USBDHIDMouseStateChange(void *pvInstance, char cDeltaX, char cDeltaY,
         //
         // Send the report to the host.
         //
-        psInst->eMouseState = HID_MOUSE_STATE_SEND;
-        ulCount = USBDHIDReportWrite((void *)psHIDDevice,
-                                     psInst->pucReport, MOUSE_REPORT_SIZE,
-                                     true);
+        psInst->iMouseState = eHIDMouseStateSend;
+        ui32Count = USBDHIDReportWrite((void *)psHIDDevice,
+                                       psInst->pui8Report, MOUSE_REPORT_SIZE,
+                                       true);
 
         //
         // Did we schedule a packet for transmission correctly?
         //
-        if(!ulCount)
+        if(!ui32Count)
         {
             //
             // No - report the error to the caller.
             //
-            ulRetcode = MOUSE_ERR_TX_ERROR;
+            ui32Retcode = MOUSE_ERR_TX_ERROR;
         }
         else
         {
-            ulRetcode = MOUSE_SUCCESS;
+            ui32Retcode = MOUSE_SUCCESS;
         }
     }
     else
     {
-        ulRetcode = MOUSE_ERR_TX_ERROR;
+        ui32Retcode = MOUSE_ERR_TX_ERROR;
     }
     //
     // Return the relevant error code to the caller.
     //
-    return(ulRetcode);
+    return(ui32Retcode);
 }
 
 //*****************************************************************************
 //
 //! Reports the device power status (bus- or self-powered) to the USB library.
 //!
-//! \param pvInstance is the pointer to the mouse device instance structure.
-//! \param ucPower indicates the current power status, either \b
+//! \param pvMouseDevice is the pointer to the mouse device instance structure.
+//! \param ui8Power indicates the current power status, either \b
 //! USB_STATUS_SELF_PWR or \b USB_STATUS_BUS_PWR.
 //!
 //! Applications which support switching between bus- or self-powered
@@ -770,34 +937,34 @@ USBDHIDMouseStateChange(void *pvInstance, char cDeltaX, char cDeltaY,
 //
 //*****************************************************************************
 void
-USBDHIDMousePowerStatusSet(void *pvInstance, unsigned char ucPower)
+USBDHIDMousePowerStatusSet(void *pvMouseDevice, uint8_t ui8Power)
 {
-    tUSBDHIDMouseDevice *psDevice;
+    tUSBDHIDMouseDevice *psMouseDevice;
     tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance);
+    ASSERT(pvMouseDevice);
 
     //
     // Get the keyboard device pointer.
     //
-    psDevice = (tUSBDHIDMouseDevice *)pvInstance;
+    psMouseDevice = (tUSBDHIDMouseDevice *)pvMouseDevice;
 
     //
     // Get a pointer to the HID device data.
     //
-    psHIDDevice = &psDevice->psPrivateHIDMouseData->sHIDDevice;
+    psHIDDevice = &psMouseDevice->sPrivateData.sHIDDevice;
 
     //
     // Pass the request through to the lower layer.
     //
-    USBDHIDPowerStatusSet((void *)psHIDDevice, ucPower);
+    USBDHIDPowerStatusSet((void *)psHIDDevice, ui8Power);
 }
 
 //*****************************************************************************
 //
 //! Requests a remote wake up to resume communication when in suspended state.
 //!
-//! \param pvInstance is the pointer to the mouse device instance structure.
+//! \param pvMouseDevice is the pointer to the mouse device instance structure.
 //!
 //! When the bus is suspended, an application which supports remote wake up
 //! (advertised to the host via the configuration descriptor) may call this
@@ -812,29 +979,30 @@ USBDHIDMousePowerStatusSet(void *pvInstance, unsigned char ucPower)
 //! signaling is currently ongoing following a previous call to this function.
 //
 //*****************************************************************************
-tBoolean
-USBDHIDMouseRemoteWakeupRequest(void *pvInstance)
+bool
+USBDHIDMouseRemoteWakeupRequest(void *pvMouseDevice)
 {
-    tUSBDHIDMouseDevice *psDevice;
+    tUSBDHIDMouseDevice *psMouseDevice;
     tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance);
+    ASSERT(pvMouseDevice);
 
     //
     // Get the keyboard device pointer.
     //
-    psDevice = (tUSBDHIDMouseDevice *)pvInstance;
+    psMouseDevice = (tUSBDHIDMouseDevice *)pvMouseDevice;
 
     //
     // Get a pointer to the HID device data.
     //
-    psHIDDevice = &psDevice->psPrivateHIDMouseData->sHIDDevice;
+    psHIDDevice = &psMouseDevice->sPrivateData.sHIDDevice;
 
     //
     // Pass the request through to the lower layer.
     //
     return(USBDHIDRemoteWakeupRequest((void *)&psHIDDevice));
 }
+
 //*****************************************************************************
 //
 // Close the Doxygen group.

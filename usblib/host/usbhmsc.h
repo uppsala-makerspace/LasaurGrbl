@@ -2,7 +2,7 @@
 //
 // usbhmsc.h - Definitions for the USB MSC host driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -43,9 +43,11 @@ extern "C"
 //
 //*****************************************************************************
 
+typedef struct tUSBHMSCInstance tUSBHMSCInstance;
+
 //*****************************************************************************
 //
-// These defines are the the events that will be passed in the \e ulEvent
+// These defines are the the events that will be passed in the \e ui32Event
 // parameter of the callback from the driver.
 //
 //*****************************************************************************
@@ -57,8 +59,8 @@ extern "C"
 // The prototype for the USB MSC host driver callback function.
 //
 //*****************************************************************************
-typedef void (*tUSBHMSCCallback)(unsigned long ulInstance,
-                                 unsigned long ulEvent,
+typedef void (*tUSBHMSCCallback)(tUSBHMSCInstance *psMSCInstance,
+                                 uint32_t ui32Event,
                                  void *pvEventData);
 
 //*****************************************************************************
@@ -66,16 +68,16 @@ typedef void (*tUSBHMSCCallback)(unsigned long ulInstance,
 // Prototypes for the USB MSC host driver APIs.
 //
 //*****************************************************************************
-extern unsigned long USBHMSCDriveOpen(unsigned long ulDrive,
-                                      tUSBHMSCCallback pfnCallback);
-extern void USBHMSCDriveClose(unsigned long ulInstance);
-extern long USBHMSCDriveReady(unsigned long ulInstance);
-extern long USBHMSCBlockRead(unsigned long ulInstance, unsigned long ulLBA,
-                             unsigned char *pucData,
-                             unsigned long ulNumBlocks);
-extern long USBHMSCBlockWrite(unsigned long ulInstance, unsigned long ulLBA,
-                              unsigned char *pucData,
-                              unsigned long ulNumBlocks);
+extern tUSBHMSCInstance * USBHMSCDriveOpen(uint32_t ui32Drive,
+                                           tUSBHMSCCallback pfnCallback);
+extern void USBHMSCDriveClose(tUSBHMSCInstance *psMSCInstance);
+extern int32_t USBHMSCDriveReady(tUSBHMSCInstance *psMSCInstance);
+extern int32_t USBHMSCBlockRead(tUSBHMSCInstance *psMSCInstance,
+                                uint32_t ui32LBA, uint8_t *pui8Data,
+                                uint32_t ui32NumBlocks);
+extern int32_t USBHMSCBlockWrite(tUSBHMSCInstance *psMSCInstance,
+                                 uint32_t ui32LBA, uint8_t *pui8Data,
+                                 uint32_t ui32NumBlocks);
 
 //*****************************************************************************
 //

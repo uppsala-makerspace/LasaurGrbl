@@ -2,7 +2,7 @@
 //
 // usblib.h - Main header file for the USB Library.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -44,7 +44,7 @@ extern "C"
 //
 //*****************************************************************************
 #ifndef MAX_USB_DEVICES
-#define MAX_USB_DEVICES 5
+#define MAX_USB_DEVICES         5
 #endif
 
 //*****************************************************************************
@@ -52,7 +52,9 @@ extern "C"
 // This is the maximum number of endpoints supported by the usblib.
 //
 //*****************************************************************************
-#define USBLIB_NUM_EP           16   // Number of supported endpoints.
+#ifndef USBLIB_NUM_EP
+#define USBLIB_NUM_EP           8       // Number of supported endpoints.
+#endif
 
 //*****************************************************************************
 //
@@ -66,9 +68,9 @@ extern "C"
 //
 //   typedef struct _PackedStructName
 //   {
-//      unsigned long ulFirstField;
-//      char cCharMember;
-//      unsigned short usShort;
+//      uint32_t ui32FirstField;
+//      int8_t i8CharMember;
+//      uint16_t ui16Short;
 //   }
 //   PACKED tPackedStructName;
 //
@@ -82,11 +84,11 @@ extern "C"
 // must be done explicitly.
 //
 //*****************************************************************************
-#if defined(ccs) ||             \
-    defined(codered) ||         \
-    defined(gcc) ||             \
-    defined(rvmdk) ||           \
-    defined(__ARMCC_VERSION) || \
+#if defined(ccs) ||                                                           \
+    defined(codered) ||                                                       \
+    defined(gcc) ||                                                           \
+    defined(rvmdk) ||                                                         \
+    defined(__ARMCC_VERSION) ||                                               \
     defined(sourcerygxx)
 #define PACKED __attribute__ ((packed))
 #elif defined(ewarm)
@@ -132,11 +134,11 @@ extern "C"
 //
 // Structure definitions which are derived directly from the USB specification
 // use field names from the specification.  Since a somewhat different version
-// of Hungarian prefix notation is used from the Stellaris standard, beware of
-// making assumptions about field sizes based on the field prefix when using
+// of Hungarian prefix notation is used from the standard, beware of making
+// assumptions about field sizes based on the field prefix when using
 // these structures.  Of particular note is the difference in the meaning of
 // the 'i' prefix.  In USB structures, this indicates a single byte index
-// whereas in Stellaris code, this is a 32 bit integer.
+// whereas in other code, this is an integer or enumeration variable.
 //
 //*****************************************************************************
 
@@ -168,29 +170,29 @@ typedef struct
     //
     //! Determines the type and direction of the request.
     //
-    unsigned char bmRequestType;
+    uint8_t bmRequestType;
 
     //
     //! Identifies the specific request being made.
     //
-    unsigned char bRequest;
+    uint8_t bRequest;
 
     //
     //! Word-sized field that varies according to the request.
     //
-    unsigned short wValue;
+    uint16_t wValue;
 
     //
     //! Word-sized field that varies according to the request; typically used
     //! to pass an index or offset.
     //
-    unsigned short wIndex;
+    uint16_t wIndex;
 
     //
     //! The number of bytes to transfer if there is a data stage to the
     //! request.
     //
-    unsigned short wLength;
+    uint16_t wLength;
 
 }
 PACKED tUSBRequest;
@@ -262,10 +264,10 @@ PACKED tUSBRequest;
 // USBREQ_SET_FEATURE and USBREQ_GET_STATUS.
 //
 //*****************************************************************************
-#define USB_REQ_EP_NUM_M   0x007F
-#define USB_REQ_EP_DIR_M   0x0080
-#define USB_REQ_EP_DIR_IN  0x0080
-#define USB_REQ_EP_DIR_OUT 0x0000
+#define USB_REQ_EP_NUM_M        0x007F
+#define USB_REQ_EP_DIR_M        0x0080
+#define USB_REQ_EP_DIR_IN       0x0080
+#define USB_REQ_EP_DIR_OUT      0x0000
 
 //*****************************************************************************
 //
@@ -305,7 +307,7 @@ typedef struct
     //! The length of this descriptor (including this length byte) expressed
     //! in bytes.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type identifier of the descriptor whose information follows.  For
@@ -313,7 +315,7 @@ typedef struct
     //! USB_DTYPE_DEVICE to identify a device descriptor or USB_DTYPE_ENDPOINT
     //! to identify an endpoint descriptor.
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 }
 PACKED tDescriptorHeader;
 
@@ -329,80 +331,80 @@ typedef struct
     //! The length of this descriptor in bytes.  All device descriptors are
     //! 18 bytes long.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For a device descriptor, this will be
     //! USB_DTYPE_DEVICE (1).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The USB Specification Release Number in BCD format.  For USB 2.0, this
     //! will be 0x0200.
     //
-    unsigned short bcdUSB;
+    uint16_t bcdUSB;
 
     //
     //! The device class code.
     //
-    unsigned char bDeviceClass;
+    uint8_t bDeviceClass;
 
     //
     //! The device subclass code.  This value qualifies the value found in the
     //! bDeviceClass field.
     //
-    unsigned char bDeviceSubClass;
+    uint8_t bDeviceSubClass;
 
     //
     //! The device protocol code.  This value is qualified by the values of
     //! bDeviceClass and bDeviceSubClass.
     //
-    unsigned char bDeviceProtocol;
+    uint8_t bDeviceProtocol;
 
     //
     //! The maximum packet size for endpoint zero.  Valid values are 8, 16, 32
     //! and 64.
     //
-    unsigned char bMaxPacketSize0;
+    uint8_t bMaxPacketSize0;
 
     //
     //! The device Vendor ID (VID) as assigned by the USB-IF.
     //
-    unsigned short idVendor;
+    uint16_t idVendor;
 
     //
     //! The device Product ID (PID) as assigned by the manufacturer.
     //
-    unsigned short idProduct;
+    uint16_t idProduct;
 
     //
     //! The device release number in BCD format.
     //
-    unsigned short bcdDevice;
+    uint16_t bcdDevice;
 
     //
     //! The index of a string descriptor describing the manufacturer.
     //
-    unsigned char iManufacturer;
+    uint8_t iManufacturer;
 
     //
     //! The index of a string descriptor describing the product.
     //
-    unsigned char iProduct;
+    uint8_t iProduct;
 
     //
     //! The index of a string descriptor describing the device's serial
     //! number.
     //
-    unsigned char iSerialNumber;
+    uint8_t iSerialNumber;
 
     //
     //! The number of possible configurations offered by the device.  This
     //! field indicates the number of distinct configuration descriptors that
     //! the device offers.
     //
-    unsigned char bNumConfigurations;
+    uint8_t bNumConfigurations;
 }
 PACKED tDeviceDescriptor;
 
@@ -447,8 +449,9 @@ PACKED tDeviceDescriptor;
 // The following are the miscellaneous subclass values.
 //
 //*****************************************************************************
-#define USB_MISC_SUBCLASS_SYNC      0x01
-#define USB_MISC_SUBCLASS_COMMON    0x02
+#define USB_MISC_SUBCLASS_SYNC  0x01
+#define USB_MISC_SUBCLASS_COMMON                                              \
+                                0x02
 
 //*****************************************************************************
 //
@@ -456,6 +459,15 @@ PACKED tDeviceDescriptor;
 //
 //*****************************************************************************
 #define USB_MISC_PROTOCOL_IAD   0x01
+
+//*****************************************************************************
+//
+// These following are hub protocol values.
+//
+//*****************************************************************************
+#define USB_HUB_PROTOCOL_FS     0x00
+#define USB_HUB_PROTOCOL_SINGLE 0x01
+#define USB_HUB_PROTOCOL_MULTI  0x02
 
 //*****************************************************************************
 //
@@ -469,52 +481,52 @@ typedef struct
     //! The length of this descriptor in bytes.  All device qualifier
     //! descriptors are 10 bytes long.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For a device descriptor, this will be
     //! USB_DTYPE_DEVICE_QUAL (6).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The USB Specification Release Number in BCD format.  For USB 2.0, this
     //! will be 0x0200.
     //
-    unsigned short bcdUSB;
+    uint16_t bcdUSB;
 
     //
     //! The device class code.
     //
-    unsigned char bDeviceClass;
+    uint8_t bDeviceClass;
 
     //
     //! The device subclass code.  This value qualifies the value found in the
     //! bDeviceClass field.
     //
-    unsigned char bDeviceSubClass;
+    uint8_t bDeviceSubClass;
 
     //
     //! The device protocol code.  This value is qualified by the values of
     //! bDeviceClass and bDeviceSubClass.
     //
-    unsigned char bDeviceProtocol;
+    uint8_t bDeviceProtocol;
 
     //
     //! The maximum packet size for endpoint zero when operating at a speed
     //! other than high speed.
     //
-    unsigned char bMaxPacketSize0;
+    uint8_t bMaxPacketSize0;
 
     //
     //! The number of other-speed configurations supported.
     //
-    unsigned char bNumConfigurations;
+    uint8_t bNumConfigurations;
 
     //
     //! Reserved for future use.  Must be set to zero.
     //
-    unsigned char bReserved;
+    uint8_t bReserved;
 }
 PACKED tDeviceQualifierDescriptor;
 
@@ -531,13 +543,13 @@ typedef struct
     //! The length of this descriptor in bytes.  All configuration descriptors
     //! are 9 bytes long.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For a configuration descriptor, this will
     //! be USB_DTYPE_CONFIGURATION (2).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The total length of data returned for this configuration.  This
@@ -545,35 +557,35 @@ typedef struct
     //! interface, endpoint and class- or vendor-specific) returned for this
     //! configuration.
     //
-    unsigned short wTotalLength;
+    uint16_t wTotalLength;
 
     //
     //! The number of interface supported by this configuration.
     //
-    unsigned char bNumInterfaces;
+    uint8_t bNumInterfaces;
 
     //
     //! The value used as an argument to the SetConfiguration standard request
     //! to select this configuration.
     //
-    unsigned char bConfigurationValue;
+    uint8_t bConfigurationValue;
 
     //
     //! The index of a string descriptor describing this configuration.
     //
-    unsigned char iConfiguration;
+    uint8_t iConfiguration;
 
     //
     //! Attributes of this configuration.
     //
-    unsigned char bmAttributes;
+    uint8_t bmAttributes;
 
     //
     //! The maximum power consumption of the USB device from the bus in this
     //! configuration when the device is fully operational.  This is expressed
     //! in units of 2mA so, for example, 100 represents 200mA.
     //
-    unsigned char bMaxPower;
+    uint8_t bMaxPower;
 }
 PACKED tConfigDescriptor;
 
@@ -602,51 +614,51 @@ typedef struct
     //! The length of this descriptor in bytes.  All interface descriptors
     //! are 9 bytes long.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an interface descriptor, this will
     //! be USB_DTYPE_INTERFACE (4).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The number of this interface.  This is a zero based index into the
     //! array of concurrent interfaces supported by this configuration.
     //
-    unsigned char bInterfaceNumber;
+    uint8_t bInterfaceNumber;
 
     //
     //! The value used to select this alternate setting for the interface
     //! defined in bInterfaceNumber.
     //
-    unsigned char bAlternateSetting;
+    uint8_t bAlternateSetting;
 
     //
     //! The number of endpoints used by this interface (excluding endpoint
     //! zero).
     //
-    unsigned char bNumEndpoints;
+    uint8_t bNumEndpoints;
 
     //
     //! The interface class code as assigned by the USB-IF.
     //
-    unsigned char bInterfaceClass;
+    uint8_t bInterfaceClass;
 
     //
     //! The interface subclass code as assigned by the USB-IF.
     //
-    unsigned char bInterfaceSubClass;
+    uint8_t bInterfaceSubClass;
 
     //
     //! The interface protocol code as assigned by the USB-IF.
     //
-    unsigned char bInterfaceProtocol;
+    uint8_t bInterfaceProtocol;
 
     //
     //! The index of a string descriptor describing this interface.
     //
-    unsigned char iInterface;
+    uint8_t iInterface;
 }
 PACKED tInterfaceDescriptor;
 
@@ -662,27 +674,27 @@ typedef struct
     //! The length of this descriptor in bytes.  All endpoint descriptors
     //! are 7 bytes long.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For an endpoint descriptor, this will
     //! be USB_DTYPE_ENDPOINT (5).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The address of the endpoint.  This field contains the endpoint number
     //! ORed with flag USB_EP_DESC_OUT or USB_EP_DESC_IN to indicate the
     //! endpoint direction.
     //
-    unsigned char bEndpointAddress;
+    uint8_t bEndpointAddress;
 
     //
     //! The endpoint transfer type, USB_EP_ATTR_CONTROL, USB_EP_ATTR_ISOC,
     //! USB_EP_ATTR_BULK or USB_EP_ATTR_INT and, if isochronous, additional
     //! flags indicating usage type and synchronization method.
     //
-    unsigned char bmAttributes;
+    uint8_t bmAttributes;
 
     //
     //! The maximum packet size this endpoint is capable of sending or
@@ -690,13 +702,13 @@ typedef struct
     //! isochronous or interrupt endpoints, bits 11 and 12 are used to
     //! pass additional information.
     //
-    unsigned short wMaxPacketSize;
+    uint16_t wMaxPacketSize;
 
     //
     //! The polling interval for data transfers expressed in frames or
     //! micro frames depending upon the operating speed.
     //
-    unsigned char bInterval;
+    uint8_t bInterval;
 }
 PACKED tEndpointDescriptor;
 
@@ -706,9 +718,9 @@ PACKED tEndpointDescriptor;
 // tEndpointDescriptor.bEndpointAddress.
 //
 //*****************************************************************************
-#define USB_EP_DESC_OUT                 0x00
-#define USB_EP_DESC_IN                  0x80
-#define USB_EP_DESC_NUM_M               0x0f
+#define USB_EP_DESC_OUT         0x00
+#define USB_EP_DESC_IN          0x80
+#define USB_EP_DESC_NUM_M       0x0f
 
 //*****************************************************************************
 //
@@ -716,28 +728,31 @@ PACKED tEndpointDescriptor;
 // wMaxPacketSize field of the endpoint descriptor.
 //
 //*****************************************************************************
-#define USB_EP_MAX_PACKET_COUNT_M       0x07FF
+#define USB_EP_MAX_PACKET_COUNT_M                                             \
+                                0x07FF
 
 //*****************************************************************************
 //
 // Endpoint attributes used in tEndpointDescriptor.bmAttributes.
 //
 //*****************************************************************************
-#define USB_EP_ATTR_CONTROL             0x00
-#define USB_EP_ATTR_ISOC                0x01
-#define USB_EP_ATTR_BULK                0x02
-#define USB_EP_ATTR_INT                 0x03
-#define USB_EP_ATTR_TYPE_M              0x03
+#define USB_EP_ATTR_CONTROL     0x00
+#define USB_EP_ATTR_ISOC        0x01
+#define USB_EP_ATTR_BULK        0x02
+#define USB_EP_ATTR_INT         0x03
+#define USB_EP_ATTR_TYPE_M      0x03
 
-#define USB_EP_ATTR_ISOC_M              0x0c
-#define USB_EP_ATTR_ISOC_NOSYNC         0x00
-#define USB_EP_ATTR_ISOC_ASYNC          0x04
-#define USB_EP_ATTR_ISOC_ADAPT          0x08
-#define USB_EP_ATTR_ISOC_SYNC           0x0c
-#define USB_EP_ATTR_USAGE_M             0x30
-#define USB_EP_ATTR_USAGE_DATA          0x00
-#define USB_EP_ATTR_USAGE_FEEDBACK      0x10
-#define USB_EP_ATTR_USAGE_IMPFEEDBACK   0x20
+#define USB_EP_ATTR_ISOC_M      0x0c
+#define USB_EP_ATTR_ISOC_NOSYNC 0x00
+#define USB_EP_ATTR_ISOC_ASYNC  0x04
+#define USB_EP_ATTR_ISOC_ADAPT  0x08
+#define USB_EP_ATTR_ISOC_SYNC   0x0c
+#define USB_EP_ATTR_USAGE_M     0x30
+#define USB_EP_ATTR_USAGE_DATA  0x00
+#define USB_EP_ATTR_USAGE_FEEDBACK                                            \
+                                0x10
+#define USB_EP_ATTR_USAGE_IMPFEEDBACK                                         \
+                                0x20
 
 //*****************************************************************************
 //
@@ -753,13 +768,13 @@ typedef struct
     //! The length of this descriptor in bytes.  This value will vary
     //! depending upon the number of language codes provided in the descriptor.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For a string descriptor, this will be
     //! USB_DTYPE_STRING (3).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The language code (LANGID) for the first supported language.  Note that
@@ -767,7 +782,7 @@ typedef struct
     //! number of elements in the wLANGID array will increase and bLength will
     //! be updated accordingly.
     //
-    unsigned short wLANGID[1];
+    uint16_t wLANGID[1];
 }
 PACKED tString0Descriptor;
 
@@ -784,29 +799,28 @@ typedef struct
     //! than the number of bytes comprising the UNICODE string that the
     //! descriptor contains.
     //
-    unsigned char bLength;
+    uint8_t bLength;
 
     //
     //! The type of the descriptor.  For a string descriptor, this will be
     //! USB_DTYPE_STRING (3).
     //
-    unsigned char bDescriptorType;
+    uint8_t bDescriptorType;
 
     //
     //! The first byte of the UNICODE string.  This string is not NULL
     //! terminated.  Its length (in bytes) can be computed by subtracting 2
     //! from the value in the bLength field.
     //
-    unsigned char bString;
+    uint8_t bString;
 }
 PACKED tStringDescriptor;
 
 //*****************************************************************************
 //
-//! Write a 2 byte unsigned short value to a USB descriptor block.
+//! Write a 16-bit value to a USB descriptor block.
 //!
-//! \param usValue is the two byte unsigned short that is to be written to
-//! the descriptor.
+//! \param ui16Value is the 16-bit value to write to the descriptor.
 //!
 //! This helper macro is used in descriptor definitions to write two-byte
 //! values.  Since the configuration descriptor contains all interface and
@@ -816,14 +830,13 @@ PACKED tStringDescriptor;
 //! \return Not a function.
 //
 //*****************************************************************************
-#define USBShort(usValue)       (usValue & 0xff), (usValue >> 8)
+#define USBShort(ui16Value)     (ui16Value & 0xff), (ui16Value >> 8)
 
 //*****************************************************************************
 //
-//! Write a 3 byte unsigned long value to a USB descriptor block.
+//! Write a 24-bit value to a USB descriptor block.
 //!
-//! \param ulValue is the three byte unsigned value that is to be written to the
-//! descriptor.
+//! \param ui32Value is the 24-bit value that to write to the descriptor.
 //!
 //! This helper macro is used in descriptor definitions to write three-byte
 //! values.  Since the configuration descriptor contains all interface and
@@ -833,16 +846,15 @@ PACKED tStringDescriptor;
 //! \return Not a function.
 //
 //*****************************************************************************
-#define USB3Byte(ulValue)       (ulValue & 0xff),              \
-                                ((ulValue >> 8) & 0xff),       \
-                                ((ulValue >> 16) & 0xff)
+#define USB3Byte(ui32Value)     (ui32Value & 0xff),                           \
+                                ((ui32Value >> 8) & 0xff),                    \
+                                ((ui32Value >> 16) & 0xff)
 
 //*****************************************************************************
 //
-//! Write a 4 byte unsigned long value to a USB descriptor block.
+//! Write a 32-bit value to a USB descriptor block.
 //!
-//! \param ulValue is the four byte unsigned long that is to be written to the
-//! descriptor.
+//! \param ui32Value is the 32-bit value that to write to the descriptor.
 //!
 //! This helper macro is used in descriptor definitions to write four-byte
 //! values.  Since the configuration descriptor contains all interface and
@@ -852,10 +864,10 @@ PACKED tStringDescriptor;
 //! \return Not a function.
 //
 //*****************************************************************************
-#define USBLong(ulValue)        (ulValue & 0xff),              \
-                                ((ulValue >> 8) & 0xff),       \
-                                ((ulValue >> 16) & 0xff),      \
-                                ((ulValue >> 24) & 0xff)
+#define USBLong(ui32Value)      (ui32Value & 0xff),                           \
+                                ((ui32Value >> 8) & 0xff),                    \
+                                ((ui32Value >> 16) & 0xff),                   \
+                                ((ui32Value >> 24) & 0xff)
 
 //*****************************************************************************
 //
@@ -871,9 +883,9 @@ PACKED tStringDescriptor;
 //! \e ptr.
 //!
 //*****************************************************************************
-#define NEXT_USB_DESCRIPTOR(ptr)                         \
-        (tDescriptorHeader *)(((unsigned char *)(ptr)) + \
-                              *((unsigned char *)(ptr)))
+#define NEXT_USB_DESCRIPTOR(ptr)                                              \
+                                (tDescriptorHeader *)(((uint8_t *)(ptr)) +    \
+                                                      *((uint8_t *)(ptr)))
 
 //*****************************************************************************
 //
@@ -910,7 +922,7 @@ typedef void (* tStdRequest)(void *pvInstance, tUSBRequest *pUSBRequest);
 // Data callback for receiving data from an endpoint.
 //
 //*****************************************************************************
-typedef void (* tInfoCallback)(void *pvInstance, unsigned long ulInfo);
+typedef void (* tInfoCallback)(void *pvInstance, uint32_t ui32Info);
 
 //*****************************************************************************
 //
@@ -918,9 +930,8 @@ typedef void (* tInfoCallback)(void *pvInstance, unsigned long ulInfo);
 // occurred.
 //
 //*****************************************************************************
-typedef void (* tInterfaceCallback)(void *pvInstance,
-                                    unsigned char ucInterfaceNum,
-                                    unsigned char ucAlternateSetting);
+typedef void (* tInterfaceCallback)(void *pvInstance, uint8_t ui8InterfaceNum,
+                                    uint8_t ui8AlternateSetting);
 
 //*****************************************************************************
 //
@@ -934,8 +945,7 @@ typedef void (* tUSBIntHandler)(void *pvInstance);
 // Interrupt handler callbacks that have status information.
 //
 //*****************************************************************************
-typedef void (* tUSBEPIntHandler)(void *pvInstance,
-                                  unsigned long ulStatus);
+typedef void (* tUSBEPIntHandler)(void *pvInstance, uint32_t ui32Status);
 
 //*****************************************************************************
 //
@@ -943,8 +953,7 @@ typedef void (* tUSBEPIntHandler)(void *pvInstance,
 // an instance of class.
 //
 //*****************************************************************************
-typedef void (* tUSBDeviceHandler)(void *pvInstance,
-                                   unsigned long ulRequest,
+typedef void (* tUSBDeviceHandler)(void *pvInstance, uint32_t ui32Request,
                                    void *pvRequestData);
 
 //*****************************************************************************
@@ -1030,62 +1039,6 @@ tCustomHandlers;
 
 //*****************************************************************************
 //
-//! This structure defines how a given endpoint's FIFO is configured in
-//! relation to the maximum packet size for the endpoint as specified in the
-//! endpoint descriptor.
-//
-//*****************************************************************************
-typedef struct
-{
-    //
-    //! This field indicates whether to configure an endpoint's FIFO to be
-    //! double- or single-buffered.  If true, a double-buffered FIFO is
-    //! created and the amount of required FIFO storage is multiplied by two.
-    //
-    tBoolean bDoubleBuffer;
-
-    //
-    //! This field defines endpoint mode flags which cannot be deduced from
-    //! the configuration descriptor, namely any in the set USB_EP_AUTO_xxx or
-    //! USB_EP_DMA_MODE_x.  USBDCDConfig adds these flags to the endpoint
-    //! mode and direction determined from the config descriptor before it
-    //! configures the endpoint using a call to USBDevEndpointConfigSet().
-    //
-    unsigned short usEPFlags;
-}
-tFIFOEntry;
-
-//*****************************************************************************
-//
-//! This structure defines endpoint and FIFO configuration information for
-//! all endpoints that the device wishes to use.  This information cannot be
-//! determined by examining the USB configuration descriptor and is
-//! provided to USBDCDConfig by the application to allow the USB controller
-//! endpoints to be correctly configured.
-//
-//*****************************************************************************
-typedef struct
-{
-    //
-    //! An array containing one FIFO entry for each of the IN endpoints.
-    //! Note that endpoint 0 is configured and managed by the USB device stack
-    //! so is excluded from this array.  The index 0 entry of the array
-    //! corresponds to endpoint 1, index 1 to endpoint 2, etc.
-    //
-    tFIFOEntry sIn[USBLIB_NUM_EP - 1];
-
-    //
-    //! An array containing one FIFO entry for each of the OUT endpoints.
-    //! Note that endpoint 0 is configured and managed by the USB device stack
-    //! so is excluded from this array.  The index 0 entry of the array
-    //! corresponds to endpoint 1, index 1 to endpoint 2, etc.
-    //
-    tFIFOEntry sOut[USBLIB_NUM_EP - 1];
-}
-tFIFOConfig;
-
-//*****************************************************************************
-//
 //! This structure defines a contiguous block of data which contains a group
 //! of descriptors that form part of a configuration descriptor for a device.
 //! It is assumed that a config section contains only whole descriptors.  It is
@@ -1095,15 +1048,15 @@ tFIFOConfig;
 typedef struct
 {
     //
-    //! The number of bytes of descriptor data pointed to by pucData.
+    //! The number of bytes of descriptor data pointed to by pui8Data.
     //
-    unsigned short usSize;
+    uint16_t ui16Size;
 
     //
     //! A pointer to a block of data containing an integral number of
     //! USB descriptors which form part of a larger configuration descriptor.
     //
-    const unsigned char *pucData;
+    const uint8_t *pui8Data;
 }
 tConfigSection;
 
@@ -1126,10 +1079,10 @@ typedef struct
     //! The number of sections comprising the full descriptor for this
     //! configuration.
     //
-    unsigned char ucNumSections;
+    uint8_t ui8NumSections;
 
     //
-    //! A pointer to an array of ucNumSections section pointers which must
+    //! A pointer to an array of ui8NumSections section pointers which must
     //! be concatenated to form the configuration descriptor.
     //
     const tConfigSection * const *psSections;
@@ -1152,6 +1105,13 @@ tConfigHeader;
 
 //*****************************************************************************
 //
+// Predeclare of the DMA instance structure.
+//
+//*****************************************************************************
+typedef struct tUSBDMAInstance tUSBDMAInstance;
+
+//*****************************************************************************
+//
 // USB descriptor parsing functions found in usbdesc.c
 //
 //*****************************************************************************
@@ -1165,22 +1125,20 @@ tConfigHeader;
 //*****************************************************************************
 #define USB_DESC_ANY 0xFFFFFFFF
 
-extern unsigned long USBDescGetNum(tDescriptorHeader *psDesc,
-                                   unsigned long ulSize, unsigned long ulType);
+extern uint32_t USBDescGetNum(tDescriptorHeader *psDesc, uint32_t ui32Size,
+                              uint32_t ui32Type);
 extern tDescriptorHeader *USBDescGet(tDescriptorHeader *psDesc,
-                                     unsigned long ulSize,
-                                     unsigned long ulType,
-                                     unsigned long ulIndex);
-extern unsigned long
+                                     uint32_t ui32Size, uint32_t ui32Type,
+                                     uint32_t ui32Index);
+extern uint32_t
        USBDescGetNumAlternateInterfaces(tConfigDescriptor *psConfig,
-                                        unsigned char ucInterfaceNumber);
+                                        uint8_t ui8InterfaceNumber);
 extern tInterfaceDescriptor *USBDescGetInterface(tConfigDescriptor *psConfig,
-                                                 unsigned long ulIndex,
-                                                 unsigned long ulAltCfg);
+                                                 uint32_t ui32Index,
+                                                 uint32_t ui32AltCfg);
 extern tEndpointDescriptor *
        USBDescGetInterfaceEndpoint(tInterfaceDescriptor *psInterface,
-                                   unsigned long ulIndex,
-                                   unsigned long ulSize);
+                                   uint32_t ui32Index, uint32_t ui32Size);
 
 //*****************************************************************************
 //
@@ -1192,39 +1150,42 @@ extern tEndpointDescriptor *
 typedef enum
 {
     //
-    //! The application wishes to operate as a USB device.
+    //! Operate in USB device mode with active monitoring of VBUS and the
+    //! ID pin must be pulled to a logic high value.
     //
-    USB_MODE_DEVICE = 0,
+    eUSBModeDevice = 0,
 
     //
-    //! The application wishes to operate as a USB host.
+    //! Operate in USB host mode with active monitoring of VBUS and the ID pin
+    //! must be pulled to a logic low value.
     //
-    USB_MODE_HOST,
+    eUSBModeHost,
 
     //
-    //! The application wishes to operate as both a host and device using
-    //! On-The-Go protocols to negotiate.
+    //! Operate as an On-The-Go device which requires both VBUS and ID to be
+    //! connected directly to the USB controller from the USB connector.
     //
-    USB_MODE_OTG,
+    eUSBModeOTG,
 
     //
     //! A marker indicating that no USB mode has yet been set by the
     //! application.
     //
-    USB_MODE_NONE,
+    eUSBModeNone,
 
     //
-    //! The application is forcing host mode so that the VBUS and ID pins are
-    //! not used or seen by the USB controller.
+    //! Force host mode so that the VBUS and ID pins are not used or monitored
+    //! by the USB controller.
     //
-    USB_MODE_FORCE_HOST,
+    eUSBModeForceHost,
 
     //
-    //! The application is forcing device mode so that the VBUS and ID pins are
-    //! not used or seen by the USB controller.
+    //! Forcing device mode so that the VBUS and ID pins are not used or
+    //! monitored by the USB controller.
     //
-    USB_MODE_FORCE_DEVICE,
-} tUSBMode;
+    eUSBModeForceDevice,
+}
+tUSBMode;
 
 //*****************************************************************************
 //
@@ -1233,35 +1194,18 @@ typedef enum
 // use, host or device.
 //
 //*****************************************************************************
-typedef void (*tUSBModeCallback)(unsigned long ulIndex, tUSBMode eMode);
-
-//*****************************************************************************
-//
-// Mode selection and dual mode interrupt steering functions.
-//
-//*****************************************************************************
-extern void USBStackModeSet(unsigned long ulIndex, tUSBMode eUSBMode,
-                            tUSBModeCallback pfnCallback);
-extern void USBDualModeInit(unsigned long ulIndex);
-extern void USBDualModeTerm(unsigned long ulIndex);
-extern void USBOTGMain(unsigned long ulMsTicks);
-extern void USBOTGPollRate(unsigned long ulIndex, unsigned long ulPollRate);
-extern void USBOTGModeInit(unsigned long ulIndex, unsigned long ulPollRate,
-                           void *pHostData, unsigned long ulHostDataSize);
-extern void USBOTGModeTerm(unsigned long ulIndex);
-extern void USB0OTGModeIntHandler(void);
-extern void USB0DualModeIntHandler(void);
+typedef void (*tUSBModeCallback)(uint32_t ui32Index, tUSBMode iMode);
 
 //*****************************************************************************
 //
 //! USB callback function.
 //!
 //! \param pvCBData is the callback pointer associated with the instance
-//!  generating the callback.  This is a value provided by the client during
+//! generating the callback.  This is a value provided by the client during
 //! initialization of the instance making the callback.
-//! \param ulEvent is the identifier of the asynchronous event which is being
+//! \param ui32Event is the identifier of the asynchronous event which is being
 //! notified to the client.
-//! \param ulMsgParam is an event-specific parameter.
+//! \param ui32MsgParam is an event-specific parameter.
 //! \param pvMsgData is an event-specific data pointer.
 //!
 //! A function pointer provided to the USB layer by the application
@@ -1272,9 +1216,116 @@ extern void USB0DualModeIntHandler(void);
 //! \return Returns an event-dependent value.
 //
 //*****************************************************************************
-typedef unsigned long (* tUSBCallback)(void *pvCBData, unsigned long ulEvent,
-                                       unsigned long ulMsgParam,
-                                       void *pvMsgData);
+typedef uint32_t (* tUSBCallback)(void *pvCBData, uint32_t ui32Event,
+                                  uint32_t ui32MsgParam, void *pvMsgData);
+
+//*****************************************************************************
+//
+// Error sources reported via USB_EVENT_ERROR.
+//
+//*****************************************************************************
+
+//
+//! The host received an invalid PID in a transaction.
+//
+#define USBERR_HOST_IN_PID_ERROR                                              \
+                                0x01000000
+
+//
+//! The host did not receive a response from a device.
+//
+#define USBERR_HOST_IN_NOT_COMP 0x00100000
+
+//
+//! The host received a stall on an IN endpoint.
+//
+#define USBERR_HOST_IN_STALL    0x00400000
+
+//
+//! The host detected a CRC or bit-stuffing error (isochronous mode).
+//
+#define USBERR_HOST_IN_DATA_ERROR                                             \
+                                0x00080000
+
+//
+//! The host received NAK on an IN endpoint for longer than the specified
+//! timeout period (interrupt, bulk and control modes).
+//
+#define USBERR_HOST_IN_NAK_TO   0x00080000
+
+//
+//! The host failed to communicate with a device via an IN endpoint.
+//
+#define USBERR_HOST_IN_ERROR    0x00040000
+
+//
+//! The host receive FIFO is full.
+//
+#define USBERR_HOST_IN_FIFO_FULL                                              \
+                                0x00020000
+//
+//! The host received NAK on an OUT endpoint for longer than the specified
+//! timeout period (bulk, interrupt and control modes).
+//
+#define USBERR_HOST_OUT_NAK_TO  0x00000080
+
+//
+//! The host did not receive a response from a device (isochronous mode).
+//
+#define USBERR_HOST_OUT_NOT_COMP                                              \
+                                0x00000080
+
+//
+//! The host received a stall on an OUT endpoint.
+//
+#define USBERR_HOST_OUT_STALL   0x00000020
+
+//
+//! The host failed to communicate with a device via an OUT endpoint.
+//
+#define USBERR_HOST_OUT_ERROR   0x00000004
+
+//
+//! The host received NAK on endpoint 0 for longer than the configured
+//! timeout.
+//
+#define USBERR_HOST_EP0_NAK_TO  0x00000080
+
+//
+//! The host failed to communicate with a device via an endpoint zero.
+//
+#define USBERR_HOST_EP0_ERROR   0x00000010
+
+//
+//! The device detected a CRC error in received data.
+//
+#define USBERR_DEV_RX_DATA_ERROR                                              \
+                                0x00080000
+
+//
+//! The device was unable to receive a packet from the host since the receive
+//! FIFO is full.
+//
+#define USBERR_DEV_RX_OVERRUN   0x00040000
+
+//
+//! The device receive FIFO is full.
+//
+#define USBERR_DEV_RX_FIFO_FULL 0x00020000
+
+//*****************************************************************************
+//
+// Close the general_usblib_api Doxygen group.
+//! @}
+//
+//*****************************************************************************
+
+//*****************************************************************************
+//
+//! \addtogroup usblib_events
+//! @{
+//
+//*****************************************************************************
 
 //*****************************************************************************
 //
@@ -1287,9 +1338,15 @@ typedef unsigned long (* tUSBCallback)(void *pvCBData, unsigned long ulEvent,
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulEvent;
+    //
+    //! One of the USB_EVENT_ values.
+    //
+    uint32_t ui32Event;
 
-    unsigned long ulInstance;
+    //
+    //! The caller supplied instance value that is passed to event handlers.
+    //
+    uint32_t ui32Instance;
 }
 tEventInfo;
 
@@ -1316,19 +1373,20 @@ tEventInfo;
 // specific messages for a given class.
 //
 //*****************************************************************************
-#define USBD_CDC_EVENT_BASE      (USB_CLASS_EVENT_BASE + 0)
-#define USBD_HID_EVENT_BASE      (USB_CLASS_EVENT_BASE + 0x1000)
-#define USBD_HID_KEYB_EVENT_BASE (USBD_HID_EVENT_BASE + 0x100)
-#define USBD_BULK_EVENT_BASE     (USB_CLASS_EVENT_BASE + 0x2000)
-#define USBD_MSC_EVENT_BASE      (USB_CLASS_EVENT_BASE + 0x3000)
-#define USBD_AUDIO_EVENT_BASE    (USB_CLASS_EVENT_BASE + 0x4000)
-#define USBD_DFU_EVENT_BASE      (USB_CLASS_EVENT_BASE + 0x5000)
+#define USBD_CDC_EVENT_BASE     (USB_CLASS_EVENT_BASE + 0)
+#define USBD_HID_EVENT_BASE     (USB_CLASS_EVENT_BASE + 0x1000)
+#define USBD_HID_KEYB_EVENT_BASE                                              \
+                                (USBD_HID_EVENT_BASE + 0x100)
+#define USBD_BULK_EVENT_BASE    (USB_CLASS_EVENT_BASE + 0x2000)
+#define USBD_MSC_EVENT_BASE     (USB_CLASS_EVENT_BASE + 0x3000)
+#define USBD_AUDIO_EVENT_BASE   (USB_CLASS_EVENT_BASE + 0x4000)
+#define USBD_DFU_EVENT_BASE     (USB_CLASS_EVENT_BASE + 0x5000)
 
-#define USBH_CDC_EVENT_BASE   (USBD_CDC_EVENT_BASE  + 0x800)
-#define USBH_HID_EVENT_BASE   (USBD_HID_EVENT_BASE  + 0x800)
-#define USBH_BULK_EVENT_BASE  (USBD_BULK_EVENT_BASE + 0x800)
-#define USBH_MSC_EVENT_BASE   (USBD_MSC_EVENT_BASE  + 0x800)
-#define USBH_AUDIO_EVENT_BASE (USBD_AUDIO_EVENT_BASE  + 0x800)
+#define USBH_CDC_EVENT_BASE     (USBD_CDC_EVENT_BASE  + 0x800)
+#define USBH_HID_EVENT_BASE     (USBD_HID_EVENT_BASE  + 0x800)
+#define USBH_BULK_EVENT_BASE    (USBD_BULK_EVENT_BASE + 0x800)
+#define USBH_MSC_EVENT_BASE     (USBD_MSC_EVENT_BASE  + 0x800)
+#define USBH_AUDIO_EVENT_BASE   (USBD_AUDIO_EVENT_BASE  + 0x800)
 
 //*****************************************************************************
 //
@@ -1340,22 +1398,23 @@ tEventInfo;
 //! The device is now attached to a USB host and ready to begin sending
 //! and receiving data (used by device classes only).
 //
-#define USB_EVENT_CONNECTED (USB_EVENT_BASE + 0)
+#define USB_EVENT_CONNECTED     (USB_EVENT_BASE + 0)
 
 //
 //! The device has been disconnected from the USB host (used by device classes
 //! only).
 //!
-//! \note In device mode, the USB_EVENT_DISCONNECTED will not be reported if the
-//! MCU's PB1/USB0VBUS pin is connected to a fixed +5 Volts rather than
+//! \note In device mode, the USB_EVENT_DISCONNECTED will not be reported if
+//! the MCU's PB1/USB0VBUS pin is connected to a fixed +5 Volts rather than
 //! directly to the VBUS pin on the USB connector.
 //
-#define USB_EVENT_DISCONNECTED (USB_EVENT_BASE + 1)
+#define USB_EVENT_DISCONNECTED  (USB_EVENT_BASE + 1)
 
 //
-//! Data has been received and is in the buffer provided.
+//! Data has been received and is in the buffer provided or is ready to be
+//! read from the FIFO.
 //
-#define USB_EVENT_RX_AVAILABLE (USB_EVENT_BASE + 2)
+#define USB_EVENT_RX_AVAILABLE  (USB_EVENT_BASE + 2)
 
 //
 //! This event is sent by a lower layer to inquire about the amount of
@@ -1365,44 +1424,46 @@ tEventInfo;
 //! Clients receiving this event should return the number of bytes of data
 //! that are unprocessed or 0 if no outstanding data remains.
 //
-#define USB_EVENT_DATA_REMAINING (USB_EVENT_BASE + 3)
+#define USB_EVENT_DATA_REMAINING                                              \
+                                (USB_EVENT_BASE + 3)
 
 //
 //! This event is sent by a lower layer supporting DMA to request a buffer in
-//! which the next received packet may be stored.  The \e ulMsgValue parameter
-//! indicates the maximum size of packet that can be received in this channel
-//! and \e pvMsgData points to storage which should be written with the
+//! which the next received packet may be stored.  The \e ui32MsgValue
+//! parameter indicates the maximum size of packet that can be received in this
+//! channel and \e pvMsgData points to storage which should be written with the
 //! returned buffer pointer.  The return value from the callback should be the
 //! size of the buffer allocated (which may be less than the maximum size
-//! passed in \e ulMsgValue if the client knows that fewer bytes are expected
+//! passed in \e ui32MsgValue if the client knows that fewer bytes are expected
 //! to be received) or 0 if no buffer is being returned.
 //
-#define USB_EVENT_REQUEST_BUFFER (USB_EVENT_BASE + 4)
+#define USB_EVENT_REQUEST_BUFFER                                              \
+                                (USB_EVENT_BASE + 4)
 
 //
 //! Data has been sent and acknowledged.  If this event is received via the
-//! USB buffer callback, the \e ulMsgValue parameter indicates the number of
+//! USB buffer callback, the \e ui32MsgValue parameter indicates the number of
 //! bytes from the transmit buffer that have been successfully transmitted
 //! and acknowledged.
 //
-#define USB_EVENT_TX_COMPLETE (USB_EVENT_BASE + 5)
+#define USB_EVENT_TX_COMPLETE   (USB_EVENT_BASE + 5)
 
 //
-//! An error has been reported on the channel or pipe.  The \e ulMsgValue
+//! An error has been reported on the channel or pipe.  The \e ui32MsgValue
 //! parameter indicates the source(s) of the error and is the logical OR
 //! combination of "USBERR_" flags defined below.
 //
-#define USB_EVENT_ERROR (USB_EVENT_BASE + 6)
+#define USB_EVENT_ERROR         (USB_EVENT_BASE + 6)
 
 //
 //! The bus has entered suspend state.
 //
-#define USB_EVENT_SUSPEND (USB_EVENT_BASE + 7)
+#define USB_EVENT_SUSPEND       (USB_EVENT_BASE + 7)
 
 //
 //! The bus has left suspend state.
 //
-#define USB_EVENT_RESUME (USB_EVENT_BASE + 8)
+#define USB_EVENT_RESUME        (USB_EVENT_BASE + 8)
 
 //
 //! A scheduler event has occurred.
@@ -1437,12 +1498,13 @@ tEventInfo;
 //!
 //! The \e pvInstance is a pointer to an instance of the device being accessed.
 //!
-//! The \e ulRequest is USB_EVENT_COMP_IFACE_CHANGE.
+//! The \e ui32Request is USB_EVENT_COMP_IFACE_CHANGE.
 //!
 //! The \e pvRequestData is a pointer to a two byte array where the first value
 //! is the old interface number and the second is the new interface number.
 //
-#define USB_EVENT_COMP_IFACE_CHANGE (USB_EVENT_BASE + 14)
+#define USB_EVENT_COMP_IFACE_CHANGE                                           \
+                                (USB_EVENT_BASE + 14)
 
 //
 //! This define is used with a device class's pfnDeviceHandler handler function
@@ -1451,7 +1513,7 @@ tEventInfo;
 //!
 //! The \e pvInstance is a pointer to an instance of the device being accessed.
 //!
-//! The \e ulRequest is USB_EVENT_COMP_EP_CHANGE.
+//! The \e ui32Request is USB_EVENT_COMP_EP_CHANGE.
 //!
 //! The \e pvRequestData is a pointer to a two byte array where the first value
 //! is the old endpoint number and the second is the new endpoint number.  The
@@ -1459,7 +1521,8 @@ tEventInfo;
 //! bit 7 set indicates an IN endpoint and bit 7 clear indicates an OUT
 //! endpoint.
 //
-#define USB_EVENT_COMP_EP_CHANGE    (USB_EVENT_BASE + 15)
+#define USB_EVENT_COMP_EP_CHANGE                                              \
+                                (USB_EVENT_BASE + 15)
 
 //
 //! This define is used with a device class's pfnDeviceHandler handler function
@@ -1469,12 +1532,13 @@ tEventInfo;
 //!
 //! The \e pvInstance is a pointer to an instance of the device being accessed.
 //!
-//! The \e ulRequest is USB_EVENT_COMP_STR_CHANGE.
+//! The \e ui32Request is USB_EVENT_COMP_STR_CHANGE.
 //!
 //! The \e pvRequestData is a pointer to a two byte array where the first value
 //! is the old string index and the second is the new string index.
 //
-#define USB_EVENT_COMP_STR_CHANGE    (USB_EVENT_BASE + 16)
+#define USB_EVENT_COMP_STR_CHANGE                                             \
+                                (USB_EVENT_BASE + 16)
 
 //
 //! This define is used with a device class's pfnDeviceHandler handler function
@@ -1485,12 +1549,12 @@ tEventInfo;
 //!
 //! The \e pvInstance is a pointer to an instance of the device being accessed.
 //!
-//! The \e ulRequest is USB_EVENT_COMP_CONFIG.
+//! The \e ui32Request is USB_EVENT_COMP_CONFIG.
 //!
 //! The \e pvRequestData is a pointer to the beginning of the configuration
 //! descriptor for the device instance.
 //
-#define USB_EVENT_COMP_CONFIG        (USB_EVENT_BASE + 17)
+#define USB_EVENT_COMP_CONFIG   (USB_EVENT_BASE + 17)
 
 //
 //! An unknown device is now attached to a USB host.  This value is only valid
@@ -1498,113 +1562,24 @@ tEventInfo;
 //! useful for applications that want to know when an unknown device is
 //! connected and what the class is of the unknown device.
 //!
-//! The \e ulInstance is actually the class of the unsupported
+//! The \e ui32Instance is actually the class of the unsupported
 //! device that was connected.
 //
-#define USB_EVENT_UNKNOWN_CONNECTED  (USB_EVENT_BASE + 18)
+#define USB_EVENT_UNKNOWN_CONNECTED                                           \
+                                (USB_EVENT_BASE + 18)
 
 //
 //! A start of frame event has occurred.  This event is disabled by default
 //! and must be enabled via a call from the application to USBHCDEventEnable().
 //
-#define USB_EVENT_SOF                (USB_EVENT_BASE + 19)
+#define USB_EVENT_SOF           (USB_EVENT_BASE + 19)
 
 //*****************************************************************************
 //
-// Error sources reported via USB_EVENT_ERROR.
-//
-//*****************************************************************************
-
-//
-//! The host received an invalid PID in a transaction.
-//
-#define USBERR_HOST_IN_PID_ERROR   0x01000000
-
-//
-//! The host did not receive a response from a device.
-//
-#define USBERR_HOST_IN_NOT_COMP    0x00100000
-
-//
-//! The host received a stall on an IN endpoint.
-//
-#define USBERR_HOST_IN_STALL       0x00400000
-
-//
-//! The host detected a CRC or bit-stuffing error (isochronous mode).
-//
-#define USBERR_HOST_IN_DATA_ERROR  0x00080000
-
-//
-//! The host received NAK on an IN endpoint for longer than the specified
-//! timeout period (interrupt, bulk and control modes).
-//
-#define USBERR_HOST_IN_NAK_TO      0x00080000
-
-//
-//! The host failed to communicate with a device via an IN endpoint.
-//
-#define USBERR_HOST_IN_ERROR       0x00040000
-
-//
-//! The host receive FIFO is full.
-//
-#define USBERR_HOST_IN_FIFO_FULL   0x00020000  // RX FIFO full
-//
-//! The host received NAK on an OUT endpoint for longer than the specified
-//! timeout period (bulk, interrupt and control modes).
-//
-#define USBERR_HOST_OUT_NAK_TO     0x00000080
-
-//
-//! The host did not receive a response from a device (isochronous mode).
-//
-#define USBERR_HOST_OUT_NOT_COMP   0x00000080
-
-//
-//! The host received a stall on an OUT endpoint.
-//
-#define USBERR_HOST_OUT_STALL      0x00000020
-
-//
-//! The host failed to communicate with a device via an OUT endpoint.
-//
-#define USBERR_HOST_OUT_ERROR      0x00000004
-
-//
-//! The host received NAK on endpoint 0 for longer than the configured
-//! timeout.
-//
-#define USBERR_HOST_EP0_NAK_TO     0x00000080
-
-//
-//! The host failed to communicate with a device via an endpoint zero.
-//
-#define USBERR_HOST_EP0_ERROR      0x00000010
-
-//
-//! The device detected a CRC error in received data.
-//
-#define USBERR_DEV_RX_DATA_ERROR   0x00080000
-
-//
-//! The device was unable to receive a packet from the host since the receive
-//! FIFO is full.
-//
-#define USBERR_DEV_RX_OVERRUN      0x00040000
-
-//
-//! The device receive FIFO is full.
-//
-#define USBERR_DEV_RX_FIFO_FULL    0x00020000  // RX FIFO full
-
-//*****************************************************************************
-//
-// Close the general_usblib_api Doxygen group.
+// Close the usblib_events Doxygen group.
 //! @}
 //
 //*****************************************************************************
-
 //*****************************************************************************
 //
 //! \addtogroup usblib_buffer_api
@@ -1619,10 +1594,8 @@ tEventInfo;
 //! buffer object.
 //
 //*****************************************************************************
-typedef unsigned long (* tUSBPacketTransfer)(void *pvHandle,
-                                             unsigned char *pcData,
-                                             unsigned long ulLength,
-                                             tBoolean bLast);
+typedef uint32_t (* tUSBPacketTransfer)(void *pvHandle, uint8_t *pi8Data,
+                                        uint32_t ui32Length, bool bLast);
 
 //*****************************************************************************
 //
@@ -1631,7 +1604,7 @@ typedef unsigned long (* tUSBPacketTransfer)(void *pvHandle,
 //! USB buffer object.
 //
 //*****************************************************************************
-typedef unsigned long (* tUSBPacketAvailable)(void *pvHandle);
+typedef uint32_t (* tUSBPacketAvailable)(void *pvHandle);
 
 //*****************************************************************************
 //
@@ -1640,7 +1613,8 @@ typedef unsigned long (* tUSBPacketAvailable)(void *pvHandle);
 //! the \e pvWorkspace field of the \e tUSBBuffer structure.
 //
 //*****************************************************************************
-#define USB_BUFFER_WORKSPACE_SIZE 24
+#define USB_BUFFER_WORKSPACE_SIZE                                             \
+                                24
 
 //*****************************************************************************
 //
@@ -1656,7 +1630,7 @@ typedef struct
     //! by the client.  If false, the buffer operates as a receive buffer
     //! and supports calls to USBBufferRead.
     //
-    tBoolean bTransmitBuffer;
+    bool bTransmitBuffer;
 
     //
     //! A pointer to the callback function which will be called to notify
@@ -1698,12 +1672,12 @@ typedef struct
     //! A pointer to memory to be used as the ring buffer for this
     //! instance.
     //
-    unsigned char *pcBuffer;
+    uint8_t *pui8Buffer;
 
     //
-    //! The size, in bytes, of the buffer pointed to by pcBuffer.
+    //! The size, in bytes, of the buffer pointed to by pi8Buffer.
     //
-    unsigned long ulBufferSize;
+    uint32_t ui32BufferSize;
 
     //
     //! A pointer to USB_BUFFER_WORKSPACE_SIZE bytes of RAM that the buffer
@@ -1724,24 +1698,31 @@ typedef struct
     //
     //! The ring buffer size.
     //
-    unsigned long ulSize;
+    uint32_t ui32Size;
 
     //
     //! The ring buffer write index.
     //
-    volatile unsigned long ulWriteIndex;
+    volatile uint32_t ui32WriteIndex;
 
     //
     //! The ring buffer read index.
     //
-    volatile unsigned long ulReadIndex;
+    volatile uint32_t ui32ReadIndex;
 
     //
     //! The ring buffer.
     //
-    unsigned char *pucBuf;
+    uint8_t *pui8Buf;
 }
 tUSBRingBufObject;
+
+//*****************************************************************************
+//
+// Close the Doxygen group.
+//! @}
+//
+//*****************************************************************************
 
 //*****************************************************************************
 //
@@ -1750,56 +1731,61 @@ tUSBRingBufObject;
 //*****************************************************************************
 extern const tUSBBuffer *USBBufferInit(const tUSBBuffer *psBuffer);
 extern void USBBufferZeroLengthPacketInsert(const tUSBBuffer *psBuffer,
-                                            tBoolean bSendZLP);
+                                            bool bSendZLP);
 extern void USBBufferInfoGet(const tUSBBuffer *psBuffer,
                              tUSBRingBufObject *psRingBuf);
 extern void *USBBufferCallbackDataSet(tUSBBuffer *psBuffer, void *pvCBData);
-extern unsigned long USBBufferWrite(const tUSBBuffer *psBuffer,
-                                    const unsigned char *pucData,
-                                    unsigned long ulLength);
+extern uint32_t USBBufferWrite(const tUSBBuffer *psBuffer,
+                               const uint8_t *pui8Data, uint32_t ui32Length);
 extern void USBBufferDataWritten(const tUSBBuffer *psBuffer,
-                                 unsigned long ulLength);
+                                 uint32_t ui32Length);
 extern void USBBufferDataRemoved(const tUSBBuffer *psBuffer,
-                                 unsigned long ulLength);
+                                 uint32_t ui32Length);
 extern void USBBufferFlush(const tUSBBuffer *psBuffer);
-extern unsigned long USBBufferRead(const tUSBBuffer *psBuffer,
-                                   unsigned char *pucData,
-                                   unsigned long ulLength);
-extern unsigned long USBBufferDataAvailable(const tUSBBuffer *psBuffer);
-extern unsigned long USBBufferSpaceAvailable(const tUSBBuffer *psBuffer);
-extern unsigned long USBBufferEventCallback(void *pvCBData,
-                                            unsigned long ulEvent,
-                                            unsigned long ulMsgValue,
-                                            void *pvMsgData);
-extern tBoolean USBRingBufFull(tUSBRingBufObject *ptUSBRingBuf);
-extern tBoolean USBRingBufEmpty(tUSBRingBufObject *ptUSBRingBuf);
-extern void USBRingBufFlush(tUSBRingBufObject *ptUSBRingBuf);
-extern unsigned long USBRingBufUsed(tUSBRingBufObject *ptUSBRingBuf);
-extern unsigned long USBRingBufFree(tUSBRingBufObject *ptUSBRingBuf);
-extern unsigned long USBRingBufContigUsed(tUSBRingBufObject *ptUSBRingBuf);
-extern unsigned long USBRingBufContigFree(tUSBRingBufObject *ptUSBRingBuf);
-extern unsigned long USBRingBufSize(tUSBRingBufObject *ptUSBRingBuf);
-extern unsigned char USBRingBufReadOne(tUSBRingBufObject *ptUSBRingBuf);
-extern void USBRingBufRead(tUSBRingBufObject *ptUSBRingBuf,
-                           unsigned char *pucData, unsigned long ulLength);
-extern void USBRingBufWriteOne(tUSBRingBufObject *ptUSBRingBuf,
-                               unsigned char ucData);
-extern void USBRingBufWrite(tUSBRingBufObject *ptUSBRingBuf,
-                            const unsigned char *pucData,
-                            unsigned long ulLength);
-extern void USBRingBufAdvanceWrite(tUSBRingBufObject *ptUSBRingBuf,
-                                   unsigned long ulNumBytes);
-extern void USBRingBufAdvanceRead(tUSBRingBufObject *ptUSBRingBuf,
-                                  unsigned long ulNumBytes);
-extern void USBRingBufInit(tUSBRingBufObject *ptUSBRingBuf,
-                           unsigned char *pucBuf, unsigned long ulSize);
+extern uint32_t USBBufferRead(const tUSBBuffer *psBuffer, uint8_t *pui8Data,
+                              uint32_t ui32Length);
+extern uint32_t USBBufferDataAvailable(const tUSBBuffer *psBuffer);
+extern uint32_t USBBufferSpaceAvailable(const tUSBBuffer *psBuffer);
+extern uint32_t USBBufferEventCallback(void *pvCBData, uint32_t ui32Event,
+                                       uint32_t ui32MsgValue, void *pvMsgData);
+extern bool USBRingBufFull(tUSBRingBufObject *psUSBRingBuf);
+extern bool USBRingBufEmpty(tUSBRingBufObject *psUSBRingBuf);
+extern void USBRingBufFlush(tUSBRingBufObject *psUSBRingBuf);
+extern uint32_t USBRingBufUsed(tUSBRingBufObject *psUSBRingBuf);
+extern uint32_t USBRingBufFree(tUSBRingBufObject *psUSBRingBuf);
+extern uint32_t USBRingBufContigUsed(tUSBRingBufObject *psUSBRingBuf);
+extern uint32_t USBRingBufContigFree(tUSBRingBufObject *psUSBRingBuf);
+extern uint32_t USBRingBufSize(tUSBRingBufObject *psUSBRingBuf);
+extern uint8_t USBRingBufReadOne(tUSBRingBufObject *psUSBRingBuf);
+extern void USBRingBufRead(tUSBRingBufObject *psUSBRingBuf,
+                           uint8_t *pui8Data, uint32_t ui32Length);
+extern void USBRingBufWriteOne(tUSBRingBufObject *psUSBRingBuf,
+                               uint8_t ui8Data);
+extern void USBRingBufWrite(tUSBRingBufObject *psUSBRingBuf,
+                            const uint8_t *pui8Data, uint32_t ui32Length);
+extern void USBRingBufAdvanceWrite(tUSBRingBufObject *psUSBRingBuf,
+                                   uint32_t ui32NumBytes);
+extern void USBRingBufAdvanceRead(tUSBRingBufObject *psUSBRingBuf,
+                                  uint32_t ui32NumBytes);
+extern void USBRingBufInit(tUSBRingBufObject *psUSBRingBuf,
+                           uint8_t *pui8Buf, uint32_t ui32Size);
 
 //*****************************************************************************
 //
-// Close the Doxygen group.
-//! @}
+// Mode selection and dual mode interrupt steering functions.
 //
 //*****************************************************************************
+extern void USBStackModeSet(uint32_t ui32Index, tUSBMode iUSBMode,
+                            tUSBModeCallback pfnCallback);
+extern void USBDualModeInit(uint32_t ui32Index);
+extern void USBDualModeTerm(uint32_t ui32Index);
+extern void USBOTGMain(uint32_t ui32MsTicks);
+extern void USBOTGPollRate(uint32_t ui32Index, uint32_t ui32PollRate);
+extern void USBOTGModeInit(uint32_t ui32Index, uint32_t ui32PollRate,
+                           void *pHostData, uint32_t ui32HostDataSize);
+extern void USBOTGModeTerm(uint32_t ui32Index);
+extern void USB0OTGModeIntHandler(void);
+extern void USB0DualModeIntHandler(void);
 
 //*****************************************************************************
 //

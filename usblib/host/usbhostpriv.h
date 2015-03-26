@@ -2,7 +2,7 @@
 //
 // usbhostpriv.h - Internal header file for USB host functions.
 //
-// Copyright (c) 2011-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2011-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -46,48 +46,48 @@ typedef enum
     //
     // The port has no device connected.
     //
-    PORT_IDLE,
+    ePortIdle,
 
     //
     // The port has a device present and is waiting for the enumeration
     // sequence to begin.
     //
-    PORT_CONNECTED,
+    ePortConnected,
 
     //
     // A device connection notification has been received and we have initiated
     // a reset to the port.  We are waiting for the reset to complete.
     //
-    PORT_RESET_ACTIVE,
+    ePortResetActive,
 
     //
     // The Port reset has completed but now the hub is waiting the required
     // 10ms before accessing the device.
     //
-    PORT_RESET_WAIT,
+    ePortResetWait,
 
     //
     // A device is connected and the port has been reset.  Control has been
     // passed to the main host handling portion of USBLib to enumerate the
     // device.
     //
-    PORT_ACTIVE,
+    ePortActive,
 
     //
     // A device has completed enumeration.
     //
-    PORT_ENUMERATED,
+    ePortEnumerated,
 
     //
     // A device is attached to the port but enumeration failed.
     //
-    PORT_ERROR
+    ePortError
 }
 tHubPortState;
 
 //*****************************************************************************
 //
-// The list of valid event flags in the g_sUSBHCD.ulEventEnables member
+// The list of valid event flags in the g_sUSBHCD.ui32EventEnables member
 // variable.
 //
 //*****************************************************************************
@@ -101,138 +101,77 @@ tHubPortState;
 
 //*****************************************************************************
 //
-// This structure holds all data specific to a single hub port.
+//! This is the structure that holds all of the information for devices
+//! that are enumerated in the system.   It is passed in to Open function of
+//! USB host class drivers so that they can allocate any endpoints and parse
+//! out other information that the device class needs to complete enumeration.
 //
 //*****************************************************************************
-typedef struct
+struct tUSBHostDevice
 {
     //
-    // A pointer to storage for the configuration descriptor of a device
-    // attached to this port.
+    //! The current device address for this device.
     //
-    unsigned char *pucConfigDesc;
+    uint32_t ui32Address;
 
     //
-    // The size of the storage pointed to by pucConfigDesc.
+    //! The current interface for this device.
     //
-    unsigned long ulConfigSize;
+    uint32_t ui32Interface;
 
     //
-    // The handle used by the HCD layer to identify this device.
+    //! A flag used to record whether this is a low-speed or a full-speed
+    //! device.
     //
-    unsigned long ulDevHandle;
+    bool bLowSpeed;
 
     //
-    // The current state of the port.
+    //! A flag indicating whether or not we have read the device's
+    //! configuration descriptor yet.
     //
-    volatile tHubPortState sState;
+    bool bConfigRead;
 
     //
-    // General counter used in various states.
+    //! The hub number to which this device is attached.
     //
-    volatile unsigned long ulCount;
+    uint8_t ui8Hub;
 
     //
-    // A flag used to indicate that the downstream device is a low speed
-    // device.
+    //! The hub port number to which the device is attached.
     //
-    tBoolean bLowSpeed;
+    uint8_t ui8HubPort;
 
     //
-    // This flag is set if the hub reports that a change is pending on this
-    // port.
+    //! The device descriptor for this device.
     //
-    volatile tBoolean bChanged;
-}
-tHubPort;
-
-//*****************************************************************************
-//
-// This is the structure that holds all of the data for a given instance of
-// a Hub device.
-//
-//*****************************************************************************
-typedef struct
-{
-    //
-    // Save the device instance.
-    //
-    tUSBHostDevice *pDevice;
+    tDeviceDescriptor sDeviceDescriptor;
 
     //
-    // Used to save the callback function pointer.
+    //! A pointer to the configuration descriptor for this device.
     //
-    tUSBCallback pfnCallback;
+    tConfigDescriptor *psConfigDescriptor;
 
     //
-    // Callback data provided by caller.
+    //! The size of the buffer allocated to psConfigDescriptor.
     //
-    unsigned long ulCBData;
+    uint32_t ui32ConfigDescriptorSize;
 
     //
-    // Interrupt IN pipe.
+    //! Internal flags used by the host controller driver.
     //
-    unsigned long ulIntInPipe;
-
-    //
-    // Hub characteristics as reported in the class-specific hub descriptor.
-    //
-    unsigned short usHubCharacteristics;
-
-    //
-    // The number of downstream-facing ports the hub supports.
-    //
-    unsigned char ucNumPorts;
-
-    //
-    // The number of ports on the hub that we can actually talk to.  This will
-    // be the smaller of the number of ports on the hub and MAX_USB_DEVICES.
-    //
-    unsigned char ucNumPortsInUse;
-
-    //
-    // The size of a status change packet sent by the hub.  This is determined
-    // from the number of ports supported by the hub.
-    //
-    unsigned char ucReportSize;
-
-    //
-    // Flag indicating whether the hub is connected.
-    //
-    tBoolean bHubActive;
-
-    //
-    // Flag indicating that a device is currently in process of being
-    // enumerated.
-    //
-    volatile tBoolean bEnumerationBusy;
-
-    //
-    // This is valid if bEnumerationBusy is set and indicates the port
-    // that is in the process of enumeration.
-    //
-    unsigned char ucEnumIdx;
-
-    //
-    // The state of each of the ports we support on the hub.
-    //
-    tHubPort psPorts[MAX_USB_DEVICES];
-}
-tHubInstance;
+    uint32_t ui32Flags;
+};
 
 //*****************************************************************************
 //
 // Functions within the host controller that are called by the hub class driver
 //
 //*****************************************************************************
-extern unsigned long USBHCDHubDeviceConnected(unsigned long ulIndex,
-                                              unsigned char ucHub,
-                                              unsigned char ucPort,
-                                              tBoolean bLowSpeed,
-                                              unsigned char *pucConfigPool,
-                                              unsigned long ulConfigSize);
-extern void USBHCDHubDeviceDisconnected(unsigned long ulIndex,
-                                        unsigned long ulDevIndex);
+extern uint32_t USBHCDHubDeviceConnected(uint32_t ui32Index, uint8_t ui8Hub,
+                                         uint8_t ui8Port,
+                                         bool bLowSpeed);
+extern void USBHCDHubDeviceDisconnected(uint32_t ui32Index,
+                                        uint32_t ui32DevIndex);
 
 //*****************************************************************************
 //
@@ -241,9 +180,8 @@ extern void USBHCDHubDeviceDisconnected(unsigned long ulIndex,
 //*****************************************************************************
 extern void USBHHubMain(void);
 extern void USBHHubInit(void);
-extern void USBHHubEnumerationComplete(unsigned char ucHub,
-                                       unsigned char ucPort);
-extern void USBHHubEnumerationError(unsigned char ucHub, unsigned char ucPort);
+extern void USBHHubEnumerationComplete(uint8_t ui8Hub, uint8_t ui8Port);
+extern void USBHHubEnumerationError(uint8_t ui8Hub, uint8_t ui8Port);
 
 //*****************************************************************************
 //

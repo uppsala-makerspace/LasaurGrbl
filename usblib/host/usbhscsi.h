@@ -2,7 +2,7 @@
 //
 // usbhscsi.h - Definitions for the USB host SCSI layer.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -48,41 +48,26 @@ extern "C"
 // Prototypes for the APIs exported by the USB SCSI layer.
 //
 //*****************************************************************************
-extern unsigned long USBHSCSIInquiry(unsigned long ulInPipe,
-                                     unsigned long ulOutPipe,
-                                     unsigned char *pucBuffer,
-                                     unsigned long *pulSize);
-extern unsigned long USBHSCSIReadCapacity(unsigned long ulInPipe,
-                                          unsigned long ulOutPipe,
-                                          unsigned char *pData,
-                                          unsigned long *pulSize);
-extern unsigned long USBHSCSIReadCapacities(unsigned long ulInPipe,
-                                            unsigned long ulOutPipe,
-                                            unsigned char *pData,
-                                            unsigned long *pulSize);
-extern unsigned long USBHSCSIModeSense6(unsigned long ulInPipe,
-                                        unsigned long ulOutPipe,
-                                        unsigned long ulFlags,
-                                        unsigned char *pData,
-                                        unsigned long *pulSize);
-extern unsigned long USBHSCSITestUnitReady(unsigned long ulInPipe,
-                                           unsigned long ulOutPipe);
-extern unsigned long USBHSCSIRequestSense(unsigned long ulInPipe,
-                                          unsigned long ulOutPipe,
-                                          unsigned char *pucData,
-                                          unsigned long *pulSize);
-extern unsigned long USBHSCSIRead10(unsigned long ulInPipe,
-                                    unsigned long ulOutPipe,
-                                    unsigned long ulLBA,
-                                    unsigned char *pucData,
-                                    unsigned long *pulSize,
-                                    unsigned long ulNumBlocks);
-extern unsigned long USBHSCSIWrite10(unsigned long ulInPipe,
-                                     unsigned long ulOutPipe,
-                                     unsigned long ulLBA,
-                                     unsigned char *pucData,
-                                     unsigned long *pulSize,
-                                     unsigned long ulNumBlocks);
+extern uint32_t USBHSCSIInquiry(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                                uint8_t *pui8Buffer, uint32_t *pui32Size);
+extern uint32_t USBHSCSIReadCapacity(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                                     uint8_t *pui8Data, uint32_t *pui32Size);
+extern uint32_t USBHSCSIReadCapacities(uint32_t ui32InPipe,
+                                       uint32_t ui32OutPipe, uint8_t *pui8Data,
+                                       uint32_t *pui32Size);
+extern uint32_t USBHSCSIModeSense6(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                                   uint32_t ui32Flags, uint8_t *pui8Data,
+                                   uint32_t *pui32Size);
+extern uint32_t USBHSCSITestUnitReady(uint32_t ui32InPipe,
+                                      uint32_t ui32OutPipe);
+extern uint32_t USBHSCSIRequestSense(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                                     uint8_t *pui8Data, uint32_t *pui32Size);
+extern uint32_t USBHSCSIRead10(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                               uint32_t ui32LBA, uint8_t *pui8Data,
+                               uint32_t *pui32Size, uint32_t ui32NumBlocks);
+extern uint32_t USBHSCSIWrite10(uint32_t ui32InPipe, uint32_t ui32OutPipe,
+                                uint32_t ui32LBA, uint8_t *pui8Data,
+                                uint32_t *pui32Size, uint32_t ui32NumBlocks);
 
 //*****************************************************************************
 //

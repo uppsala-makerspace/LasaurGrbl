@@ -2,7 +2,7 @@
 //
 // usbdcdc.c - USB CDC ACM (serial) device class driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
@@ -91,20 +93,23 @@
 // processing.
 //
 //*****************************************************************************
-#define MAX_REQUEST_DATA_SIZE sizeof(tLineCoding)
+#define MAX_REQUEST_DATA_SIZE   sizeof(tLineCoding)
 
 //*****************************************************************************
 //
-// Flags that may appear in usDeferredOpFlags to indicate some operation that
+// Flags that may appear in ui16DeferredOpFlags to indicate some operation that
 // has been requested but could not be processed at the time it was received.
 //
 //*****************************************************************************
-#define CDC_DO_SERIAL_STATE_CHANGE 0
-#define CDC_DO_SEND_BREAK          1
-#define CDC_DO_CLEAR_BREAK         2
-#define CDC_DO_LINE_CODING_CHANGE  3
-#define CDC_DO_LINE_STATE_CHANGE   4
-#define CDC_DO_PACKET_RX           5
+#define CDC_DO_SERIAL_STATE_CHANGE                                            \
+                                0
+#define CDC_DO_SEND_BREAK       1
+#define CDC_DO_CLEAR_BREAK      2
+#define CDC_DO_LINE_CODING_CHANGE                                             \
+                                3
+#define CDC_DO_LINE_STATE_CHANGE                                              \
+                                4
+#define CDC_DO_PACKET_RX        5
 
 //*****************************************************************************
 //
@@ -112,19 +117,9 @@
 // being blocked.
 //
 //*****************************************************************************
-#define RX_BLOCK_OPS ((1 << CDC_DO_SEND_BREAK) |                              \
-                      (1 << CDC_DO_LINE_CODING_CHANGE) |                      \
-                      (1 << CDC_DO_LINE_STATE_CHANGE))
-
-//*****************************************************************************
-//
-// Macros to convert between USB controller base address and an index.  These
-// are currently trivial but are included to allow for the possibility of
-// supporting more than one controller in the future.
-//
-//*****************************************************************************
-#define USB_BASE_TO_INDEX(BaseAddr) (0)
-#define USB_INDEX_TO_BASE(Index) (USB0_BASE)
+#define RX_BLOCK_OPS            ((1 << CDC_DO_SEND_BREAK) |                   \
+                                 (1 << CDC_DO_LINE_CODING_CHANGE) |           \
+                                 (1 << CDC_DO_LINE_STATE_CHANGE))
 
 //*****************************************************************************
 //
@@ -140,8 +135,9 @@
 // The following are the USB interface numbers for the CDC serial device.
 //
 //*****************************************************************************
-#define SERIAL_INTERFACE_CONTROL    0
-#define SERIAL_INTERFACE_DATA       1
+#define SERIAL_INTERFACE_CONTROL                                              \
+                                0
+#define SERIAL_INTERFACE_DATA   1
 
 //*****************************************************************************
 //
@@ -154,18 +150,18 @@
 #define DATA_OUT_EP_FIFO_SIZE   USB_FIFO_SZ_64
 #define CTL_IN_EP_FIFO_SIZE     USB_FIFO_SZ_16
 
-#define DATA_IN_EP_MAX_SIZE     USB_FIFO_SZ_TO_BYTES(DATA_IN_EP_FIFO_SIZE)
-#define DATA_OUT_EP_MAX_SIZE    USB_FIFO_SZ_TO_BYTES(DATA_IN_EP_FIFO_SIZE)
-#define CTL_IN_EP_MAX_SIZE      USB_FIFO_SZ_TO_BYTES(CTL_IN_EP_FIFO_SIZE)
+#define DATA_IN_EP_MAX_SIZE     USBFIFOSizeToBytes(DATA_IN_EP_FIFO_SIZE)
+#define DATA_OUT_EP_MAX_SIZE    USBFIFOSizeToBytes(DATA_IN_EP_FIFO_SIZE)
+#define CTL_IN_EP_MAX_SIZE      USBFIFOSizeToBytes(CTL_IN_EP_FIFO_SIZE)
 
 //*****************************************************************************
 //
 // The collection of serial state flags indicating character errors.
 //
 //*****************************************************************************
-#define USB_CDC_SERIAL_ERRORS (USB_CDC_SERIAL_STATE_OVERRUN |                 \
-                               USB_CDC_SERIAL_STATE_PARITY |                  \
-                               USB_CDC_SERIAL_STATE_FRAMING)
+#define USB_CDC_SERIAL_ERRORS   (USB_CDC_SERIAL_STATE_OVERRUN |               \
+                                 USB_CDC_SERIAL_STATE_PARITY |                \
+                                 USB_CDC_SERIAL_STATE_FRAMING)
 
 //*****************************************************************************
 //
@@ -173,23 +169,26 @@
 // changed at runtime based on the client's requirements.
 //
 //*****************************************************************************
-unsigned char g_pCDCSerDeviceDescriptor[] =
+uint8_t g_pui8CDCSerDeviceDescriptor[] =
 {
-    18,                     // Size of this structure.
-    USB_DTYPE_DEVICE,       // Type of this structure.
-    USBShort(0x110),        // USB version 1.1 (if we say 2.0, hosts assume
-                            // high-speed - see USB 2.0 spec 9.2.6.6)
-    USB_CLASS_CDC,          // USB Device Class (spec 5.1.1)
-    0,                      // USB Device Sub-class (spec 5.1.1)
-    USB_CDC_PROTOCOL_NONE,  // USB Device protocol (spec 5.1.1)
-    64,                     // Maximum packet size for default pipe.
-    USBShort(0),            // Vendor ID (filled in during USBDCDCInit).
-    USBShort(0),            // Product ID (filled in during USBDCDCInit).
-    USBShort(0x100),        // Device Version BCD.
-    1,                      // Manufacturer string identifier.
-    2,                      // Product string identifier.
-    3,                      // Product serial number.
-    1                       // Number of configurations.
+    18,                             // Size of this structure.
+    USB_DTYPE_DEVICE,               // Type of this structure.
+    USBShort(0x110),                // USB version 1.1 (if we say 2.0, hosts
+                                    // assume high-speed - see USB 2.0 spec
+                                    // 9.2.6.6)
+    USB_CLASS_CDC,                  // USB Device Class (spec 5.1.1)
+    0,                              // USB Device Sub-class (spec 5.1.1)
+    USB_CDC_PROTOCOL_NONE,          // USB Device protocol (spec 5.1.1)
+    64,                             // Maximum packet size for default pipe.
+    USBShort(0),                    // Vendor ID (filled in during
+                                    // USBDCDCInit).
+    USBShort(0),                    // Product ID (filled in during
+                                    // USBDCDCInit).
+    USBShort(0x100),                // Device Version BCD.
+    1,                              // Manufacturer string identifier.
+    2,                              // Product string identifier.
+    3,                              // Product serial number.
+    1                               // Number of configurations.
 };
 
 //*****************************************************************************
@@ -206,29 +205,30 @@ unsigned char g_pCDCSerDeviceDescriptor[] =
 // be able to patch some values in it based on client requirements.
 //
 //*****************************************************************************
-unsigned char g_pCDCSerDescriptor[] =
+uint8_t g_pui8CDCSerDescriptor[] =
 {
     //
     // Configuration descriptor header.
     //
-    9,                          // Size of the configuration descriptor.
-    USB_DTYPE_CONFIGURATION,    // Type of this descriptor.
-    USBShort(9),                // The total size of this full structure, this
-                                // will be patched so it is just set to the
-                                // size of this structure.
-    2,                          // The number of interfaces in this
-                                // configuration.
-    1,                          // The unique value for this configuration.
-    5,                          // The string identifier that describes this
-                                // configuration.
-    USB_CONF_ATTR_SELF_PWR,     // Bus Powered, Self Powered, remote wake up.
-    250,                        // The maximum power in 2mA increments.
+    9,                              // Size of the configuration descriptor.
+    USB_DTYPE_CONFIGURATION,        // Type of this descriptor.
+    USBShort(9),                    // The total size of this full structure,
+                                    // this will be patched so it is just set
+                                    // to the size of this structure.
+    2,                              // The number of interfaces in this
+                                    // configuration.
+    1,                              // The unique value for this configuration.
+    5,                              // The string identifier that describes
+                                    // this configuration.
+    USB_CONF_ATTR_SELF_PWR,         // Bus Powered, Self Powered, remote wake
+                                    // up.
+    250,                            // The maximum power in 2mA increments.
 };
 
 const tConfigSection g_sCDCSerConfigSection =
 {
-    sizeof(g_pCDCSerDescriptor),
-    g_pCDCSerDescriptor
+    sizeof(g_pui8CDCSerDescriptor),
+    g_pui8CDCSerDescriptor
 };
 
 //*****************************************************************************
@@ -237,24 +237,26 @@ const tConfigSection g_sCDCSerConfigSection =
 // composite devices.
 //
 //*****************************************************************************
-unsigned char g_pIADSerDescriptor[] =
+uint8_t g_pui8IADSerDescriptor[SERDESCRIPTOR_SIZE] =
 {
 
-    8,                          // Size of the interface descriptor.
-    USB_DTYPE_INTERFACE_ASC,    // Interface Association Type.
-    0x0,                        // Default starting interface is 0.
-    0x2,                        // Number of interfaces in this association.
-    USB_CLASS_CDC,              // The device class for this association.
-    USB_CDC_SUBCLASS_ABSTRACT_MODEL, // The device subclass for this
-                                     // association.
-    USB_CDC_PROTOCOL_V25TER,    // The protocol for this association.
-    0                           // The string index for this association.
+    8,                              // Size of the interface descriptor.
+    USB_DTYPE_INTERFACE_ASC,        // Interface Association Type.
+    0x0,                            // Default starting interface is 0.
+    0x2,                            // Number of interfaces in this
+                                    // association.
+    USB_CLASS_CDC,                  // The device class for this association.
+    USB_CDC_SUBCLASS_ABSTRACT_MODEL,
+                                    // The device subclass for this
+                                    // association.
+    USB_CDC_PROTOCOL_V25TER,        // The protocol for this association.
+    0                               // The string index for this association.
 };
 
 const tConfigSection g_sIADSerConfigSection =
 {
-    sizeof(g_pIADSerDescriptor),
-    g_pIADSerDescriptor
+    sizeof(g_pui8IADSerDescriptor),
+    g_pui8IADSerDescriptor
 };
 
 //*****************************************************************************
@@ -262,65 +264,67 @@ const tConfigSection g_sIADSerConfigSection =
 // This is the control interface for the serial device.
 //
 //*****************************************************************************
-const unsigned char g_pCDCSerCommInterface[] =
+const uint8_t g_pui8CDCSerCommInterface[SERCOMMINTERFACE_SIZE] =
 {
     //
     // Communication Class Interface Descriptor.
     //
-    9,                          // Size of the interface descriptor.
-    USB_DTYPE_INTERFACE,        // Type of this descriptor.
-    SERIAL_INTERFACE_CONTROL,   // The index for this interface.
-    0,                          // The alternate setting for this interface.
-    1,                          // The number of endpoints used by this
-                                // interface.
-    USB_CLASS_CDC,              // The interface class constant defined by
-                                // USB-IF (spec 5.1.3).
-    USB_CDC_SUBCLASS_ABSTRACT_MODEL,    // The interface sub-class constant
-                                        // defined by USB-IF (spec 5.1.3).
-    USB_CDC_PROTOCOL_V25TER,    // The interface protocol for the sub-class
-                                // specified above.
-    4,                          // The string index for this interface.
+    9,                              // Size of the interface descriptor.
+    USB_DTYPE_INTERFACE,            // Type of this descriptor.
+    SERIAL_INTERFACE_CONTROL,       // The index for this interface.
+    0,                              // The alternate setting for this
+                                    // interface.
+    1,                              // The number of endpoints used by this
+                                    // interface.
+    USB_CLASS_CDC,                  // The interface class constant defined by
+                                    // USB-IF (spec 5.1.3).
+    USB_CDC_SUBCLASS_ABSTRACT_MODEL,
+                                    // The interface sub-class constant
+                                    // defined by USB-IF (spec 5.1.3).
+    USB_CDC_PROTOCOL_V25TER,        // The interface protocol for the sub-class
+                                    // specified above.
+    4,                              // The string index for this interface.
 
     //
     // Communication Class Interface Functional Descriptor - Header
     //
-    5,                          // Size of the functional descriptor.
-    USB_CDC_CS_INTERFACE,       // CDC interface descriptor
-    USB_CDC_FD_SUBTYPE_HEADER,  // Header functional descriptor
-    USBShort(0x110),            // Complies with CDC version 1.1
+    5,                              // Size of the functional descriptor.
+    USB_CDC_CS_INTERFACE,           // CDC interface descriptor
+    USB_CDC_FD_SUBTYPE_HEADER,      // Header functional descriptor
+    USBShort(0x110),                // Complies with CDC version 1.1
 
     //
     // Communication Class Interface Functional Descriptor - ACM
     //
-    4,                          // Size of the functional descriptor.
-    USB_CDC_CS_INTERFACE,       // CDC interface descriptor
+    4,                              // Size of the functional descriptor.
+    USB_CDC_CS_INTERFACE,           // CDC interface descriptor
     USB_CDC_FD_SUBTYPE_ABSTRACT_CTL_MGMT,
     USB_CDC_ACM_SUPPORTS_LINE_PARAMS | USB_CDC_ACM_SUPPORTS_SEND_BREAK,
 
     //
     // Communication Class Interface Functional Descriptor - Unions
     //
-    5,                          // Size of the functional descriptor.
-    USB_CDC_CS_INTERFACE,       // CDC interface descriptor
+    5,                              // Size of the functional descriptor.
+    USB_CDC_CS_INTERFACE,           // CDC interface descriptor
     USB_CDC_FD_SUBTYPE_UNION,
     SERIAL_INTERFACE_CONTROL,
-    SERIAL_INTERFACE_DATA,      // Data interface number
+    SERIAL_INTERFACE_DATA,          // Data interface number
 
     //
     // Communication Class Interface Functional Descriptor - Call Management
     //
-    5,                          // Size of the functional descriptor.
-    USB_CDC_CS_INTERFACE,       // CDC interface descriptor
+    5,                              // Size of the functional descriptor.
+    USB_CDC_CS_INTERFACE,           // CDC interface descriptor
     USB_CDC_FD_SUBTYPE_CALL_MGMT,
     USB_CDC_CALL_MGMT_HANDLED,
-    SERIAL_INTERFACE_DATA,      // Data interface number
+    SERIAL_INTERFACE_DATA,          // Data interface number
 
     //
     // Endpoint Descriptor (interrupt, IN)
     //
     7,                              // The size of the endpoint descriptor.
     USB_DTYPE_ENDPOINT,             // Descriptor type is an endpoint.
-    USB_EP_DESC_IN | USB_EP_TO_INDEX(CONTROL_ENDPOINT),
+    USB_EP_DESC_IN | USBEPToIndex(CONTROL_ENDPOINT),
     USB_EP_ATTR_INT,                // Endpoint is an interrupt endpoint.
     USBShort(CTL_IN_EP_MAX_SIZE),   // The maximum packet size.
     1                               // The polling interval for this endpoint.
@@ -328,8 +332,8 @@ const unsigned char g_pCDCSerCommInterface[] =
 
 const tConfigSection g_sCDCSerCommInterfaceSection =
 {
-    sizeof(g_pCDCSerCommInterface),
-    g_pCDCSerCommInterface
+    sizeof(g_pui8CDCSerCommInterface),
+    g_pui8CDCSerCommInterface
 };
 
 //*****************************************************************************
@@ -337,31 +341,32 @@ const tConfigSection g_sCDCSerCommInterfaceSection =
 // This is the Data interface for the serial device.
 //
 //*****************************************************************************
-const unsigned char g_pCDCSerDataInterface[] =
+const uint8_t g_pui8CDCSerDataInterface[SERDATAINTERFACE_SIZE] =
 {
     //
     // Communication Class Data Interface Descriptor.
     //
-    9,                          // Size of the interface descriptor.
-    USB_DTYPE_INTERFACE,        // Type of this descriptor.
-    SERIAL_INTERFACE_DATA,      // The index for this interface.
-    0,                          // The alternate setting for this interface.
-    2,                          // The number of endpoints used by this
-                                // interface.
-    USB_CLASS_CDC_DATA,         // The interface class constant defined by
-                                // USB-IF (spec 5.1.3).
-    0,                          // The interface sub-class constant
-                                // defined by USB-IF (spec 5.1.3).
-    USB_CDC_PROTOCOL_NONE,      // The interface protocol for the sub-class
-                                // specified above.
-    0,                          // The string index for this interface.
+    9,                              // Size of the interface descriptor.
+    USB_DTYPE_INTERFACE,            // Type of this descriptor.
+    SERIAL_INTERFACE_DATA,          // The index for this interface.
+    0,                              // The alternate setting for this
+                                    // interface.
+    2,                              // The number of endpoints used by this
+                                    // interface.
+    USB_CLASS_CDC_DATA,             // The interface class constant defined by
+                                    // USB-IF (spec 5.1.3).
+    0,                              // The interface sub-class constant
+                                    // defined by USB-IF (spec 5.1.3).
+    USB_CDC_PROTOCOL_NONE,          // The interface protocol for the sub-class
+                                    // specified above.
+    0,                              // The string index for this interface.
 
     //
     // Endpoint Descriptor
     //
     7,                              // The size of the endpoint descriptor.
     USB_DTYPE_ENDPOINT,             // Descriptor type is an endpoint.
-    USB_EP_DESC_IN | USB_EP_TO_INDEX(DATA_IN_ENDPOINT),
+    USB_EP_DESC_IN | USBEPToIndex(DATA_IN_ENDPOINT),
     USB_EP_ATTR_BULK,               // Endpoint is a bulk endpoint.
     USBShort(DATA_IN_EP_MAX_SIZE),  // The maximum packet size.
     0,                              // The polling interval for this endpoint.
@@ -371,7 +376,7 @@ const unsigned char g_pCDCSerDataInterface[] =
     //
     7,                              // The size of the endpoint descriptor.
     USB_DTYPE_ENDPOINT,             // Descriptor type is an endpoint.
-    USB_EP_DESC_OUT | USB_EP_TO_INDEX(DATA_OUT_ENDPOINT),
+    USB_EP_DESC_OUT | USBEPToIndex(DATA_OUT_ENDPOINT),
     USB_EP_ATTR_BULK,               // Endpoint is a bulk endpoint.
     USBShort(DATA_OUT_EP_MAX_SIZE), // The maximum packet size.
     0,                              // The polling interval for this endpoint.
@@ -379,8 +384,8 @@ const unsigned char g_pCDCSerDataInterface[] =
 
 const tConfigSection g_sCDCSerDataInterfaceSection =
 {
-    sizeof(g_pCDCSerDataInterface),
-    g_pCDCSerDataInterface
+    sizeof(g_pui8CDCSerDataInterface),
+    g_pui8CDCSerDataInterface
 };
 
 //*****************************************************************************
@@ -396,8 +401,8 @@ const tConfigSection *g_psCDCSerSections[] =
     &g_sCDCSerDataInterfaceSection,
 };
 
-#define NUM_CDCSER_SECTIONS (sizeof(g_psCDCSerSections) /                     \
-                             sizeof(tConfigSection *))
+#define NUM_CDCSER_SECTIONS     (sizeof(g_psCDCSerSections) /                 \
+                                 sizeof(g_psCDCSerSections[0]))
 
 //*****************************************************************************
 //
@@ -427,8 +432,8 @@ const tConfigSection *g_psCDCCompSerSections[] =
     &g_sCDCSerDataInterfaceSection,
 };
 
-#define NUM_COMP_CDCSER_SECTIONS (sizeof(g_psCDCCompSerSections) /                     \
-                                  sizeof(tConfigSection *))
+#define NUM_COMP_CDCSER_SECTIONS (sizeof(g_psCDCCompSerSections) /            \
+                                  sizeof(g_psCDCCompSerSections[0]))
 
 //*****************************************************************************
 //
@@ -448,7 +453,7 @@ const tConfigHeader g_sCDCCompSerConfigHeader =
 // Configuration Descriptor for the CDC serial class device.
 //
 //*****************************************************************************
-const tConfigHeader * const g_pCDCSerConfigDescriptors[] =
+const tConfigHeader * const g_ppCDCSerConfigDescriptors[] =
 {
     &g_sCDCSerConfigHeader
 };
@@ -469,14 +474,14 @@ const tConfigHeader * const g_pCDCCompSerConfigDescriptors[] =
 // Forward references for device handler callbacks
 //
 //*****************************************************************************
-static void HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest);
-static void HandleConfigChange(void *pvInstance, unsigned long ulInfo);
-static void HandleEP0Data(void *pvInstance, unsigned long ulDataSize);
-static void HandleDisconnect(void *pvInstance);
-static void HandleEndpoints(void *pvInstance, unsigned long ulStatus);
-static void HandleSuspend(void *pvInstance);
-static void HandleResume(void *pvInstance);
-static void HandleDevice(void *pvInstance, unsigned long ulRequest,
+static void HandleRequests(void *pvCDCDevice, tUSBRequest *pUSBRequest);
+static void HandleConfigChange(void *pvCDCDevice, uint32_t ui32Info);
+static void HandleEP0Data(void *pvCDCDevice, uint32_t ui32DataSize);
+static void HandleDisconnect(void *pvCDCDevice);
+static void HandleEndpoints(void *pvCDCDevice, uint32_t ui32Status);
+static void HandleSuspend(void *pvCDCDevice);
+static void HandleResume(void *pvCDCDevice);
+static void HandleDevice(void *pvCDCDevice, uint32_t ui32Request,
                          void *pvRequestData);
 
 //*****************************************************************************
@@ -484,106 +489,75 @@ static void HandleDevice(void *pvInstance, unsigned long ulRequest,
 // The device information structure for the USB serial device.
 //
 //*****************************************************************************
-tDeviceInfo g_sCDCSerDeviceInfo =
+const tCustomHandlers g_sCDCHandlers =
 {
     //
-    // Device event handler callbacks.
-    //
-    {
-        //
-        // GetDescriptor
-        //
-        0,
-
-        //
-        // RequestHandler
-        //
-        HandleRequests,
-
-        //
-        // InterfaceChange
-        //
-        0,
-
-        //
-        // ConfigChange
-        //
-        HandleConfigChange,
-
-        //
-        // DataReceived
-        //
-        HandleEP0Data,
-
-        //
-        // DataSentCallback
-        //
-        0,
-
-        //
-        // ResetHandler
-        //
-        0,
-
-        //
-        // SuspendHandler
-        //
-        HandleSuspend,
-
-        //
-        // ResumeHandler
-        //
-        HandleResume,
-
-        //
-        // DisconnectHandler
-        //
-        HandleDisconnect,
-
-        //
-        // EndpointHandler
-        //
-        HandleEndpoints,
-
-        //
-        // Device handler.
-        //
-        HandleDevice
-    },
-
-    //
-    // The common device descriptor.
-    //
-    g_pCDCSerDeviceDescriptor,
-
-    //
-    // Default to no interrupt endpoint.
-    //
-    g_pCDCCompSerConfigDescriptors,
-
-    //
-    // String descriptors will be passed in.
+    // GetDescriptor
     //
     0,
+
+    //
+    // RequestHandler
+    //
+    HandleRequests,
+
+    //
+    // InterfaceChange
+    //
     0,
 
     //
-    // Use the default USB FIFO configuration.
+    // ConfigChange
     //
-    &g_sUSBDefaultFIFOConfig,
+    HandleConfigChange,
 
     //
-    // Zero out the instance pointer by default.
+    // DataReceived
     //
-    0
+    HandleEP0Data,
+
+    //
+    // DataSentCallback
+    //
+    0,
+
+    //
+    // ResetHandler
+    //
+    0,
+
+    //
+    // SuspendHandler
+    //
+    HandleSuspend,
+
+    //
+    // ResumeHandler
+    //
+    HandleResume,
+
+    //
+    // DisconnectHandler
+    //
+    HandleDisconnect,
+
+    //
+    // EndpointHandler
+    //
+    HandleEndpoints,
+
+    //
+    // Device handler.
+    //
+    HandleDevice
 };
 
 //*****************************************************************************
 //
 // Set or clear deferred operation flags in an "atomic" manner.
 //
-// \param pusDeferredOp points to the flags variable which is to be modified.
-// \param usBit indicates which bit number is to be set or cleared.
+// \param pui16DeferredOp points to the flags variable which is to be modified.
+// \param ui16Bit indicates which bit number is to be set or cleared.
 // \param bSet indicates the state that the flag must be set to.  If \b true,
 // the flag is set, if \b false, the flag is cleared.
 //
@@ -595,13 +569,13 @@ tDeviceInfo g_sCDCSerDeviceInfo =
 //
 //*****************************************************************************
 static void
-SetDeferredOpFlag(volatile unsigned short *pusDeferredOp,
-                  unsigned short usBit, tBoolean bSet)
+SetDeferredOpFlag(volatile uint16_t *pui16DeferredOp, uint16_t ui16Bit,
+                  bool bSet)
 {
     //
     // Set the flag bit to 1 or 0 using a bitband access.
     //
-    HWREGBITH(pusDeferredOp, usBit) = bSet ? 1 : 0;
+    HWREGBITH(pui16DeferredOp, ui16Bit) = bSet ? 1 : 0;
 }
 
 //*****************************************************************************
@@ -609,7 +583,7 @@ SetDeferredOpFlag(volatile unsigned short *pusDeferredOp,
 // Determines whether or not a client has consumed all received data previously
 // passed to it.
 //
-//! \param psDevice is the pointer to the device instance structure as returned
+//! \param psCDCDevice is the pointer to the device instance structure as returned
 //! by USBDCDCInit().
 //
 // This function is called to determine whether or not a device has consumed
@@ -618,29 +592,29 @@ SetDeferredOpFlag(volatile unsigned short *pusDeferredOp,
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-static tBoolean
-DeviceConsumedAllData(const tUSBDCDCDevice *psDevice)
+static bool
+DeviceConsumedAllData(const tUSBDCDCDevice *psCDCDevice)
 {
-    unsigned long ulRemaining;
+    uint32_t ui32Remaining;
 
     //
     // Send the device an event requesting that it tell us how many bytes
     // of data it still has to process.
     //
-    ulRemaining = psDevice->pfnRxCallback(psDevice->pvRxCBData,
+    ui32Remaining = psCDCDevice->pfnRxCallback(psCDCDevice->pvRxCBData,
     USB_EVENT_DATA_REMAINING, 0, (void *)0);
 
     //
     // If any data remains to be processed, return false, else return true.
     //
-    return(ulRemaining ? false : true);
+    return(ui32Remaining ? false : true);
 }
 
 //*****************************************************************************
 //
 // Notifies the client that it should set or clear a break condition.
 //
-// \param psDevice is the pointer to the device instance structure as returned
+// \param psCDCDevice is the pointer to the device instance structure as returned
 // by USBDCDCInit().
 // \param bSend is \b true if a break condition is to be set or \b false if
 // it is to be cleared.
@@ -652,27 +626,27 @@ DeviceConsumedAllData(const tUSBDCDCDevice *psDevice)
 //
 //*****************************************************************************
 static void
-SendBreak(const tUSBDCDCDevice *psDevice, tBoolean bSend)
+SendBreak(tUSBDCDCDevice *psCDCDevice, bool bSend)
 {
     tCDCSerInstance *psInst;
 
     //
-    // Get our instance data pointer.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Set the break state flags as necessary.  If we are turning the break on,
     // set the flag to tell ourselves that we need to notify the client when
     // it is time to turn it off again.
     //
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_SEND_BREAK, false);
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_CLEAR_BREAK, bSend);
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_SEND_BREAK, false);
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_CLEAR_BREAK, bSend);
 
     //
     // Tell the client to start or stop sending the break.
     //
-    psDevice->pfnControlCallback(psDevice->pvControlCBData,
+    psCDCDevice->pfnControlCallback(psCDCDevice->pvControlCBData,
                                  (bSend ? USBD_CDC_EVENT_SEND_BREAK :
                                           USBD_CDC_EVENT_CLEAR_BREAK), 0,
                                  (void *)0);
@@ -683,7 +657,7 @@ SendBreak(const tUSBDCDCDevice *psDevice, tBoolean bSend)
 // Notifies the client of a host request to set the serial communication
 // parameters.
 //
-// \param psDevice is the device instance whose communication parameters are to
+// \param psCDCDevice is the device instance whose communication parameters are to
 // be set.
 //
 // This function is called to notify the client when the host requests a change
@@ -694,26 +668,26 @@ SendBreak(const tUSBDCDCDevice *psDevice, tBoolean bSend)
 //
 //*****************************************************************************
 static void
-SendLineCodingChange(const tUSBDCDCDevice *psDevice)
+SendLineCodingChange(tUSBDCDCDevice *psCDCDevice)
 {
     tCDCSerInstance *psInst;
 
     //
-    // Get our instance data pointer.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Clear the flag we use to tell ourselves that the line coding change has
     // yet to be notified to the client.
     //
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_LINE_CODING_CHANGE,
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_LINE_CODING_CHANGE,
                       false);
 
     //
     // Tell the client to update their serial line coding parameters.
     //
-    psDevice->pfnControlCallback(psDevice->pvControlCBData,
+    psCDCDevice->pfnControlCallback(psCDCDevice->pvControlCBData,
                                  USBD_CDC_EVENT_SET_LINE_CODING, 0,
                                  &(psInst->sLineCoding));
 }
@@ -723,7 +697,7 @@ SendLineCodingChange(const tUSBDCDCDevice *psDevice)
 // Notifies the client of a host request to set the RTS and DTR handshake line
 // states.
 //
-// \param psDevice is the device instance whose break condition is to be set or
+// \param psCDCDevice is the device instance whose break condition is to be set or
 // cleared.
 //
 // This function is called to notify the client when the host requests a change
@@ -733,28 +707,28 @@ SendLineCodingChange(const tUSBDCDCDevice *psDevice)
 //
 //*****************************************************************************
 static void
-SendLineStateChange(const tUSBDCDCDevice *psDevice)
+SendLineStateChange(tUSBDCDCDevice *psCDCDevice)
 {
     tCDCSerInstance *psInst;
 
     //
-    // Get our instance data pointer.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Clear the flag we use to tell ourselves that the line coding change has
     // yet to be notified to the client.
     //
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_LINE_STATE_CHANGE,
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_LINE_STATE_CHANGE,
                       false);
 
     //
     // Tell the client to update their serial line coding parameters.
     //
-    psDevice->pfnControlCallback(psDevice->pvControlCBData,
+    psCDCDevice->pfnControlCallback(psCDCDevice->pvControlCBData,
                                  USBD_CDC_EVENT_SET_CONTROL_LINE_STATE,
-                                 psInst->usControlLineState,
+                                 psInst->ui16ControlLineState,
                                  (void *)0);
 }
 
@@ -762,7 +736,7 @@ SendLineStateChange(const tUSBDCDCDevice *psDevice)
 //
 // Notifies the client of a break request if no data remains to be processed.
 //
-// \param psDevice is the device instance that is to be commanded to send a
+// \param psCDCDevice is the device instance that is to be commanded to send a
 // break condition.
 //
 // This function is called when the host requests that the device set a break
@@ -775,15 +749,15 @@ SendLineStateChange(const tUSBDCDCDevice *psDevice)
 // otherwise.
 //
 //*****************************************************************************
-static tBoolean
-CheckAndSendBreak(const tUSBDCDCDevice *psDevice, unsigned short usDuration)
+static bool
+CheckAndSendBreak(tUSBDCDCDevice *psCDCDevice, uint16_t ui16Duration)
 {
-    tBoolean bCanSend;
+    bool bCanSend;
 
     //
     // Has the client consumed all data received from the host yet?
     //
-    bCanSend = DeviceConsumedAllData(psDevice);
+    bCanSend = DeviceConsumedAllData(psCDCDevice);
 
     //
     // Can we send the break request?
@@ -794,7 +768,7 @@ CheckAndSendBreak(const tUSBDCDCDevice *psDevice, unsigned short usDuration)
         // Pass the break request on to the client since no data remains to be
         // consumed.
         //
-        SendBreak(psDevice, (usDuration ? true : false));
+        SendBreak(psCDCDevice, (ui16Duration ? true : false));
     }
 
     //
@@ -808,7 +782,7 @@ CheckAndSendBreak(const tUSBDCDCDevice *psDevice, unsigned short usDuration)
 // Notifies the client of a request to change the serial line parameters if no
 // data remains to be processed.
 //
-// \param psDevice is the device instance whose line coding parameters are to
+// \param psCDCDevice is the device instance whose line coding parameters are to
 // be changed.
 //
 // This function is called when the host requests that the device change the
@@ -820,15 +794,15 @@ CheckAndSendBreak(const tUSBDCDCDevice *psDevice, unsigned short usDuration)
 // \return Returns \b true if the notification was sent, \b false otherwise.
 //
 //*****************************************************************************
-static tBoolean
-CheckAndSendLineCodingChange(const tUSBDCDCDevice *psDevice)
+static bool
+CheckAndSendLineCodingChange(tUSBDCDCDevice *psCDCDevice)
 {
-    tBoolean bCanSend;
+    bool bCanSend;
 
     //
     // Has the client consumed all data received from the host yet?
     //
-    bCanSend = DeviceConsumedAllData(psDevice);
+    bCanSend = DeviceConsumedAllData(psCDCDevice);
 
     //
     // Can we send the break request?
@@ -839,7 +813,7 @@ CheckAndSendLineCodingChange(const tUSBDCDCDevice *psDevice)
         // Pass the request on to the client since no data remains to be
         // consumed.
         //
-        SendLineCodingChange(psDevice);
+        SendLineCodingChange(psCDCDevice);
     }
 
     //
@@ -853,7 +827,7 @@ CheckAndSendLineCodingChange(const tUSBDCDCDevice *psDevice)
 // Notifies the client of a request to change the handshake line states if no
 // data remains to be processed.
 //
-// \param psDevice is the device instance whose handshake line states are to
+// \param psCDCDevice is the device instance whose handshake line states are to
 // be changed.
 //
 // This function is called when the host requests that the device change the
@@ -865,15 +839,15 @@ CheckAndSendLineCodingChange(const tUSBDCDCDevice *psDevice)
 // \return Returns \b true if the notification was sent, \b false otherwise.
 //
 //*****************************************************************************
-static tBoolean
-CheckAndSendLineStateChange(const tUSBDCDCDevice *psDevice)
+static bool
+CheckAndSendLineStateChange(tUSBDCDCDevice *psCDCDevice)
 {
-    tBoolean bCanSend;
+    bool bCanSend;
 
     //
     // Has the client consumed all data received from the host yet?
     //
-    bCanSend = DeviceConsumedAllData(psDevice);
+    bCanSend = DeviceConsumedAllData(psCDCDevice);
 
     //
     // Can we send the break request?
@@ -884,7 +858,7 @@ CheckAndSendLineStateChange(const tUSBDCDCDevice *psDevice)
         // Pass the request on to the client since no data remains to be
         // consumed.
         //
-        SendLineStateChange(psDevice);
+        SendLineStateChange(psCDCDevice);
     }
 
     //
@@ -907,39 +881,39 @@ CheckAndSendLineStateChange(const tUSBDCDCDevice *psDevice)
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-static tBoolean
-SendSerialState(const tUSBDCDCDevice *psDevice)
+static bool
+SendSerialState(tUSBDCDCDevice *psCDCDevice)
 {
     tUSBRequest sRequest;
-    unsigned short usSerialState;
+    uint16_t ui16SerialState;
     tCDCSerInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Remember that we are in the middle of sending a notification.
     //
-    psInst->eCDCInterruptState = CDC_STATE_WAIT_DATA;
+    psInst->iCDCInterruptState = eCDCStateWaitData;
 
     //
     // Clear the flag we use to indicate that a send is required.
     //
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_SERIAL_STATE_CHANGE,
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_SERIAL_STATE_CHANGE,
                       false);
     //
     // Take a snapshot of the serial state.
     //
-    usSerialState = psInst->usSerialState;
+    ui16SerialState = psInst->ui16SerialState;
 
     //
     // Build the request we will use to send the notification.
     //
     sRequest.bmRequestType = (USB_RTYPE_DIR_IN | USB_RTYPE_CLASS |
-    USB_RTYPE_INTERFACE);
+                                USB_RTYPE_INTERFACE);
     sRequest.bRequest = USB_CDC_NOTIFY_SERIAL_STATE;
     sRequest.wValue = 0;
     sRequest.wIndex = 0;
@@ -948,35 +922,36 @@ SendSerialState(const tUSBDCDCDevice *psDevice)
     //
     // Write the request structure to the USB FIFO.
     //
-    lRetcode = MAP_USBEndpointDataPut(psInst->ulUSBBase,
-                                      psInst->ucControlEndpoint,
-                                      (unsigned char *)&sRequest,
-                                      sizeof(tUSBRequest));
-    lRetcode = MAP_USBEndpointDataPut(psInst->ulUSBBase, psInst->ucControlEndpoint,
-                                      (unsigned char *)&usSerialState,
-                                      USB_CDC_NOTIFY_SERIAL_STATE_SIZE);
+    i32Retcode = MAP_USBEndpointDataPut(psInst->ui32USBBase,
+                                        psInst->ui8ControlEndpoint,
+                                        (uint8_t *)&sRequest,
+                                        sizeof(tUSBRequest));
+    i32Retcode = MAP_USBEndpointDataPut(psInst->ui32USBBase,
+                                        psInst->ui8ControlEndpoint,
+                                        (uint8_t *)&ui16SerialState,
+                                        USB_CDC_NOTIFY_SERIAL_STATE_SIZE);
 
     //
     // Did we correctly write the data to the endpoint FIFO?
     //
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // We put the data into the FIFO so now schedule it to be
         // sent.
         //
-        lRetcode = MAP_USBEndpointDataSend(psInst->ulUSBBase,
-                                           psInst->ucControlEndpoint,
-                                           USB_TRANS_IN);
+        i32Retcode = MAP_USBEndpointDataSend(psInst->ui32USBBase,
+                                             psInst->ui8ControlEndpoint,
+                                             USB_TRANS_IN);
     }
 
     //
     // If an error occurred, mark the endpoint as idle (to prevent possible
     // lockup) and return an error.
     //
-    if(lRetcode == -1)
+    if(i32Retcode == -1)
     {
-        psInst->eCDCInterruptState = CDC_STATE_IDLE;
+        psInst->iCDCInterruptState = eCDCStateIdle;
         return(false);
     }
     else
@@ -985,7 +960,7 @@ SendSerialState(const tUSBDCDCDevice *psDevice)
         // Everything went fine.  Clear the error bits that we just notified
         // and return true.
         //
-        psInst->usSerialState &= ~(usSerialState & USB_CDC_SERIAL_ERRORS);
+        psInst->ui16SerialState &= ~(ui16SerialState & USB_CDC_SERIAL_ERRORS);
         return(true);
     }
 }
@@ -994,8 +969,8 @@ SendSerialState(const tUSBDCDCDevice *psDevice)
 //
 // Receives notifications related to data received from the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psCDCDevice is the device instance whose endpoint is to be processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts signaling
@@ -1007,34 +982,34 @@ SendSerialState(const tUSBDCDCDevice *psDevice)
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-tBoolean
-ProcessDataFromHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
+bool
+ProcessDataFromHost(tUSBDCDCDevice *psCDCDevice, uint32_t ui32Status)
 {
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus, ui32Size;
     tCDCSerInstance *psInst;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucBulkOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8BulkOUTEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(psInst->ulUSBBase, psInst->ucBulkOUTEndpoint,
-                                  ulEPStatus);
+    MAP_USBDevEndpointStatusClear(psInst->ui32USBBase,
+                                  psInst->ui8BulkOUTEndpoint,
+                                  ui32EPStatus);
 
     //
     // Has a packet been received?
     //
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // Set the flag we use to indicate that a packet read is pending.  This
@@ -1042,7 +1017,8 @@ ProcessDataFromHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
         // the packet in the context of the USB_EVENT_RX_AVAILABLE callback,
         // the event will be notified later during tick processing.
         //
-        SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_PACKET_RX, true);
+        SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_PACKET_RX,
+                          true);
 
         //
         // Is the receive channel currently blocked?
@@ -1050,18 +1026,18 @@ ProcessDataFromHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
         if(!psInst->bControlBlocked && !psInst->bRxBlocked)
         {
             //
-            // How big is the packet we've just been sent?
+            // How big is the packet we have just been received?
             //
-            ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                              psInst->ucBulkOUTEndpoint);
+            ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                                psInst->ui8BulkOUTEndpoint);
 
             //
             // The receive channel is not blocked so let the caller know
             // that a packet is waiting.  The parameters are set to indicate
             // that the packet has not been read from the hardware FIFO yet.
             //
-            psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                    USB_EVENT_RX_AVAILABLE, ulSize,
+            psCDCDevice->pfnRxCallback(psCDCDevice->pvRxCBData,
+                                    USB_EVENT_RX_AVAILABLE, ui32Size,
                                     (void *)0);
         }
     }
@@ -1071,14 +1047,13 @@ ProcessDataFromHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
         // No packet was received.  Some error must have been reported.  Check
         // and pass this on to the client if necessary.
         //
-        if(ulEPStatus & USB_RX_ERROR_FLAGS)
+        if(ui32EPStatus & USB_RX_ERROR_FLAGS)
         {
             //
             // This is an error we report to the client so...
             //
-            psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                    USB_EVENT_ERROR,
-                                    (ulEPStatus & USB_RX_ERROR_FLAGS),
+            psCDCDevice->pfnRxCallback(psCDCDevice->pvRxCBData, USB_EVENT_ERROR,
+                                    (ui32EPStatus & USB_RX_ERROR_FLAGS),
                                     (void *)0);
         }
 
@@ -1092,8 +1067,8 @@ ProcessDataFromHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
 //
 // Receives notifications related to interrupt messages sent to the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psCDCDevice is the device instance whose endpoint is to be processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts originating
@@ -1103,13 +1078,12 @@ ProcessDataFromHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-tBoolean
-ProcessNotificationToHost(const tUSBDCDCDevice *psDevice,
-                          unsigned long ulStatus)
+bool
+ProcessNotificationToHost(tUSBDCDCDevice *psCDCDevice, uint32_t ui32Status)
 {
-    unsigned long ulEPStatus;
+    uint32_t ui32EPStatus;
     tCDCSerInstance *psInst;
-    tBoolean bRetcode;
+    bool bRetcode;
 
     //
     // Assume all will go well until we have reason to believe otherwise.
@@ -1117,41 +1091,41 @@ ProcessNotificationToHost(const tUSBDCDCDevice *psDevice,
     bRetcode = true;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucControlEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8ControlEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(psInst->ulUSBBase,
-                                  psInst->ucControlEndpoint, ulEPStatus);
+    MAP_USBDevEndpointStatusClear(psInst->ui32USBBase,
+                                  psInst->ui8ControlEndpoint, ui32EPStatus);
 
     //
     // Did the state change while we were waiting for the previous notification
     // to complete?
     //
-    if(psInst->usDeferredOpFlags & (1 << CDC_DO_SERIAL_STATE_CHANGE))
+    if(psInst->ui16DeferredOpFlags & (1 << CDC_DO_SERIAL_STATE_CHANGE))
     {
         //
         // The state changed while we were waiting so we need to schedule
         // another notification immediately.
         //
-        bRetcode = SendSerialState(psDevice);
+        bRetcode = SendSerialState(psCDCDevice);
     }
     else
     {
         //
-        // Our last notification completed and we didn't have any new
+        // Our last notification completed and we did not have any new
         // notifications to make so the interrupt channel is now idle again.
         //
-        psInst->eCDCInterruptState = CDC_STATE_IDLE;
+        psInst->iCDCInterruptState = eCDCStateIdle;
     }
 
     //
@@ -1164,8 +1138,8 @@ ProcessNotificationToHost(const tUSBDCDCDevice *psDevice,
 //
 // Receives notifications related to data sent to the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psCDCDevice is the device instance whose endpoint is to be processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts originating
@@ -1176,75 +1150,75 @@ ProcessNotificationToHost(const tUSBDCDCDevice *psDevice,
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-tBoolean
-ProcessDataToHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
+bool
+ProcessDataToHost(tUSBDCDCDevice *psCDCDevice, uint32_t ui32Status)
 {
     tCDCSerInstance *psInst;
-    unsigned long ulEPStatus, ulSize;
-    tBoolean bSentFullPacket;
+    uint32_t ui32EPStatus, ui32Size;
+    bool bSentFullPacket;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucBulkINEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8BulkINEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(psInst->ulUSBBase,
-                                  psInst->ucBulkINEndpoint, ulEPStatus);
+    MAP_USBDevEndpointStatusClear(psInst->ui32USBBase,
+                                  psInst->ui8BulkINEndpoint, ui32EPStatus);
 
     //
     // Our last transmission completed.  Clear our state back to idle and
     // see if we need to send any more data.
     //
-    psInst->eCDCTxState = CDC_STATE_IDLE;
+    psInst->iCDCTxState = eCDCStateIdle;
 
     //
-    // If this notification isn't as a result of sending a zero-length packet,
+    // If this notification is not as a result of sending a zero-length packet,
     // call back to the client to let it know we sent the last thing it passed
     // us.
     //
-    if(psInst->usLastTxSize)
+    if(psInst->ui16LastTxSize)
     {
         //
         // Have we just sent a 64 byte packet?
         //
-        bSentFullPacket = (psInst->usLastTxSize == DATA_IN_EP_MAX_SIZE) ?
+        bSentFullPacket = (psInst->ui16LastTxSize == DATA_IN_EP_MAX_SIZE) ?
                            true : false;
 
         //
         // Notify the client that the last transmission completed.
         //
-        ulSize = (unsigned long)psInst->usLastTxSize;
-        psInst->usLastTxSize = 0;
-        psDevice->pfnTxCallback(psDevice->pvTxCBData, USB_EVENT_TX_COMPLETE,
-                                ulSize, (void *)0);
+        ui32Size = (uint32_t)psInst->ui16LastTxSize;
+        psInst->ui16LastTxSize = 0;
+        psCDCDevice->pfnTxCallback(psCDCDevice->pvTxCBData, USB_EVENT_TX_COMPLETE,
+                                ui32Size, (void *)0);
 
         //
         // If we had previously sent a full packet and the callback didn't
         // schedule a new transmission, send a zero length packet to indicate
         // the end of the transfer.
         //
-        if(bSentFullPacket && !psInst->usLastTxSize)
+        if(bSentFullPacket && !psInst->ui16LastTxSize)
         {
             //
             // We can expect another transmit complete notification after doing
             // this.
             //
-            psInst->eCDCTxState = CDC_STATE_WAIT_DATA;
+            psInst->iCDCTxState = eCDCStateWaitData;
 
             //
             // Send the zero-length packet.
             //
-            MAP_USBEndpointDataSend(psInst->ulUSBBase,
-                                    psInst->ucBulkINEndpoint,
+            MAP_USBEndpointDataSend(psInst->ui32USBBase,
+                                    psInst->ui8BulkINEndpoint,
                                     USB_TRANS_IN);
         }
     }
@@ -1257,52 +1231,52 @@ ProcessDataToHost(const tUSBDCDCDevice *psDevice, unsigned long ulStatus)
 // Called by the USB stack for any activity involving one of our endpoints
 // other than EP0.  This function is a fan out that merely directs the call to
 // the correct handler depending upon the endpoint and transaction direction
-// signaled in ulStatus.
+// signaled in ui32Status.
 //
 //*****************************************************************************
 static void
-HandleEndpoints(void *pvInstance, unsigned long ulStatus)
+HandleEndpoints(void *pvCDCDevice, uint32_t ui32Status)
 {
-    const tUSBDCDCDevice *psDeviceInst;
+    tUSBDCDCDevice *psCDCDeviceInst;
     tCDCSerInstance *psInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCDCDevice != 0);
 
     //
     // Determine if the serial device is in single or composite mode because
-    // the meaning of ulIndex is different in both cases.
+    // the meaning of ui32Index is different in both cases.
     //
-    psDeviceInst = pvInstance;
-    psInst = psDeviceInst->psPrivateCDCSerData;
+    psCDCDeviceInst = pvCDCDevice;
+    psInst = &psCDCDeviceInst->sPrivateData;
 
     //
     // Handler for the interrupt IN notification endpoint.
     //
-    if(ulStatus & (1 << USB_EP_TO_INDEX(psInst->ucControlEndpoint)))
+    if(ui32Status & (1 << USBEPToIndex(psInst->ui8ControlEndpoint)))
     {
         //
         // We have sent an interrupt notification to the host.
         //
-        ProcessNotificationToHost(psDeviceInst, ulStatus);
+        ProcessNotificationToHost(psCDCDeviceInst, ui32Status);
     }
 
     //
     // Handler for the bulk OUT data endpoint.
     //
-    if(ulStatus & (0x10000 << USB_EP_TO_INDEX(psInst->ucBulkOUTEndpoint)))
+    if(ui32Status & (0x10000 << USBEPToIndex(psInst->ui8BulkOUTEndpoint)))
     {
         //
         // Data is being sent to us from the host.
         //
-        ProcessDataFromHost(psDeviceInst, ulStatus);
+        ProcessDataFromHost(psCDCDeviceInst, ui32Status);
     }
 
     //
     // Handler for the bulk IN data endpoint.
     //
-    if(ulStatus & (1 << USB_EP_TO_INDEX(psInst->ucBulkINEndpoint)))
+    if(ui32Status & (1 << USBEPToIndex(psInst->ui8BulkINEndpoint)))
     {
-        ProcessDataToHost(psDeviceInst, ulStatus);
+        ProcessDataToHost(psCDCDeviceInst, ui32Status);
     }
 }
 
@@ -1312,30 +1286,30 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
 //
 //*****************************************************************************
 static void
-HandleConfigChange(void *pvInstance, unsigned long ulInfo)
+HandleConfigChange(void *pvCDCDevice, uint32_t ui32Info)
 {
     tCDCSerInstance *psInst;
-    const tUSBDCDCDevice *psDevice;
+    tUSBDCDCDevice *psCDCDevice;
 
-    ASSERT(pvInstance != 0);
-
-    //
-    // Create a device instance pointer.
-    //
-    psDevice = (const tUSBDCDCDevice *)pvInstance;
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Get a pointer to our instance data.
+    // The CDC device structure pointer.
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
+
+    //
+    // Get a pointer to the CDC device instance data pointer
+    //
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Set all our endpoints to idle state.
     //
-    psInst->eCDCInterruptState = CDC_STATE_IDLE;
-    psInst->eCDCRequestState = CDC_STATE_IDLE;
-    psInst->eCDCRxState = CDC_STATE_IDLE;
-    psInst->eCDCTxState = CDC_STATE_IDLE;
+    psInst->iCDCInterruptState = eCDCStateIdle;
+    psInst->iCDCRequestState = eCDCStateIdle;
+    psInst->iCDCRxState = eCDCStateIdle;
+    psInst->iCDCTxState = eCDCStateIdle;
 
     //
     // If we are not currently connected so let the client know we are open
@@ -1346,7 +1320,7 @@ HandleConfigChange(void *pvInstance, unsigned long ulInfo)
         //
         // Pass the connected event to the client.
         //
-        psDevice->pfnControlCallback(psDevice->pvControlCBData,
+        psCDCDevice->pfnControlCallback(psCDCDevice->pvControlCBData,
                                      USB_EVENT_CONNECTED, 0, (void *)0);
     }
 
@@ -1365,36 +1339,36 @@ HandleConfigChange(void *pvInstance, unsigned long ulInfo)
 //
 //*****************************************************************************
 static void
-HandleEP0Data(void *pvInstance, unsigned long ulDataSize)
+HandleEP0Data(void *pvCDCDevice, uint32_t ui32DataSize)
 {
-    const tUSBDCDCDevice *psDevice;
+    tUSBDCDCDevice *psCDCDevice;
     tCDCSerInstance *psInst;
-    tBoolean bRetcode;
+    bool bRetcode;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Create a device instance pointer.
+    // The CDC device structure pointer.
     //
-    psDevice = (const tUSBDCDCDevice *)pvInstance;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
     // If we were not passed any data, just return.
     //
-    if(ulDataSize == 0)
+    if(ui32DataSize == 0)
     {
         return;
     }
 
     //
-    // Get our instance data pointer.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Make sure we are actually expecting something.
     //
-    if(psInst->eCDCRequestState != CDC_STATE_WAIT_DATA)
+    if(psInst->iCDCRequestState != eCDCStateWaitData)
     {
         return;
     }
@@ -1403,7 +1377,7 @@ HandleEP0Data(void *pvInstance, unsigned long ulDataSize)
     // Process the data received.  This will be a request-specific data
     // block associated with the last request received.
     //
-    switch (psInst->ucPendingRequest)
+    switch (psInst->ui8PendingRequest)
     {
         //
         // We just got the line coding structure.  Make sure the client has
@@ -1412,7 +1386,7 @@ HandleEP0Data(void *pvInstance, unsigned long ulDataSize)
         //
         case USB_CDC_SET_LINE_CODING:
         {
-            if(ulDataSize != sizeof(tLineCoding))
+            if(ui32DataSize != sizeof(tLineCoding))
             {
                 USBDCDStallEP0(0);
             }
@@ -1422,16 +1396,16 @@ HandleEP0Data(void *pvInstance, unsigned long ulDataSize)
                 // Set the flag telling us that we need to send a line coding
                 // notification to the client.
                 //
-                SetDeferredOpFlag(&psInst->usDeferredOpFlags,
+                SetDeferredOpFlag(&psInst->ui16DeferredOpFlags,
                                   CDC_DO_LINE_CODING_CHANGE, true);
 
                 //
                 // See if we can send the notification immediately.
                 //
-                bRetcode = CheckAndSendLineCodingChange(psDevice);
+                bRetcode = CheckAndSendLineCodingChange(psCDCDevice);
 
                 //
-                // If we couldn't send the line coding change request to the
+                // If we could not send the line coding change request to the
                 // client, block reception of more data from the host until
                 // previous data is processed and we send the change request.
                 //
@@ -1459,7 +1433,7 @@ HandleEP0Data(void *pvInstance, unsigned long ulDataSize)
     //
     // All is well.  Set the state back to IDLE.
     //
-    psInst->eCDCRequestState = CDC_STATE_IDLE;
+    psInst->iCDCRequestState = eCDCStateIdle;
 }
 
 //*****************************************************************************
@@ -1468,23 +1442,29 @@ HandleEP0Data(void *pvInstance, unsigned long ulDataSize)
 //
 //*****************************************************************************
 static void
-HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
+HandleDevice(void *pvCDCDevice, uint32_t ui32Request, void *pvRequestData)
 {
     tCDCSerInstance *psInst;
-    unsigned char *pucData;
+    uint8_t *pui8Data;
+    tUSBDCDCDevice *psCDCDevice;
 
     //
-    // Create the serial instance data.
+    // The CDC device structure pointer.
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
-    // Create the char array used by the events supported by the USB CDC
+    // Get a pointer to the CDC device instance data pointer
+    //
+    psInst = &psCDCDevice->sPrivateData;
+
+    //
+    // Create the 8-bit array used by the events supported by the USB CDC
     // serial class.
     //
-    pucData = (unsigned char *)pvRequestData;
+    pui8Data = (uint8_t *)pvRequestData;
 
-    switch(ulRequest)
+    switch(ui32Request)
     {
         //
         // This was an interface change event.
@@ -1494,13 +1474,13 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
             //
             // Save the change to the appropriate interface number.
             //
-            if(pucData[0] == SERIAL_INTERFACE_CONTROL)
+            if(pui8Data[0] == SERIAL_INTERFACE_CONTROL)
             {
-                psInst->ucInterfaceControl = pucData[1];
+                psInst->ui8InterfaceControl = pui8Data[1];
             }
-            else if(pucData[0] == SERIAL_INTERFACE_DATA)
+            else if(pui8Data[0] == SERIAL_INTERFACE_DATA)
             {
-                psInst->ucInterfaceData = pucData[1];
+                psInst->ui8InterfaceData = pui8Data[1];
             }
             break;
         }
@@ -1513,20 +1493,20 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
             //
             // Determine if this is an IN or OUT endpoint that has changed.
             //
-            if(pucData[0] & USB_EP_DESC_IN)
+            if(pui8Data[0] & USB_EP_DESC_IN)
             {
                 //
                 // Determine which IN endpoint to modify.
                 //
-                if((pucData[0] & 0x7f) == USB_EP_TO_INDEX(CONTROL_ENDPOINT))
+                if((pui8Data[0] & 0x7f) == USBEPToIndex(CONTROL_ENDPOINT))
                 {
-                    psInst->ucControlEndpoint =
-                        INDEX_TO_USB_EP((pucData[1] & 0x7f));
+                    psInst->ui8ControlEndpoint =
+                        IndexToUSBEP((pui8Data[1] & 0x7f));
                 }
                 else
                 {
-                    psInst->ucBulkINEndpoint =
-                        INDEX_TO_USB_EP((pucData[1] & 0x7f));
+                    psInst->ui8BulkINEndpoint =
+                        IndexToUSBEP((pui8Data[1] & 0x7f));
                 }
             }
             else
@@ -1534,8 +1514,8 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
                 //
                 // Extract the new endpoint number.
                 //
-                psInst->ucBulkOUTEndpoint =
-                    INDEX_TO_USB_EP(pucData[1] & 0x7f);
+                psInst->ui8BulkOUTEndpoint =
+                    IndexToUSBEP(pui8Data[1] & 0x7f);
             }
             break;
         }
@@ -1551,23 +1531,22 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
             // descriptor to the first interface which is the control
             // interface used by this instance.
             //
-            pucData[2] = psInst->ucInterfaceControl;
+            pui8Data[2] = psInst->ui8InterfaceControl;
 
             //
             // This sets the bMasterInterface of the Union descriptor to the
             // Control interface and the bSlaveInterface of the Union
             // Descriptor to the Data interface used by this instance.
             //
-            pucData[29] = psInst->ucInterfaceControl;
-            pucData[30] = psInst->ucInterfaceData;
+            pui8Data[29] = psInst->ui8InterfaceControl;
+            pui8Data[30] = psInst->ui8InterfaceData;
 
             //
             // This sets the bDataInterface of the Union descriptor to the
             // Data interface used by this instance.
-            pucData[35] = psInst->ucInterfaceData;
+            pui8Data[35] = psInst->ui8InterfaceData;
             break;
         }
-
         default:
         {
             break;
@@ -1585,28 +1564,28 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
 //
 //*****************************************************************************
 static void
-HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
+HandleRequests(void *pvCDCDevice, tUSBRequest *pUSBRequest)
 {
-    const tUSBDCDCDevice *psDevice;
+    tUSBDCDCDevice *psCDCDevice;
     tCDCSerInstance *psInst;
-    tBoolean bRetcode;
+    bool bRetcode;
 
-    ASSERT(pvInstance != 0);
-
-    //
-    // Create a device instance pointer.
-    //
-    psDevice = (const tUSBDCDCDevice *)pvInstance;
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Get our instance data pointer.
+    // The CDC device structure pointer.
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
+
+    //
+    // Get a pointer to the CDC device instance data pointer
+    //
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Only handle requests meant for this interface.
     //
-    if(pUSBRequest->wIndex != psInst->ucInterfaceControl)
+    if(pUSBRequest->wIndex != psInst->ui8InterfaceControl)
     {
         return;
     }
@@ -1685,18 +1664,18 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // Remember the request we are processing.
             //
-            psInst->ucPendingRequest = USB_CDC_SET_LINE_CODING;
+            psInst->ui8PendingRequest = USB_CDC_SET_LINE_CODING;
 
             //
             // Set the state to indicate we are waiting for data.
             //
-            psInst->eCDCRequestState = CDC_STATE_WAIT_DATA;
+            psInst->iCDCRequestState = eCDCStateWaitData;
 
             //
             // Now read the payload of the request.  We handle the actual
             // operation in the data callback once this data is received.
             //
-            USBDCDRequestDataEP0(0, (unsigned char *)&psInst->sLineCoding,
+            USBDCDRequestDataEP0(0, (uint8_t *)&psInst->sLineCoding,
                                  sizeof(tLineCoding));
 
             //
@@ -1705,7 +1684,7 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             // data may return before we have set the stack state appropriately
             // to receive it.
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, false);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, false);
 
             break;
         }
@@ -1720,20 +1699,19 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // ACK what we have already received
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, false);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, false);
 
             //
             // Ask the client for the current line coding.
             //
-            psDevice->pfnControlCallback(psDevice->pvControlCBData,
+            psCDCDevice->pfnControlCallback(psCDCDevice->pvControlCBData,
                                          USBD_CDC_EVENT_GET_LINE_CODING, 0,
                                          &sLineCoding);
 
             //
             // Send the line coding information back to the host.
             //
-            USBDCDSendDataEP0(0, (unsigned char *)&sLineCoding,
-                              sizeof(tLineCoding));
+            USBDCDSendDataEP0(0, (uint8_t *)&sLineCoding, sizeof(tLineCoding));
 
             break;
         }
@@ -1743,27 +1721,27 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // ACK what we have already received
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, false);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, false);
 
             //
             // Set the handshake lines as required.
             //
-            psInst->usControlLineState = pUSBRequest->wValue;
+            psInst->ui16ControlLineState = pUSBRequest->wValue;
 
             //
             // Remember that we are due to notify the client of a line
             // state change.
             //
-            SetDeferredOpFlag(&psInst->usDeferredOpFlags,
+            SetDeferredOpFlag(&psInst->ui16DeferredOpFlags,
                               CDC_DO_LINE_STATE_CHANGE, true);
 
             //
             // See if we can notify now.
             //
-            bRetcode = CheckAndSendLineStateChange(psDevice);
+            bRetcode = CheckAndSendLineStateChange(psCDCDevice);
 
             //
-            // If we couldn't send the line state change request to the
+            // If we could not send the line state change request to the
             // client, block reception of more data from the host until
             // previous data is processed and we send the change request.
             //
@@ -1780,27 +1758,27 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // ACK what we have already received
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, false);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, false);
 
             //
             // Keep a copy of the requested break duration.
             //
-            psInst->usBreakDuration = pUSBRequest->wValue;
+            psInst->ui16BreakDuration = pUSBRequest->wValue;
 
             //
             // Remember that we need to send a break request.
             //
-            SetDeferredOpFlag(&psInst->usDeferredOpFlags,
+            SetDeferredOpFlag(&psInst->ui16DeferredOpFlags,
                               CDC_DO_SEND_BREAK, true);
 
             //
             // Send the break request if all outstanding receive data has been
             // processed.
             //
-            bRetcode = CheckAndSendBreak(psDevice, pUSBRequest->wValue);
+            bRetcode = CheckAndSendBreak(psCDCDevice, pUSBRequest->wValue);
 
             //
-            // If we couldn't send the line coding change request to the
+            // If we could not send the line coding change request to the
             // client, block reception of more data from the host until
             // previous data is processed and we send the change request.
             //
@@ -1865,22 +1843,22 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
 //
 //*****************************************************************************
 static void
-HandleDisconnect(void *pvInstance)
+HandleDisconnect(void *pvCDCDevice)
 {
-    const tUSBDCDCDevice *psCDCDevice;
+    tUSBDCDCDevice *psCDCDevice;
     tCDCSerInstance *psInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Create the instance pointer.
+    // The CDC device structure pointer.
     //
-    psCDCDevice = (const tUSBDCDCDevice *)pvInstance;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psCDCDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // If we are not currently connected and we have a control callback,
@@ -1908,16 +1886,16 @@ HandleDisconnect(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleSuspend(void *pvInstance)
+HandleSuspend(void *pvCDCDevice)
 {
     const tUSBDCDCDevice *psCDCDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Create the instance pointer.
+    // The CDC device structure pointer.
     //
-    psCDCDevice = (const tUSBDCDCDevice *)pvInstance;
+    psCDCDevice = (const tUSBDCDCDevice *)pvCDCDevice;
 
     //
     // Pass the event on to the client.
@@ -1933,16 +1911,16 @@ HandleSuspend(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleResume(void *pvInstance)
+HandleResume(void *pvCDCDevice)
 {
     tUSBDCDCDevice *psCDCDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Create the instance pointer.
+    // The CDC device structure pointer.
     //
-    psCDCDevice = (tUSBDCDCDevice *)pvInstance;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
     // Pass the event on to the client.
@@ -1956,61 +1934,61 @@ HandleResume(void *pvInstance)
 // This function is called periodically and provides us with a time reference
 // and method of implementing delayed or time-dependent operations.
 //
-// \param ulIndex is the index of the USB controller for which this tick
+// \param ui32Index is the index of the USB controller for which this tick
 // is being generated.
-// \param ulTimemS is the elapsed time in milliseconds since the last call
+// \param ui32TimemS is the elapsed time in milliseconds since the last call
 // to this function.
 //
 // \return None.
 //
 //*****************************************************************************
 static void
-CDCTickHandler(void *pvInstance, unsigned long ulTimemS)
+CDCTickHandler(void *pvCDCDevice, uint32_t ui32TimemS)
 {
-    tBoolean bCanSend;
-    const tUSBDCDCDevice *psDevice;
+    bool bCanSend;
+    tUSBDCDCDevice *psCDCDevice;
     tCDCSerInstance *psInst;
-    unsigned long ulSize;
+    uint32_t ui32Size;
 
-    ASSERT(pvInstance != 0);
-
-    //
-    // Create the instance pointer.
-    //
-    psDevice = (const tUSBDCDCDevice *)pvInstance;
+    ASSERT(pvCDCDevice != 0);
 
     //
-    // Get our instance data pointer.
+    // The CDC device structure pointer.
     //
-    psInst = psDevice->psPrivateCDCSerData;
+    psCDCDevice = (tUSBDCDCDevice *)pvCDCDevice;
+
+    //
+    // Get a pointer to the CDC device instance data pointer
+    //
+    psInst = &psCDCDevice->sPrivateData;
 
     //
     // Is there any outstanding operation that we should try to perform?
     //
-    if(psInst->usDeferredOpFlags)
+    if(psInst->ui16DeferredOpFlags)
     {
         //
         // Yes - we have at least one deferred operation pending.  First check
         // to see if it is time to turn off a break condition.
         //
-        if(psInst->usDeferredOpFlags & (1 << CDC_DO_CLEAR_BREAK))
+        if(psInst->ui16DeferredOpFlags & (1 << CDC_DO_CLEAR_BREAK))
         {
             //
             // Will our break timer expire this time?
             //
-            if(psInst->usBreakDuration <= ulTimemS)
+            if(psInst->ui16BreakDuration <= ui32TimemS)
             {
                 //
                 // Yes - turn off the break condition.
                 //
-                SendBreak(psDevice, false);
+                SendBreak(psCDCDevice, false);
             }
             else
             {
                 //
                 // We have not timed out yet.  Decrement the break timer.
                 //
-                psInst->usBreakDuration -= (unsigned short)ulTimemS;
+                psInst->ui16BreakDuration -= (uint16_t)ui32TimemS;
             }
         }
 
@@ -2019,7 +1997,7 @@ CDCTickHandler(void *pvInstance, unsigned long ulTimemS)
         // operations which are waiting for the receive pipe to be emptied
         // before they can be carried out.
         //
-        bCanSend = DeviceConsumedAllData(psDevice);
+        bCanSend = DeviceConsumedAllData(psCDCDevice);
 
         //
         // Has all outstanding data been consumed?
@@ -2035,25 +2013,25 @@ CDCTickHandler(void *pvInstance, unsigned long ulTimemS)
             //
             // Do we need to start sending a break condition?
             //
-            if(psInst->usDeferredOpFlags & (1 << CDC_DO_SEND_BREAK))
+            if(psInst->ui16DeferredOpFlags & (1 << CDC_DO_SEND_BREAK))
             {
-                SendBreak(psDevice, true);
+                SendBreak(psCDCDevice, true);
             }
 
             //
             // Do we need to set the RTS/DTR states?
             //
-            if(psInst->usDeferredOpFlags & (1 << CDC_DO_LINE_STATE_CHANGE))
+            if(psInst->ui16DeferredOpFlags & (1 << CDC_DO_LINE_STATE_CHANGE))
             {
-                SendLineStateChange(psDevice);
+                SendLineStateChange(psCDCDevice);
             }
 
             //
             // Do we need to change the line coding parameters?
             //
-            if(psInst->usDeferredOpFlags & (1 << CDC_DO_LINE_CODING_CHANGE))
+            if(psInst->ui16DeferredOpFlags & (1 << CDC_DO_LINE_CODING_CHANGE))
             {
-                SendLineCodingChange(psDevice);
+                SendLineCodingChange(psCDCDevice);
             }
 
             //
@@ -2067,7 +2045,7 @@ CDCTickHandler(void *pvInstance, unsigned long ulTimemS)
             // to be blocked are now handled, we can unblock receive and handle
             // any packet that is currently waiting to be received.
             //
-            if(!(psInst->usDeferredOpFlags & RX_BLOCK_OPS))
+            if(!(psInst->ui16DeferredOpFlags & RX_BLOCK_OPS))
             {
                 //
                 // We can remove the receive block.
@@ -2084,18 +2062,18 @@ CDCTickHandler(void *pvInstance, unsigned long ulTimemS)
             //
             // Do we have a deferred receive waiting
             //
-            if(psInst->usDeferredOpFlags & (1 << CDC_DO_PACKET_RX))
+            if(psInst->ui16DeferredOpFlags & (1 << CDC_DO_PACKET_RX))
             {
                 //
                 // Yes - how big is the waiting packet?
                 //
-                ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                                  psInst->ucBulkOUTEndpoint);
+                ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                                    psInst->ui8BulkOUTEndpoint);
 
                 // Tell the client that there is a packet waiting for it.
                 //
-                psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                        USB_EVENT_RX_AVAILABLE, ulSize,
+                psCDCDevice->pfnRxCallback(psCDCDevice->pvRxCBData,
+                                        USB_EVENT_RX_AVAILABLE, ui32Size,
                                         (void *)0);
             }
         }
@@ -2108,91 +2086,118 @@ CDCTickHandler(void *pvInstance, unsigned long ulTimemS)
 //
 //! Initializes CDC device operation when used with a composite device.
 //!
-//! \param ulIndex is the index of the USB controller in use.
+//! \param ui32Index is the index of the USB controller in use.
 //! \param psCDCDevice points to a structure containing parameters customizing
 //! the operation of the CDC device.
+//! \param psCompEntry is the composite device entry to initialize when
+//! creating a composite device.
 //!
 //! This call is very similar to USBDCDCInit() except that it is used for
-//! initializing an instance of the serial device for use in a composite device.
+//! initializing an instance of the serial device for use in a composite
+//! device.  When this CDC serial device is part of a composite device, then
+//! the \e psCompEntry should point to the composite device entry to
+//! initialize.  This is part of the array that is passed to the
+//! USBDCompositeInit() function.
 //!
-//! \return Returns NULL on failure or the psCDCDevice pointer on success.
+//! \return Returns zero on failure or a non-zero instance value that should be
+//! used with the remaining USB CDC APIs.
 //
 //*****************************************************************************
 void *
-USBDCDCCompositeInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
+USBDCDCCompositeInit(uint32_t ui32Index, tUSBDCDCDevice *psCDCDevice,
+                     tCompositeEntry *psCompEntry)
 {
     tCDCSerInstance *psInst;
-    tDeviceDescriptor *psDevDesc;
 
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
     ASSERT(psCDCDevice);
-    ASSERT(psCDCDevice->psPrivateCDCSerData);
     ASSERT(psCDCDevice->pfnControlCallback);
     ASSERT(psCDCDevice->pfnRxCallback);
     ASSERT(psCDCDevice->pfnTxCallback);
 
     //
-    // Create an instance pointer to the private data area.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = psCDCDevice->psPrivateCDCSerData;
+    psInst = &psCDCDevice->sPrivateData;
+
+    //
+    // Initialize the composite entry that is used by the composite device
+    // class.
+    //
+    if(psCompEntry != 0)
+    {
+        psCompEntry->psDevInfo = &psInst->sDevInfo;
+        psCompEntry->pvInstance = (void *)psCDCDevice;
+    }
+
+    //
+    // Initialize the device information structure.
+    //
+    psInst->sDevInfo.psCallbacks = &g_sCDCHandlers;
+    psInst->sDevInfo.pui8DeviceDescriptor = g_pui8CDCSerDeviceDescriptor;
+
+    //
+    // The CDC serial configuration is different for composite devices and
+    // stand alone devices.
+    //
+    if(psCompEntry == 0)
+    {
+        psInst->sDevInfo.ppsConfigDescriptors = g_ppCDCSerConfigDescriptors;
+    }
+    else
+    {
+        psInst->sDevInfo.ppsConfigDescriptors = g_pCDCCompSerConfigDescriptors;
+    }
+    psInst->sDevInfo.ppui8StringDescriptors = 0;
+    psInst->sDevInfo.ui32NumStringDescriptors = 0;
 
     //
     // Set the default endpoint and interface assignments.
     //
-    psInst->ucBulkINEndpoint = DATA_IN_ENDPOINT;
-    psInst->ucBulkOUTEndpoint = DATA_OUT_ENDPOINT;
-    psInst->ucInterfaceControl = SERIAL_INTERFACE_CONTROL;
-    psInst->ucInterfaceData = SERIAL_INTERFACE_DATA;
+    psInst->ui8BulkINEndpoint = DATA_IN_ENDPOINT;
+    psInst->ui8BulkOUTEndpoint = DATA_OUT_ENDPOINT;
+    psInst->ui8InterfaceControl = SERIAL_INTERFACE_CONTROL;
+    psInst->ui8InterfaceData = SERIAL_INTERFACE_DATA;
 
     //
     // By default do not use the interrupt control endpoint.  The single
     // instance CDC serial device will turn this on in USBDCDCInit();
     //
-    psInst->ucControlEndpoint = CONTROL_ENDPOINT;
+    psInst->ui8ControlEndpoint = CONTROL_ENDPOINT;
 
     //
     // Initialize the workspace in the passed instance structure.
     //
-    psInst->psConfDescriptor = (tConfigDescriptor *)g_pCDCSerDescriptor;
-    psInst->psDevInfo = &g_sCDCSerDeviceInfo;
-    psInst->ulUSBBase = USB0_BASE;
-    psInst->eCDCRxState = CDC_STATE_UNCONFIGURED;
-    psInst->eCDCTxState = CDC_STATE_UNCONFIGURED;
-    psInst->eCDCInterruptState = CDC_STATE_UNCONFIGURED;
-    psInst->eCDCRequestState = CDC_STATE_UNCONFIGURED;
-    psInst->ucPendingRequest = 0;
-    psInst->usBreakDuration = 0;
-    psInst->usSerialState = 0;
-    psInst->usDeferredOpFlags = 0;
-    psInst->usControlLineState = 0;
+    psInst->ui32USBBase = USB0_BASE;
+    psInst->iCDCRxState = eCDCStateUnconfigured;
+    psInst->iCDCTxState = eCDCStateUnconfigured;
+    psInst->iCDCInterruptState = eCDCStateUnconfigured;
+    psInst->iCDCRequestState = eCDCStateUnconfigured;
+    psInst->ui8PendingRequest = 0;
+    psInst->ui16BreakDuration = 0;
+    psInst->ui16SerialState = 0;
+    psInst->ui16DeferredOpFlags = 0;
+    psInst->ui16ControlLineState = 0;
     psInst->bRxBlocked = false;
     psInst->bControlBlocked = false;
     psInst->bConnected = false;
 
     //
-    // Fix up the device descriptor with the client-supplied values.
+    // Initialize the device info structure for the serial device.
     //
-    psDevDesc = (tDeviceDescriptor *)psInst->psDevInfo->pDeviceDescriptor;
-    psDevDesc->idVendor = psCDCDevice->usVID;
-    psDevDesc->idProduct = psCDCDevice->usPID;
-
-    //
-    // Fix up the configuration descriptor with client-supplied values.
-    //
-    psInst->psConfDescriptor->bmAttributes = psCDCDevice->ucPwrAttributes;
-    psInst->psConfDescriptor->bMaxPower =
-                (unsigned char)(psCDCDevice->usMaxPowermA / 2);
+    USBDCDDeviceInfoInit(0, &psInst->sDevInfo);
 
     //
     // Plug in the client's string stable to the device information
     // structure.
     //
-    psInst->psDevInfo->ppStringDescriptors = psCDCDevice->ppStringDescriptors;
-    psInst->psDevInfo->ulNumStringDescriptors
-            = psCDCDevice->ulNumStringDescriptors;
+    psInst->sDevInfo.ppui8StringDescriptors =
+                                        psCDCDevice->ppui8StringDescriptors;
+    psInst->sDevInfo.ui32NumStringDescriptors =
+                                        psCDCDevice->ui32NumStringDescriptors;
 
     //
     // Initialize the USB tick module, this will prevent it from being
@@ -2203,8 +2208,7 @@ USBDCDCCompositeInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
     //
     // Register our tick handler (this must be done after USBDCDInit).
     //
-    InternalUSBRegisterTickHandler(CDCTickHandler,
-                                   (void *)psCDCDevice);
+    InternalUSBRegisterTickHandler(CDCTickHandler, (void *)psCDCDevice);
 
     //
     // Return the pointer to the instance indicating that everything went well.
@@ -2216,7 +2220,7 @@ USBDCDCCompositeInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
 //
 //! Initializes CDC device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for CDC device operation.
 //! \param psCDCDevice points to a structure containing parameters customizing
 //! the operation of the CDC device.
@@ -2262,45 +2266,56 @@ USBDCDCCompositeInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
 //
 //*****************************************************************************
 void *
-USBDCDCInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
+USBDCDCInit(uint32_t ui32Index, tUSBDCDCDevice *psCDCDevice)
 {
     void *pvRet;
     tCDCSerInstance *psInst;
+    tDeviceDescriptor *psDevDesc;
+    tConfigDescriptor *psConfigDesc;
 
     //
     // Initialize the internal state for this class.
     //
-    pvRet = USBDCDCCompositeInit(ulIndex, psCDCDevice);
+    pvRet = USBDCDCCompositeInit(ui32Index, psCDCDevice, 0);
 
     if(pvRet)
     {
         //
-        // Create an instance pointer to the private data area.
+        // Fix up the device descriptor with the client-supplied values.
         //
-        psInst = psCDCDevice->psPrivateCDCSerData;
+        psDevDesc = (tDeviceDescriptor *)g_pui8CDCSerDeviceDescriptor;
+        psDevDesc->idVendor = psCDCDevice->ui16VID;
+        psDevDesc->idProduct = psCDCDevice->ui16PID;
 
         //
-        // Set the instance data for this device so that USBDCDInit() call can
-        // have the instance data.
+        // Fix up the configuration descriptor with client-supplied values.
         //
-        psInst->psDevInfo->pvInstance = (void *)psCDCDevice;
+        psConfigDesc = (tConfigDescriptor *)g_pui8CDCSerDescriptor;
+        psConfigDesc->bmAttributes = psCDCDevice->ui8PwrAttributes;
+        psConfigDesc->bMaxPower = (uint8_t)(psCDCDevice->ui16MaxPowermA / 2);
+
+        //
+        // Create an instance pointer to the private data area.
+        //
+        psInst = &psCDCDevice->sPrivateData;
 
         //
         // Enable the default interrupt control endpoint if this class is not
         // being used in a composite device.
         //
-        psInst->ucControlEndpoint = CONTROL_ENDPOINT;
+        psInst->ui8ControlEndpoint = CONTROL_ENDPOINT;
 
         //
-        // Use the configuration descriptor with the interrupt control endpoint.
+        // Use the configuration descriptor with the interrupt control
+        // endpoint.
         //
-        psInst->psDevInfo->ppConfigDescriptors = g_pCDCSerConfigDescriptors;
+        psInst->sDevInfo.ppsConfigDescriptors = g_ppCDCSerConfigDescriptors;
 
         //
         // All is well so now pass the descriptors to the lower layer and put
         // the CDC device on the bus.
         //
-        USBDCDInit(ulIndex, psInst->psDevInfo);
+        USBDCDInit(ui32Index, &psInst->sDevInfo, (void *)psCDCDevice);
     }
 
     return(pvRet);
@@ -2310,8 +2325,8 @@ USBDCDCInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
 //
 //! Shuts down the CDC device instance.
 //!
-//! \param pvInstance is the pointer to the device instance structure as returned
-//! by USBDCDCInit().
+//! \param pvCDCDevice is the pointer to the device instance structure as
+//! returned by USBDCDCInit().
 //!
 //! This function terminates CDC operation for the instance supplied and
 //! removes the device from the USB bus.  This function should not be called
@@ -2319,32 +2334,30 @@ USBDCDCInit(unsigned long ulIndex, const tUSBDCDCDevice *psCDCDevice)
 //! USBDCompositeTerm() function should be called for the full composite
 //! device.
 //!
-//! Following this call, the \e pvInstance instance should not me used in any
-//! other calls.
+//! Following this call, the \e pvCDCDevice instance should not me used in
+//! any other calls.
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBDCDCTerm(void *pvInstance)
+USBDCDCTerm(void *pvCDCDevice)
 {
     tCDCSerInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psInst = &((tUSBDCDCDevice *)pvCDCDevice)->sPrivateData;
 
     //
     // Terminate the requested instance.
     //
-    USBDCDTerm(USB_BASE_TO_INDEX(psInst->ulUSBBase));
+    USBDCDTerm(USBBaseToIndex(psInst->ui32USBBase));
 
-    psInst->ulUSBBase = 0;
-    psInst->psDevInfo = (tDeviceInfo *)0;
-    psInst->psConfDescriptor = (tConfigDescriptor *)0;
+    psInst->ui32USBBase = 0;
 
     return;
 }
@@ -2353,7 +2366,7 @@ USBDCDCTerm(void *pvInstance)
 //
 //! Sets the client-specific pointer for the control callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the control channel callback function.
@@ -2372,18 +2385,24 @@ USBDCDCTerm(void *pvInstance)
 //
 //*****************************************************************************
 void *
-USBDCDCSetControlCBData(void *pvInstance, void *pvCBData)
+USBDCDCSetControlCBData(void *pvCDCDevice, void *pvCBData)
 {
+    tUSBDCDCDevice *psBulkDevice;
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
+
+    //
+    // The CDC device structure pointer.
+    //
+    psBulkDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
     // Set the callback pointer for the control channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDCDCDevice *)pvInstance)->pvControlCBData;
-    ((tUSBDCDCDevice *)pvInstance)->pvControlCBData = pvCBData;
+    pvOldValue = psBulkDevice->pvControlCBData;
+    psBulkDevice->pvControlCBData = pvCBData;
 
     //
     // Return the previous callback data value.
@@ -2395,7 +2414,7 @@ USBDCDCSetControlCBData(void *pvInstance, void *pvCBData)
 //
 //! Sets the client-specific data parameter for the receive channel callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the receive channel callback function.
@@ -2414,18 +2433,24 @@ USBDCDCSetControlCBData(void *pvInstance, void *pvCBData)
 //
 //*****************************************************************************
 void *
-USBDCDCSetRxCBData(void *pvInstance, void *pvCBData)
+USBDCDCSetRxCBData(void *pvCDCDevice, void *pvCBData)
 {
+    tUSBDCDCDevice *psBulkDevice;
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
+
+    //
+    // The CDC device structure pointer.
+    //
+    psBulkDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
     // Set the callback data for the receive channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDCDCDevice *)pvInstance)->pvRxCBData;
-    ((tUSBDCDCDevice *)pvInstance)->pvRxCBData = pvCBData;
+    pvOldValue = psBulkDevice->pvRxCBData;
+    psBulkDevice->pvRxCBData = pvCBData;
 
     //
     // Return the previous callback pointer.
@@ -2437,7 +2462,7 @@ USBDCDCSetRxCBData(void *pvInstance, void *pvCBData)
 //
 //! Sets the client-specific data parameter for the transmit callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the transmit channel callback function.
@@ -2456,18 +2481,24 @@ USBDCDCSetRxCBData(void *pvInstance, void *pvCBData)
 //
 //*****************************************************************************
 void *
-USBDCDCSetTxCBData(void *pvInstance, void *pvCBData)
+USBDCDCSetTxCBData(void *pvCDCDevice, void *pvCBData)
 {
+    tUSBDCDCDevice *psBulkDevice;
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
+
+    //
+    // The CDC device structure pointer.
+    //
+    psBulkDevice = (tUSBDCDCDevice *)pvCDCDevice;
 
     //
     // Set the callback data for the transmit channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDCDCDevice *)pvInstance)->pvTxCBData;
-    ((tUSBDCDCDevice *)pvInstance)->pvTxCBData = pvCBData;
+    pvOldValue = psBulkDevice->pvTxCBData;
+    psBulkDevice->pvTxCBData = pvCBData;
 
     //
     // Return the previous callback pointer.
@@ -2479,10 +2510,10 @@ USBDCDCSetTxCBData(void *pvInstance, void *pvCBData)
 //
 //! Transmits a packet of data to the USB host via the CDC data interface.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
-//! \param pcData points to the first byte of data which is to be transmitted.
-//! \param ulLength is the number of bytes of data to transmit.
+//! \param pi8Data points to the first byte of data which is to be transmitted.
+//! \param ui32Length is the number of bytes of data to transmit.
 //! \param bLast indicates whether more data is to be written before a packet
 //! should be scheduled for transmission.  If \b true, the client will make
 //! a further call to this function.  If \b false, no further call will be
@@ -2493,13 +2524,13 @@ USBDCDCSetTxCBData(void *pvInstance, void *pvCBData)
 //! the data is immediately copied to the relevant USB endpoint FIFO.  If the
 //! \e bLast parameter is \b true, the newly written packet is then scheduled
 //! for transmission.  Whenever a USB packet is acknowledged by the host, a
-//! USB_EVENT_TX_COMPLETE event will be sent to the application transmit
+//! \b USB_EVENT_TX_COMPLETE event will be sent to the application transmit
 //! callback indicating that more data can now be transmitted.
 //!
-//! The maximum value for ulLength is 64 bytes (the maximum USB packet size
-//! for the bulk endpoints in use by CDC).  Attempts to send more data than
-//! this will result in a return code of 0 indicating that the data cannot be
-//! sent.
+//! The maximum value for \e ui32Length is 64 bytes (the maximum USB packet
+//! size for the bulk endpoints in use by CDC).  Attempts to send more data
+//! than this will result in a return code of 0 indicating that the data cannot
+//! be sent.
 //!
 //! \return Returns the number of bytes actually sent.  At this level, this
 //! will either be the number of bytes passed (if less than or equal to the
@@ -2507,25 +2538,25 @@ USBDCDCSetTxCBData(void *pvInstance, void *pvCBData)
 //! transmission ongoing) or 0 to indicate a failure.
 //
 //*****************************************************************************
-unsigned long
-USBDCDCPacketWrite(void *pvInstance, unsigned char *pcData,
-                   unsigned long ulLength, tBoolean bLast)
+uint32_t
+USBDCDCPacketWrite(void *pvCDCDevice, uint8_t *pi8Data, uint32_t ui32Length,
+                   bool bLast)
 {
     tCDCSerInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
-    // Get our instance data pointer
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psInst = &((tUSBDCDCDevice *)pvCDCDevice)->sPrivateData;
 
     //
     // Can we send the data provided?
     //
-    if((ulLength > DATA_IN_EP_MAX_SIZE) ||
-       (psInst->eCDCTxState != CDC_STATE_IDLE))
+    if((ui32Length > DATA_IN_EP_MAX_SIZE) ||
+       (psInst->iCDCTxState != eCDCStateIdle))
     {
         //
         // Either the packet was too big or we are in the middle of sending
@@ -2537,19 +2568,19 @@ USBDCDCPacketWrite(void *pvInstance, unsigned char *pcData,
     //
     // Copy the data into the USB endpoint FIFO.
     //
-    lRetcode = MAP_USBEndpointDataPut(psInst->ulUSBBase,
-                                      psInst->ucBulkINEndpoint, pcData,
-                                      ulLength);
+    i32Retcode = MAP_USBEndpointDataPut(psInst->ui32USBBase,
+                                        psInst->ui8BulkINEndpoint, pi8Data,
+                                        ui32Length);
 
     //
     // Did we copy the data successfully?
     //
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // Remember how many bytes we sent.
         //
-        psInst->usLastTxSize += (unsigned short)ulLength;
+        psInst->ui16LastTxSize += (uint16_t)ui32Length;
 
         //
         // If this is the last call for this packet, schedule transmission.
@@ -2560,27 +2591,27 @@ USBDCDCPacketWrite(void *pvInstance, unsigned char *pcData,
             // Send the packet to the host if we have received all the data we
             // can expect for this packet.
             //
-            psInst->eCDCTxState = CDC_STATE_WAIT_DATA;
-            lRetcode = MAP_USBEndpointDataSend(psInst->ulUSBBase,
-                                               psInst->ucBulkINEndpoint,
-                                               USB_TRANS_IN);
+            psInst->iCDCTxState = eCDCStateWaitData;
+            i32Retcode = MAP_USBEndpointDataSend(psInst->ui32USBBase,
+                                                 psInst->ui8BulkINEndpoint,
+                                                 USB_TRANS_IN);
         }
     }
 
     //
     // Did an error occur while trying to send the data?
     //
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // No - tell the caller we sent all the bytes provided.
         //
-        return(ulLength);
+        return(ui32Length);
     }
     else
     {
         //
-        // Yes - tell the caller we couldn't send the data.
+        // Yes - tell the caller we could not send the data.
         //
         return(0);
     }
@@ -2591,15 +2622,15 @@ USBDCDCPacketWrite(void *pvInstance, unsigned char *pcData,
 //! Reads a packet of data received from the USB host via the CDC data
 //! interface.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
-//! \param pcData points to a buffer into which the received data will be
+//! \param pi8Data points to a buffer into which the received data will be
 //! written.
-//! \param ulLength is the size of the buffer pointed to by pcData.
+//! \param ui32Length is the size of the buffer pointed to by \e pi8Data.
 //! \param bLast indicates whether the client will make a further call to
 //! read additional data from the packet.
 //!
-//! This function reads up to ulLength bytes of data received from the USB
+//! This function reads up to ui32Length bytes of data received from the USB
 //! host into the supplied application buffer.
 //!
 //! \note The \e bLast parameter is ignored in this implementation since the
@@ -2609,28 +2640,28 @@ USBDCDCPacketWrite(void *pvInstance, unsigned char *pcData,
 //! \return Returns the number of bytes of data read.
 //
 //*****************************************************************************
-unsigned long
-USBDCDCPacketRead(void *pvInstance, unsigned char *pcData,
-                  unsigned long ulLength, tBoolean bLast)
+uint32_t
+USBDCDCPacketRead(void *pvCDCDevice, uint8_t *pi8Data, uint32_t ui32Length,
+                  bool bLast)
 {
-    unsigned long ulEPStatus, ulCount, ulPkt;
+    uint32_t ui32EPStatus, ui32Count, ui32Pkt;
     tCDCSerInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
-    // Get our instance data pointer
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psInst = &((tUSBDCDCDevice *)pvCDCDevice)->sPrivateData;
 
     //
     // Does the relevant endpoint FIFO have a packet waiting for us?
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucBulkOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8BulkOUTEndpoint);
 
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // If receive is currently blocked or the buffer we were passed is
@@ -2639,8 +2670,8 @@ USBDCDCPacketRead(void *pvInstance, unsigned char *pcData,
         //
         if(psInst->bRxBlocked || psInst->bControlBlocked)
         {
-            SetDeferredOpFlag(&psInst->usDeferredOpFlags,
-                              CDC_DO_PACKET_RX, true);
+            SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_PACKET_RX,
+                              true);
             return(0);
         }
         else
@@ -2649,43 +2680,43 @@ USBDCDCPacketRead(void *pvInstance, unsigned char *pcData,
             // It is OK to receive the new packet.  How many bytes are
             // available for us to receive?
             //
-            ulPkt = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                             psInst->ucBulkOUTEndpoint);
+            ui32Pkt = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                               psInst->ui8BulkOUTEndpoint);
 
             //
             // Get as much data as we can.
             //
-            ulCount = ulLength;
-            lRetcode = MAP_USBEndpointDataGet(psInst->ulUSBBase,
-                                              psInst->ucBulkOUTEndpoint,
-                                              pcData, &ulCount);
+            ui32Count = ui32Length;
+            i32Retcode = MAP_USBEndpointDataGet(psInst->ui32USBBase,
+                                                psInst->ui8BulkOUTEndpoint,
+                                                pi8Data, &ui32Count);
 
             //
             // Did we read the last of the packet data?
             //
-            if(ulCount == ulPkt)
+            if(ui32Count == ui32Pkt)
             {
                 //
                 // Clear the endpoint status so that we know no packet is
                 // waiting.
                 //
-                MAP_USBDevEndpointStatusClear(psInst->ulUSBBase,
-                                              psInst->ucBulkOUTEndpoint,
-                                              ulEPStatus);
+                MAP_USBDevEndpointStatusClear(psInst->ui32USBBase,
+                                              psInst->ui8BulkOUTEndpoint,
+                                              ui32EPStatus);
 
                 //
                 // Acknowledge the data, thus freeing the host to send the
                 // next packet.
                 //
-                MAP_USBDevEndpointDataAck(psInst->ulUSBBase,
-                                          psInst->ucBulkOUTEndpoint,
+                MAP_USBDevEndpointDataAck(psInst->ui32USBBase,
+                                          psInst->ui8BulkOUTEndpoint,
                                           true);
 
                 //
                 // Clear the flag we set to indicate that a packet read is
                 // pending.
                 //
-                SetDeferredOpFlag(&psInst->usDeferredOpFlags,
+                SetDeferredOpFlag(&psInst->ui16DeferredOpFlags,
                                   CDC_DO_PACKET_RX, false);
 
             }
@@ -2693,9 +2724,9 @@ USBDCDCPacketRead(void *pvInstance, unsigned char *pcData,
             //
             // If all went well, tell the caller how many bytes they got.
             //
-            if(lRetcode != -1)
+            if(i32Retcode != -1)
             {
-                return(ulCount);
+                return(ui32Count);
             }
         }
     }
@@ -2711,33 +2742,33 @@ USBDCDCPacketRead(void *pvInstance, unsigned char *pcData,
 //
 //! Returns the number of free bytes in the transmit buffer.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
 //!
 //! This function returns the maximum number of bytes that can be passed on a
-//! call to USBDCDCPacketWrite and accepted for transmission.  The value
-//! returned will be the maximum USB packet size (64) if no transmission is
+//! call to USBDCDCPacketWrite() and accepted for transmission.  The value
+//! returned will be the maximum USB packet size if no transmission is
 //! currently outstanding or 0 if a transmission is in progress.
 //!
 //! \return Returns the number of bytes available in the transmit buffer.
 //
 //*****************************************************************************
-unsigned long
-USBDCDCTxPacketAvailable(void *pvInstance)
+uint32_t
+USBDCDCTxPacketAvailable(void *pvCDCDevice)
 {
     tCDCSerInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
-    // Get our instance data pointer.
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psInst = &((tUSBDCDCDevice *)pvCDCDevice)->sPrivateData;
 
     //
     // Do we have a packet transmission currently ongoing?
     //
-    if(psInst->eCDCTxState != CDC_STATE_IDLE)
+    if(psInst->iCDCTxState != eCDCStateIdle)
     {
         //
         // We are not ready to receive a new packet so return 0.
@@ -2759,7 +2790,7 @@ USBDCDCTxPacketAvailable(void *pvInstance)
 //! Determines whether a packet is available and, if so, the size of the
 //! buffer required to read it.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
 //!
 //! This function may be used to determine if a received packet remains to be
@@ -2770,19 +2801,18 @@ USBDCDCTxPacketAvailable(void *pvInstance)
 //! size of the packet if a packet is waiting to be read.
 //
 //*****************************************************************************
-unsigned long
-USBDCDCRxPacketAvailable(void *pvInstance)
+uint32_t
+USBDCDCRxPacketAvailable(void *pvCDCDevice)
 {
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus, ui32Size;
     tCDCSerInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
-    // Get our instance data pointer
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psInst = &((tUSBDCDCDevice *)pvCDCDevice)->sPrivateData;
 
     //
     // If receive is currently blocked, return 0.
@@ -2795,18 +2825,18 @@ USBDCDCRxPacketAvailable(void *pvInstance)
     //
     // Does the relevant endpoint FIFO have a packet waiting for us?
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucBulkOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8BulkOUTEndpoint);
 
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // Yes - a packet is waiting.  How big is it?
         //
-        ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                          psInst->ucBulkOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                            psInst->ui8BulkOUTEndpoint);
 
-        return(ulSize);
+        return(ui32Size);
     }
     else
     {
@@ -2822,18 +2852,18 @@ USBDCDCRxPacketAvailable(void *pvInstance)
 //! Informs the CDC module of changes in the serial control line states or
 //! receive error conditions.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvCDCDevice is the pointer to the device instance structure as
 //! returned by USBDCDCInit().
-//! \param usState indicates the states of the various control lines and
+//! \param ui16State indicates the states of the various control lines and
 //! any receive errors detected.  Bit definitions are as for the USB CDC
 //! SerialState asynchronous notification and are defined in header file
 //! usbcdc.h.
 //!
 //! The application should call this function whenever the state of any of
 //! the incoming RS232 handshake signals changes or in response to a receive
-//! error or break condition.  The usState parameter is the ORed combination
-//! of the following flags with each flag indicating the presence of that
-//! condition.
+//! error or break condition.  The \e ui16State parameter is the ORed
+//! combination of the following flags with each flag indicating the presence
+//! of that condition.
 //!
 //! - USB_CDC_SERIAL_STATE_OVERRUN
 //! - USB_CDC_SERIAL_STATE_PARITY
@@ -2849,16 +2879,16 @@ USBDCDCRxPacketAvailable(void *pvInstance)
 //
 //*****************************************************************************
 void
-USBDCDCSerialStateChange(void *pvInstance, unsigned short usState)
+USBDCDCSerialStateChange(void *pvCDCDevice, uint16_t ui16State)
 {
     tCDCSerInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
-    // Get our instance data pointer
+    // Get a pointer to the CDC device instance data pointer
     //
-    psInst = ((tUSBDCDCDevice *)pvInstance)->psPrivateCDCSerData;
+    psInst = &((tUSBDCDCDevice *)pvCDCDevice)->sPrivateData;
 
     //
     // Add the newly reported state bits to the current collection.  We do this
@@ -2879,28 +2909,28 @@ USBDCDCSerialStateChange(void *pvInstance, unsigned short usState)
     //     queue fills up.  For now, therefore, we run the risk of missing very
     //     short pulses on the "steady-state" signal lines.
     //
-    psInst->usSerialState |= (usState & USB_CDC_SERIAL_ERRORS);
-    psInst->usSerialState &= ~USB_CDC_SERIAL_ERRORS;
-    psInst->usSerialState |= (usState & ~USB_CDC_SERIAL_ERRORS);
+    psInst->ui16SerialState |= (ui16State & USB_CDC_SERIAL_ERRORS);
+    psInst->ui16SerialState &= ~USB_CDC_SERIAL_ERRORS;
+    psInst->ui16SerialState |= (ui16State & ~USB_CDC_SERIAL_ERRORS);
 
     //
     // Set the flag indicating that a serial state change is to be sent.
     //
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags, CDC_DO_SERIAL_STATE_CHANGE,
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, CDC_DO_SERIAL_STATE_CHANGE,
                       true);
 
     //
     // Can we send the state change immediately?
     //
-    if(psInst->eCDCInterruptState == CDC_STATE_IDLE)
+    if(psInst->iCDCInterruptState == eCDCStateIdle)
     {
         //
         // The interrupt channel is free so send the notification immediately.
         // If we can't do this, the tick timer will catch this next time
         // round.
         //
-        psInst->eCDCInterruptState = CDC_STATE_WAIT_DATA;
-        SendSerialState(pvInstance);
+        psInst->iCDCInterruptState = eCDCStateWaitData;
+        SendSerialState(pvCDCDevice);
     }
 
     return;
@@ -2910,8 +2940,8 @@ USBDCDCSerialStateChange(void *pvInstance, unsigned short usState)
 //
 //! Reports the device power status (bus- or self-powered) to the USB library.
 //!
-//! \param pvInstance is the pointer to the CDC device instance structure.
-//! \param ucPower indicates the current power status, either \b
+//! \param pvCDCDevice is the pointer to the CDC device instance structure.
+//! \param ui8Power indicates the current power status, either \b
 //! USB_STATUS_SELF_PWR or \b USB_STATUS_BUS_PWR.
 //!
 //! Applications which support switching between bus- or self-powered
@@ -2924,27 +2954,27 @@ USBDCDCSerialStateChange(void *pvInstance, unsigned short usState)
 //
 //*****************************************************************************
 void
-USBDCDCPowerStatusSet(void *pvInstance, unsigned char ucPower)
+USBDCDCPowerStatusSet(void *pvCDCDevice, uint8_t ui8Power)
 {
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
     // Pass the request through to the lower layer.
     //
-    USBDCDPowerStatusSet(0, ucPower);
+    USBDCDPowerStatusSet(0, ui8Power);
 }
 
 //*****************************************************************************
 //
 //! Requests a remote wakeup to resume communication when in suspended state.
 //!
-//! \param pvInstance is the pointer to the CDC device instance structure.
+//! \param pvCDCDevice is the pointer to the CDC device instance structure.
 //!
 //! When the bus is suspended, an application which supports remote wakeup
-//! (advertised to the host via the config descriptor) may call this function
-//! to initiate remote wakeup signaling to the host.  If the remote wakeup
-//! feature has not been disabled by the host, this will cause the bus to
-//! resume operation within 20mS.  If the host has disabled remote wakeup,
+//! (advertised to the host via the configuration descriptor) may call this
+//! function to initiate remote wakeup signaling to the host.  If the remote
+//! wakeup feature has not been disabled by the host, this will cause the bus
+//! to resume operation within 20mS.  If the host has disabled remote wakeup,
 //! \b false will be returned to indicate that the wakeup request was not
 //! successful.
 //!
@@ -2953,10 +2983,10 @@ USBDCDCPowerStatusSet(void *pvInstance, unsigned char ucPower)
 //! signaling is currently ongoing following a previous call to this function.
 //
 //*****************************************************************************
-tBoolean
-USBDCDCRemoteWakeupRequest(void *pvInstance)
+bool
+USBDCDCRemoteWakeupRequest(void *pvCDCDevice)
 {
-    ASSERT(pvInstance);
+    ASSERT(pvCDCDevice);
 
     //
     // Pass the request through to the lower layer.

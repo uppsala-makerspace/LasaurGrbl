@@ -3,7 +3,7 @@
 // usbhhidkeyboard.h - This file holds the application interfaces for USB
 //                     keyboard devices.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -19,7 +19,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -44,20 +44,30 @@ extern "C"
 //
 //*****************************************************************************
 
-extern unsigned long USBHKeyboardOpen(tUSBCallback pfnCallback,
-                                      unsigned char *pucBuffer,
-                                      unsigned long ulBufferSize);
-extern unsigned long USBHKeyboardClose(unsigned long ulInstance);
-extern unsigned long USBHKeyboardInit(unsigned long ulInstance);
-extern unsigned long USBHKeyboardModifierSet(unsigned long ulInstance,
-                                             unsigned long ulModifiers);
-extern unsigned long USBHKeyboardPollRateSet(unsigned long ulInstance,
-                                             unsigned long ulPollRate);
+typedef struct tUSBHKeyboard tUSBHKeyboard;
 
-extern unsigned long USBHKeyboardUsageToChar(
-    unsigned long ulInstance,
-    const tHIDKeyboardUsageTable *pTable,
-    unsigned char ucUsageID);
+//*****************************************************************************
+//
+// The prototype for the host USB Keyboard driver callback function.
+//
+//*****************************************************************************
+typedef void (*tUSBHIDKeyboardCallback)(tUSBHKeyboard *psKbInstance,
+                                        uint32_t ui32Event,
+                                        uint32_t ui32MsgParam,
+                                        void *pvMsgData);
+
+extern tUSBHKeyboard * USBHKeyboardOpen(tUSBHIDKeyboardCallback pfnCallback,
+                                        uint8_t *pui8Buffer,
+                                        uint32_t ui32BufferSize);
+extern uint32_t USBHKeyboardClose(tUSBHKeyboard *psKbInstance);
+extern uint32_t USBHKeyboardInit(tUSBHKeyboard *psKbInstance);
+extern uint32_t USBHKeyboardModifierSet(tUSBHKeyboard *psKbInstance,
+                                        uint32_t ui32Modifiers);
+extern uint32_t USBHKeyboardPollRateSet(tUSBHKeyboard *psKbInstance,
+                                        uint32_t ui32PollRate);
+extern uint32_t USBHKeyboardUsageToChar(tUSBHKeyboard *psKbInstance,
+                                        const tHIDKeyboardUsageTable *psTable,
+                                        uint8_t ui8UsageID);
 
 //*****************************************************************************
 //

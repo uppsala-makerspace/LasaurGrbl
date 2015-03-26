@@ -2,7 +2,7 @@
 //
 // usbdevice.h - types and definitions used during USB enumeration.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -54,14 +54,7 @@ extern "C"
 //*****************************************************************************
 #define USB_MAX_INTERFACES_PER_DEVICE 8
 
-#include "./usbdevicepriv.h"
-
-//*****************************************************************************
-//
-// Close the Doxygen group.
-//! @}
-//
-//*****************************************************************************
+#include "usbdevicepriv.h"
 
 //*****************************************************************************
 //
@@ -78,21 +71,21 @@ struct tDeviceInfo
     //! A pointer to a structure containing pointers to event handler functions
     //! provided by the client to support the operation of this device.
     //
-    tCustomHandlers sCallbacks;
+    const tCustomHandlers * psCallbacks;
 
     //
     //! A pointer to the device descriptor for this device.
     //
-    const unsigned char *pDeviceDescriptor;
+    const uint8_t *pui8DeviceDescriptor;
 
     //
     //! A pointer to an array of configuration descriptor pointers.  Each entry
-    //! in the array corresponds to one configuration that the device may be set
-    //! to use by the USB host.  The number of entries in the array must
+    //! in the array corresponds to one configuration that the device may be
+    //! set to use by the USB host.  The number of entries in the array must
     //! match the bNumConfigurations value in the device descriptor
-    //! array, pDeviceDescriptor.
+    //! array, pui8DeviceDescriptor.
     //
-    const tConfigHeader * const *ppConfigDescriptors;
+    const tConfigHeader * const *ppsConfigDescriptors;
 
     //
     //! A pointer to the string descriptor array for this device.  This array
@@ -112,97 +105,87 @@ struct tDeviceInfo
     //!
     //! and so on.
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The total number of descriptors provided in the ppStringDescriptors
     //! array.
     //
-    unsigned long ulNumStringDescriptors;
-
-    //
-    //! A structure defining how the USB controller FIFO is to be partitioned
-    //! between the various endpoints.  This member can be set to point to
-    //! g_sUSBDefaultFIFOConfig if the default FIFO configuration is acceptable
-    //! This configuration sets each endpoint FIFO to be single buffered and
-    //! sized to hold the maximum packet size for the endpoint.
-    //
-    const tFIFOConfig *psFIFOConfig;
-
-    //
-    //! This value will be passed back to all call back functions so that
-    //! they have access to individual instance data based on the this pointer.
-    //
-    void *pvInstance;
-
-    //
-    //! The generic device instance data for this device.  This will be set
-    //! by the call to DCDInit() which is usually made when the applicaiton
-    //! calls the class specific initialization function.
-    //
-    tDeviceInstance *psDevice;
+    uint32_t ui32NumStringDescriptors;
 };
 
 //*****************************************************************************
 //
-// The default USB endpoint FIFO configuration structure.  This structure
-// contains definitions to set all USB FIFOs into single buffered mode with
-// no DMA use.  Each endpoint's FIFO is sized to hold the largest maximum
-// packet size for any interface alternate setting in the current config
-// descriptor.  A pointer to this structure may be passed in the psFIFOConfig
-// field of the tDeviceInfo structure passed to USBCDCInit if the application
-// does not require any special handling of the USB controller FIFO.
+//! This type is used by an application to describe and instance of a device
+//! and an instance data pointer for that class.  The psDevice pointer should
+//! be a pointer to a valid device class to include in the composite device.
+//! The pvInstance pointer should be a pointer to an instance pointer for the
+//! device in the psDevice pointer.
+//!
 //
 //*****************************************************************************
-extern const tFIFOConfig g_sUSBDefaultFIFOConfig;
+typedef struct
+{
+    //
+    //! This is the top level device information structure.
+    //
+    const tDeviceInfo *psDevInfo;
+
+    //
+    //! This is the instance data for the device structure.
+    //
+    void *pvInstance;
+
+    //
+    //! A per-device workspace used by the composite device.
+    //
+    uint32_t ui32DeviceWorkspace;
+}
+tCompositeEntry;
+
+//*****************************************************************************
+//
+// Close the Doxygen group.
+//! @}
+//
+//*****************************************************************************
 
 //*****************************************************************************
 //
 // Public APIs offered by the USB library device control driver.
 //
 //*****************************************************************************
-extern void USBDCDInit(unsigned long ulIndex, tDeviceInfo *psDevice);
-extern void USBDCDTerm(unsigned long ulIndex);
-extern void USBDCDStallEP0(unsigned long ulIndex);
-extern void USBDCDRequestDataEP0(unsigned long ulIndex, unsigned char *pucData,
-                                 unsigned long ulSize);
-extern void USBDCDSendDataEP0(unsigned long ulIndex, unsigned char *pucData,
-                              unsigned long ulSize);
-extern void USBDCDSetDefaultConfiguration(unsigned long ulIndex,
-                                          unsigned long ulDefaultConfig);
-extern unsigned long USBDCDConfigDescGetSize(const tConfigHeader *psConfig);
-extern unsigned long USBDCDConfigDescGetNum(const tConfigHeader *psConfig,
-                                            unsigned long ulType);
+extern void USBDCDInit(uint32_t ui32Index, tDeviceInfo *psDevice,
+                       void *pvDCDCBData);
+extern void USBDCDTerm(uint32_t ui32Index);
+extern void USBDCDStallEP0(uint32_t ui32Index);
+extern void USBDCDRequestDataEP0(uint32_t ui32Index, uint8_t *pui8Data,
+                                 uint32_t ui32Size);
+extern void USBDCDSendDataEP0(uint32_t ui32Index, uint8_t *pui8Data,
+                              uint32_t ui32Size);
+extern void USBDCDSetDefaultConfiguration(uint32_t ui32Index,
+                                          uint32_t ui32DefaultConfig);
+extern uint32_t USBDCDConfigDescGetSize(const tConfigHeader *psConfig);
+extern uint32_t USBDCDConfigDescGetNum(const tConfigHeader *psConfig,
+                                       uint32_t ui32Type);
 extern tDescriptorHeader *USBDCDConfigDescGet(const tConfigHeader *psConfig,
-                                              unsigned long ulType,
-                                              unsigned long ulIndex,
-                                              unsigned long *pulSection);
-extern unsigned long
+                                              uint32_t ui32Type,
+                                              uint32_t ui32Index,
+                                              uint32_t *pui32Section);
+extern uint32_t
        USBDCDConfigGetNumAlternateInterfaces(const tConfigHeader *psConfig,
-                                             unsigned char ucInterfaceNumber);
+                                             uint8_t ui8InterfaceNumber);
 extern tInterfaceDescriptor *
        USBDCDConfigGetInterface(const tConfigHeader *psConfig,
-                                unsigned long ulIndex, unsigned long ulAltCfg,
-                                unsigned long *pulSection);
+                                uint32_t ui32Index, uint32_t ui32AltCfg,
+                                uint32_t *pui32Section);
 extern tEndpointDescriptor *
        USBDCDConfigGetInterfaceEndpoint(const tConfigHeader *psConfig,
-                                        unsigned long ulInterfaceNumber,
-                                        unsigned long ulAltCfg,
-                                        unsigned long ulIndex);
-extern void USBDCDPowerStatusSet(unsigned long ulIndex, unsigned char ucPower);
-extern tBoolean USBDCDRemoteWakeupRequest(unsigned long ulIndex);
-
-//*****************************************************************************
-//
-// Early releases of the USB library had the following function named
-// incorrectly.  This macro ensures that any code which used the previous name
-// will still operate as expected.
-//
-//*****************************************************************************
-#ifndef DEPRECATED
-#define USBCDCConfigGetInterfaceEndpoint(a, b, c, d)                          \
-            USBDCDConfigGetInterfaceEndpoint((a), (b), (c), (d))
-#endif
+                                        uint32_t ui32InterfaceNumber,
+                                        uint32_t ui32AltCfg,
+                                        uint32_t ui32Index);
+extern void USBDCDPowerStatusSet(uint32_t ui32Index, uint8_t ui8Power);
+extern bool USBDCDRemoteWakeupRequest(uint32_t ui32Index);
 
 //*****************************************************************************
 //

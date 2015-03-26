@@ -3,7 +3,7 @@
 // usbhhidmouse.h - This file holds the application interfaces for USB
 // mouse devices.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -19,7 +19,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -44,11 +44,22 @@ extern "C"
 //
 //*****************************************************************************
 
-extern unsigned long USBHMouseOpen(tUSBCallback pfnCallback,
-                                   unsigned char *pucBuffer,
-                                   unsigned long ulBufferSize);
-extern unsigned long USBHMouseClose(unsigned long ulInstance);
-extern unsigned long USBHMouseInit(unsigned long ulInstance);
+typedef struct tUSBHMouse tUSBHMouse;
+
+//*****************************************************************************
+//
+// The prototype for the host USB mouse driver callback function.
+//
+//*****************************************************************************
+typedef void (*tUSBHIDMouseCallback)(tUSBHMouse *psMsInstance,
+                                     uint32_t ui32Event,
+                                     uint32_t ui32MsgParam,
+                                     void *pvMsgData);
+
+extern tUSBHMouse * USBHMouseOpen(tUSBHIDMouseCallback pfnCallback,
+                                  uint8_t *pui8Buffer, uint32_t ui32Size);
+extern uint32_t USBHMouseClose(tUSBHMouse *psMsInstance);
+extern uint32_t USBHMouseInit(tUSBHMouse *psMsInstance);
 
 //*****************************************************************************
 //

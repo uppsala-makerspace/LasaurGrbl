@@ -2,7 +2,7 @@
 //
 // usbdbulk.c - USB bulk device class driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
@@ -29,8 +31,10 @@
 #include "driverlib/rom_map.h"
 #include "driverlib/usb.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdbulk.h"
+#include "usblib/device/usbdcomp.h"
 #include "usblib/usblibpriv.h"
 
 //*****************************************************************************
@@ -52,27 +56,18 @@
 
 //*****************************************************************************
 //
-// Flags that may appear in usDeferredOpFlags to indicate some operation that
+// Flags that may appear in ui16DeferredOpFlags to indicate some operation that
 // has been requested but could not be processed at the time it was received.
 // Each deferred operation is defined as the bit number that should be set in
-// tBulkInstance->usDeferredOpFlags to indicate that the operation is pending.
+// tBulkInstance->ui16DeferredOpFlags to indicate that the operation is
+// pending.
 //
 //*****************************************************************************
-#define BULK_DO_PACKET_RX           5
+#define BULK_DO_PACKET_RX       5
 
 //*****************************************************************************
 //
-// Macros to convert between USB controller base address and an index.  These
-// are currently trivial but are included to allow for the possibility of
-// supporting more than one controller in the future.
-//
-//*****************************************************************************
-#define USB_BASE_TO_INDEX(BaseAddr) (0)
-#define USB_INDEX_TO_BASE(Index) (USB0_BASE)
-
-//*****************************************************************************
-//
-// Endpoints to use for each of the required endpoints in the driver.
+// Endpoints to use for each of the required endpoints in the driver.'
 //
 //*****************************************************************************
 #define DATA_IN_ENDPOINT        USB_EP_1
@@ -80,7 +75,7 @@
 
 //*****************************************************************************
 //
-// Maximum packet size for the bulk endpoints used for serial data
+// Maximum packet size for the bulk endpoints used for bulk data
 // transmission and reception and the associated FIFO sizes to set aside
 // for each endpoint.
 //
@@ -88,8 +83,8 @@
 #define DATA_IN_EP_FIFO_SIZE    USB_FIFO_SZ_64
 #define DATA_OUT_EP_FIFO_SIZE   USB_FIFO_SZ_64
 
-#define DATA_IN_EP_MAX_SIZE     USB_FIFO_SZ_TO_BYTES(DATA_IN_EP_FIFO_SIZE)
-#define DATA_OUT_EP_MAX_SIZE    USB_FIFO_SZ_TO_BYTES(DATA_IN_EP_FIFO_SIZE)
+#define DATA_IN_EP_MAX_SIZE     USBFIFOSizeToBytes(DATA_IN_EP_FIFO_SIZE)
+#define DATA_OUT_EP_MAX_SIZE    USBFIFOSizeToBytes(DATA_OUT_EP_FIFO_SIZE)
 
 //*****************************************************************************
 //
@@ -97,7 +92,7 @@
 // changed at runtime based on the client's requirements.
 //
 //*****************************************************************************
-unsigned char g_pBulkDeviceDescriptor[] =
+uint8_t g_pui8BulkDeviceDescriptor[] =
 {
     18,                         // Size of this structure.
     USB_DTYPE_DEVICE,           // Type of this structure.
@@ -130,7 +125,7 @@ unsigned char g_pBulkDeviceDescriptor[] =
 // be able to patch some values in it based on client requirements.
 //
 //*****************************************************************************
-unsigned char g_pBulkDescriptor[] =
+uint8_t g_pui8BulkDescriptor[] =
 {
     //
     // Configuration descriptor header.
@@ -153,39 +148,40 @@ unsigned char g_pBulkDescriptor[] =
 // don't need to modify anything in it at runtime.
 //
 //*****************************************************************************
-const unsigned char g_pBulkInterface[] =
+const uint8_t g_pui8BulkInterface[BULKINTERFACE_SIZE] =
 {
     //
     // Vendor-specific Interface Descriptor.
     //
-    9,                          // Size of the interface descriptor.
-    USB_DTYPE_INTERFACE,        // Type of this descriptor.
-    0,                          // The index for this interface.
-    0,                          // The alternate setting for this interface.
-    2,                          // The number of endpoints used by this
-                                // interface.
-    USB_CLASS_VEND_SPECIFIC,    // The interface class
-    0,                          // The interface sub-class.
-    0,                          // The interface protocol for the sub-class
-                                // specified above.
-    4,                          // The string index for this interface.
+    9,                              // Size of the interface descriptor.
+    USB_DTYPE_INTERFACE,            // Type of this descriptor.
+    0,                              // The index for this interface.
+    0,                              // The alternate setting for this
+                                    // interface.
+    2,                              // The number of endpoints used by this
+                                    // interface.
+    USB_CLASS_VEND_SPECIFIC,        // The interface class
+    0,                              // The interface sub-class.
+    0,                              // The interface protocol for the sub-class
+                                    // specified above.
+    4,                              // The string index for this interface.
+
+    //
+    // Endpoint Descriptor
+    //
+    7,                              // The size of the endpoint descriptor.
+    USB_DTYPE_ENDPOINT,             // Descriptor type is an endpoint.
+    USB_EP_DESC_IN | USBEPToIndex(DATA_IN_ENDPOINT),
+    USB_EP_ATTR_BULK,               // Endpoint is a bulk endpoint.
+    USBShort(DATA_IN_EP_MAX_SIZE),  // The maximum packet size.
+    0,                              // The polling interval for this endpoint.
 
     //
     // Endpoint Descriptor
     //
     7,                               // The size of the endpoint descriptor.
     USB_DTYPE_ENDPOINT,              // Descriptor type is an endpoint.
-    USB_EP_DESC_IN | USB_EP_TO_INDEX(DATA_IN_ENDPOINT),
-    USB_EP_ATTR_BULK,                // Endpoint is a bulk endpoint.
-    USBShort(DATA_IN_EP_MAX_SIZE),   // The maximum packet size.
-    0,                               // The polling interval for this endpoint.
-
-    //
-    // Endpoint Descriptor
-    //
-    7,                               // The size of the endpoint descriptor.
-    USB_DTYPE_ENDPOINT,              // Descriptor type is an endpoint.
-    USB_EP_DESC_OUT | USB_EP_TO_INDEX(DATA_OUT_ENDPOINT),
+    USB_EP_DESC_OUT | USBEPToIndex(DATA_OUT_ENDPOINT),
     USB_EP_ATTR_BULK,                // Endpoint is a bulk endpoint.
     USBShort(DATA_OUT_EP_MAX_SIZE),  // The maximum packet size.
     0,                               // The polling interval for this endpoint.
@@ -193,21 +189,21 @@ const unsigned char g_pBulkInterface[] =
 
 //*****************************************************************************
 //
-// The serial config descriptor is defined as two sections, one containing
-// just the 9 byte USB configuration descriptor and the other containing
-// everything else that is sent to the host along with it.
+// The bulk configuration descriptor is defined as two sections, one
+// containing just the 9 byte USB configuration descriptor and the other
+// containing everything else that is sent to the host along with it.
 //
 //*****************************************************************************
 const tConfigSection g_sBulkConfigSection =
 {
-    sizeof(g_pBulkDescriptor),
-    g_pBulkDescriptor
+    sizeof(g_pui8BulkDescriptor),
+    g_pui8BulkDescriptor
 };
 
 const tConfigSection g_sBulkInterfaceSection =
 {
-    sizeof(g_pBulkInterface),
-    g_pBulkInterface
+    sizeof(g_pui8BulkInterface),
+    g_pui8BulkInterface
 };
 
 //*****************************************************************************
@@ -222,8 +218,8 @@ const tConfigSection *g_psBulkSections[] =
     &g_sBulkInterfaceSection
 };
 
-#define NUM_BULK_SECTIONS (sizeof(g_psBulkSections) /                         \
-                           sizeof(tConfigSection *))
+#define NUM_BULK_SECTIONS       (sizeof(g_psBulkSections) /                   \
+                                 sizeof(g_psBulkSections[0]))
 
 //*****************************************************************************
 //
@@ -243,7 +239,7 @@ const tConfigHeader g_sBulkConfigHeader =
 // Configuration Descriptor.
 //
 //*****************************************************************************
-const tConfigHeader * const g_pBulkConfigDescriptors[] =
+const tConfigHeader * const g_ppBulkConfigDescriptors[] =
 {
     &g_sBulkConfigHeader
 };
@@ -253,51 +249,88 @@ const tConfigHeader * const g_pBulkConfigDescriptors[] =
 // Forward references for device handler callbacks
 //
 //*****************************************************************************
-static void HandleConfigChange(void *pvInstance, unsigned long ulInfo);
-static void HandleDisconnect(void *pvInstance);
-static void HandleEndpoints(void *pvInstance, unsigned long ulStatus);
-static void HandleSuspend(void *pvInstance);
-static void HandleResume(void *pvInstance);
-static void HandleDevice(void *pvInstance, unsigned long ulRequest,
+static void HandleConfigChange(void *pvBulkDevice, uint32_t ui32Info);
+static void HandleDisconnect(void *pvBulkDevice);
+static void HandleEndpoints(void *pvBulkDevice, uint32_t ui32Status);
+static void HandleSuspend(void *pvBulkDevice);
+static void HandleResume(void *pvBulkDevice);
+static void HandleDevice(void *pvBulkDevice, uint32_t ui32Request,
                          void *pvRequestData);
 
 //*****************************************************************************
 //
-// The device information structure for the USB serial device.
+// Device event handler callbacks.
 //
 //*****************************************************************************
-tDeviceInfo g_sBulkDeviceInfo =
+const tCustomHandlers g_sBulkHandlers =
 {
     //
-    // Device event handler callbacks.
+    // GetDescriptor
     //
-    {
-        0,                     // GetDescriptor
-        0,                     // RequestHandler
-        0,                     // InterfaceChange
-        HandleConfigChange,    // ConfigChange
-        0,                     // DataReceived
-        0,                     // DataSentCallback
-        0,                     // ResetHandler
-        HandleSuspend,         // SuspendHandler
-        HandleResume,          // ResumeHandler
-        HandleDisconnect,      // DisconnectHandler
-        HandleEndpoints,       // EndpointHandler
-        HandleDevice           // Device handler.
-    },
-    g_pBulkDeviceDescriptor,
-    g_pBulkConfigDescriptors,
-    0,                         // Will be completed during USBDBulkInit().
-    0,                         // Will be completed during USBDBulkInit().
-    &g_sUSBDefaultFIFOConfig
+    0,
+
+    //
+    // RequestHandler
+    //
+    0,
+
+    //
+    // InterfaceChange
+    //
+    0,
+
+    //
+    // ConfigChange
+    //
+    HandleConfigChange,
+
+    //
+    // DataReceived
+    //
+    0,
+
+    //
+    // DataSentCallback
+    //
+    0,
+
+    //
+    // ResetHandler
+    //
+    0,
+
+    //
+    // SuspendHandler
+    //
+    HandleSuspend,
+
+    //
+    // ResumeHandler
+    //
+    HandleResume,
+
+    //
+    // DisconnectHandler
+    //
+    HandleDisconnect,
+
+    //
+    // EndpointHandler
+    //
+    HandleEndpoints,
+
+    //
+    // Device handler
+    //
+    HandleDevice
 };
 
 //*****************************************************************************
 //
 // Set or clear deferred operation flags in an "atomic" manner.
 //
-// \param pusDeferredOp points to the flags variable which is to be modified.
-// \param usBit indicates which bit number is to be set or cleared.
+// \param pui16DeferredOp points to the flags variable which is to be modified.
+// \param ui16Bit indicates which bit number is to be set or cleared.
 // \param bSet indicates the state that the flag must be set to.  If \b true,
 // the flag is set, if \b false, the flag is cleared.
 //
@@ -309,21 +342,22 @@ tDeviceInfo g_sBulkDeviceInfo =
 //
 //*****************************************************************************
 static void
-SetDeferredOpFlag(volatile unsigned short *pusDeferredOp, unsigned short usBit,
-                  tBoolean bSet)
+SetDeferredOpFlag(volatile uint16_t *pui16DeferredOp, uint16_t ui16Bit,
+                  bool bSet)
 {
     //
     // Set the flag bit to 1 or 0 using a bitband access.
     //
-    HWREGBITH(pusDeferredOp, usBit) = bSet ? 1 : 0;
+    HWREGBITH(pui16DeferredOp, ui16Bit) = bSet ? 1 : 0;
 }
 
 //*****************************************************************************
 //
 // Receives notifications related to data received from the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psBulkDevice is the device instance whose endpoint is to be
+// processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts signaling
@@ -335,55 +369,57 @@ SetDeferredOpFlag(volatile unsigned short *pusDeferredOp, unsigned short usBit,
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-static tBoolean
-ProcessDataFromHost(const tUSBDBulkDevice *psDevice, unsigned long ulStatus)
+static bool
+ProcessDataFromHost(tUSBDBulkDevice *psBulkDevice, uint32_t ui32Status)
 {
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus;
+    uint32_t ui32Size;
     tBulkInstance *psInst;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the bulk device instance data pointer
     //
-    psInst = psDevice->psPrivateBulkData;
+    psInst = &psBulkDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ucOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ui8OUTEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(USB0_BASE, psInst->ucOUTEndpoint, ulEPStatus);
+    MAP_USBDevEndpointStatusClear(USB0_BASE, psInst->ui8OUTEndpoint,
+                                  ui32EPStatus);
 
     //
     // Has a packet been received?
     //
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // Set the flag we use to indicate that a packet read is pending.  This
-        // will be cleared if the packet is read.  If the client doesn't read
+        // will be cleared if the packet is read.  If the client does not read
         // the packet in the context of the USB_EVENT_RX_AVAILABLE callback,
         // the event will be signaled later during tick processing.
         //
-        SetDeferredOpFlag(&psInst->usDeferredOpFlags, BULK_DO_PACKET_RX, true);
+        SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, BULK_DO_PACKET_RX,
+                          true);
 
         //
-        // How big is the packet we've just been sent?
+        // How big is the packet we have just received?
         //
-        ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint);
 
         //
         // The receive channel is not blocked so let the caller know
         // that a packet is waiting.  The parameters are set to indicate
         // that the packet has not been read from the hardware FIFO yet.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                USB_EVENT_RX_AVAILABLE, ulSize,
-                                (void *)0);
+        psBulkDevice->pfnRxCallback(psBulkDevice->pvRxCBData,
+                                    USB_EVENT_RX_AVAILABLE,
+                                    ui32Size, (void *)0);
     }
     else
     {
@@ -391,15 +427,16 @@ ProcessDataFromHost(const tUSBDBulkDevice *psDevice, unsigned long ulStatus)
         // No packet was received.  Some error must have been reported.  Check
         // and pass this on to the client if necessary.
         //
-        if(ulEPStatus & USB_RX_ERROR_FLAGS)
+        if(ui32EPStatus & USB_RX_ERROR_FLAGS)
         {
             //
-            // This is an error we report to the client so...
+            // This is an error we report to the client so allow the callback
+            // to handle it.
             //
-            psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                    USB_EVENT_ERROR,
-                                    (ulEPStatus & USB_RX_ERROR_FLAGS),
-                                    (void *)0);
+            psBulkDevice->pfnRxCallback(psBulkDevice->pvRxCBData,
+                                        USB_EVENT_ERROR,
+                                        (ui32EPStatus & USB_RX_ERROR_FLAGS),
+                                        (void *)0);
         }
         return(false);
     }
@@ -411,8 +448,9 @@ ProcessDataFromHost(const tUSBDBulkDevice *psDevice, unsigned long ulStatus)
 //
 // Receives notifications related to data sent to the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psBulkDevice is the device instance whose endpoint is to be
+// processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts originating
@@ -423,42 +461,42 @@ ProcessDataFromHost(const tUSBDBulkDevice *psDevice, unsigned long ulStatus)
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-static tBoolean
-ProcessDataToHost(const tUSBDBulkDevice *psDevice, unsigned long ulStatus)
+static bool
+ProcessDataToHost(tUSBDBulkDevice *psBulkDevice, uint32_t ui32Status)
 {
     tBulkInstance *psInst;
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus, ui32Size;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the bulk device instance data pointer
     //
-    psInst = psDevice->psPrivateBulkData;
+    psInst = &psBulkDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase, psInst->ucINEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8INEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(psInst->ulUSBBase, psInst->ucINEndpoint,
-                                  ulEPStatus);
+    MAP_USBDevEndpointStatusClear(psInst->ui32USBBase, psInst->ui8INEndpoint,
+                                  ui32EPStatus);
 
     //
     // Our last transmission completed.  Clear our state back to idle and
     // see if we need to send any more data.
     //
-    psInst->eBulkTxState = BULK_STATE_IDLE;
+    psInst->iBulkTxState = eBulkStateIdle;
 
     //
     // Notify the client that the last transmission completed.
     //
-    ulSize = psInst->usLastTxSize;
-    psInst->usLastTxSize = 0;
-    psDevice->pfnTxCallback(psDevice->pvTxCBData, USB_EVENT_TX_COMPLETE,
-                            ulSize, (void *)0);
+    ui32Size = psInst->ui16LastTxSize;
+    psInst->ui16LastTxSize = 0;
+    psBulkDevice->pfnTxCallback(psBulkDevice->pvTxCBData,
+                                USB_EVENT_TX_COMPLETE, ui32Size, (void *)0);
 
     return(true);
 }
@@ -468,41 +506,44 @@ ProcessDataToHost(const tUSBDBulkDevice *psDevice, unsigned long ulStatus)
 // Called by the USB stack for any activity involving one of our endpoints
 // other than EP0.  This function is a fan out that merely directs the call to
 // the correct handler depending upon the endpoint and transaction direction
-// signaled in ulStatus.
+// signaled in ui32Status.
 //
 //*****************************************************************************
 static void
-HandleEndpoints(void *pvInstance, unsigned long ulStatus)
+HandleEndpoints(void *pvBulkDevice, uint32_t ui32Status)
 {
-    const tUSBDBulkDevice *psBulkInst;
+    tUSBDBulkDevice *psBulkDevice;
     tBulkInstance *psInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvBulkDevice != 0);
 
     //
-    // Determine if the serial device is in single or composite mode because
-    // the meaning of ulIndex is different in both cases.
+    // The bulk device structure pointer.
     //
-    psBulkInst = (const tUSBDBulkDevice *)pvInstance;
-    psInst = psBulkInst->psPrivateBulkData;
+    psBulkDevice = (tUSBDBulkDevice *)pvBulkDevice;
+
+    //
+    // Get a pointer to the bulk device instance data pointer
+    //
+    psInst = &psBulkDevice->sPrivateData;
 
     //
     // Handler for the bulk OUT data endpoint.
     //
-    if(ulStatus & (0x10000 << USB_EP_TO_INDEX(psInst->ucOUTEndpoint)))
+    if(ui32Status & (0x10000 << USBEPToIndex(psInst->ui8OUTEndpoint)))
     {
         //
         // Data is being sent to us from the host.
         //
-        ProcessDataFromHost(pvInstance, ulStatus);
+        ProcessDataFromHost(psBulkDevice, ui32Status);
     }
 
     //
     // Handler for the bulk IN data endpoint.
     //
-    if(ulStatus & (1 << USB_EP_TO_INDEX(psInst->ucINEndpoint)))
+    if(ui32Status & (1 << USBEPToIndex(psInst->ui8INEndpoint)))
     {
-        ProcessDataToHost(pvInstance, ulStatus);
+        ProcessDataToHost(psBulkDevice, ui32Status);
     }
 }
 
@@ -512,40 +553,40 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
 //
 //*****************************************************************************
 static void
-HandleConfigChange(void *pvInstance, unsigned long ulInfo)
+HandleConfigChange(void *pvBulkDevice, uint32_t ui32Info)
 {
     tBulkInstance *psInst;
-    const tUSBDBulkDevice *psDevice;
+    tUSBDBulkDevice *psBulkDevice;
 
-    ASSERT(pvInstance != 0);
-
-    //
-    // Create a device instance pointer.
-    //
-    psDevice = (const tUSBDBulkDevice *)pvInstance;
+    ASSERT(pvBulkDevice != 0);
 
     //
-    // Get a pointer to our instance data.
+    // The bulk device structure pointer.
     //
-    psInst = psDevice->psPrivateBulkData;
+    psBulkDevice = (tUSBDBulkDevice *)pvBulkDevice;
+
+    //
+    // Get a pointer to the bulk device instance data pointer
+    //
+    psInst = &psBulkDevice->sPrivateData;
 
     //
     // Set all our endpoints to idle state.
     //
-    psInst->eBulkRxState = BULK_STATE_IDLE;
-    psInst->eBulkTxState = BULK_STATE_IDLE;
+    psInst->iBulkRxState = eBulkStateIdle;
+    psInst->iBulkTxState = eBulkStateIdle;
 
     //
     // If we have a control callback, let the client know we are open for
     // business.
     //
-    if(psDevice->pfnRxCallback)
+    if(psBulkDevice->pfnRxCallback)
     {
         //
         // Pass the connected event to the client.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData, USB_EVENT_CONNECTED, 0,
-                                (void *)0);
+        psBulkDevice->pfnRxCallback(psBulkDevice->pvRxCBData,
+                                    USB_EVENT_CONNECTED, 0, (void *)0);
     }
 
     //
@@ -560,30 +601,36 @@ HandleConfigChange(void *pvInstance, unsigned long ulInfo)
 //
 //*****************************************************************************
 static void
-HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
+HandleDevice(void *pvBulkDevice, uint32_t ui32Request, void *pvRequestData)
 {
     tBulkInstance *psInst;
-    unsigned char *pucData;
+    uint8_t *pui8Data;
+    tUSBDBulkDevice *psBulkDevice;
 
     //
-    // Create the serial instance data.
+    // The bulk device structure pointer.
     //
-    psInst = ((tUSBDBulkDevice *)pvInstance)->psPrivateBulkData;
+    psBulkDevice = (tUSBDBulkDevice *)pvBulkDevice;
 
     //
-    // Create the char array used by the events supported by the USB CDC
-    // serial class.
+    // Get a pointer to the bulk device instance data pointer
     //
-    pucData = (unsigned char *)pvRequestData;
+    psInst = &psBulkDevice->sPrivateData;
 
-    switch(ulRequest)
+    //
+    // Create the 8-bit array used by the events supported by the USB Bulk
+    // class.
+    //
+    pui8Data = (uint8_t *)pvRequestData;
+
+    switch(ui32Request)
     {
         //
         // This was an interface change event.
         //
         case USB_EVENT_COMP_IFACE_CHANGE:
         {
-            psInst->ucInterface = pucData[1];
+            psInst->ui8Interface = pui8Data[1];
             break;
         }
 
@@ -595,19 +642,20 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
             //
             // Determine if this is an IN or OUT endpoint that has changed.
             //
-            if(pucData[0] & USB_EP_DESC_IN)
+            if(pui8Data[0] & USB_EP_DESC_IN)
             {
-                psInst->ucINEndpoint = INDEX_TO_USB_EP((pucData[1] & 0x7f));
+                psInst->ui8INEndpoint = IndexToUSBEP((pui8Data[1] & 0x7f));
             }
             else
             {
                 //
                 // Extract the new endpoint number.
                 //
-                psInst->ucOUTEndpoint = INDEX_TO_USB_EP(pucData[1] & 0x7f);
+                psInst->ui8OUTEndpoint = IndexToUSBEP(pui8Data[1] & 0x7f);
             }
             break;
         }
+
         default:
         {
             break;
@@ -622,22 +670,22 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
 //
 //*****************************************************************************
 static void
-HandleDisconnect(void *pvInstance)
+HandleDisconnect(void *pvBulkDevice)
 {
-    const tUSBDBulkDevice *psBulkDevice;
+    tUSBDBulkDevice *psBulkDevice;
     tBulkInstance *psInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvBulkDevice != 0);
 
     //
-    // Create the instance pointer.
+    // The bulk device structure pointer.
     //
-    psBulkDevice = (const tUSBDBulkDevice *)pvInstance;
+    psBulkDevice = (tUSBDBulkDevice *)pvBulkDevice;
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the bulk device instance data pointer
     //
-    psInst = psBulkDevice->psPrivateBulkData;
+    psInst = &psBulkDevice->sPrivateData;
 
     //
     // If we are not currently connected so let the client know we are open
@@ -665,16 +713,16 @@ HandleDisconnect(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleSuspend(void *pvInstance)
+HandleSuspend(void *pvBulkDevice)
 {
     const tUSBDBulkDevice *psBulkDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvBulkDevice != 0);
 
     //
-    // Create the instance pointer.
+    // The bulk device structure pointer.
     //
-    psBulkDevice = (const tUSBDBulkDevice *)pvInstance;
+    psBulkDevice = (const tUSBDBulkDevice *)pvBulkDevice;
 
     //
     // Pass the event on to the client.
@@ -690,16 +738,16 @@ HandleSuspend(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleResume(void *pvInstance)
+HandleResume(void *pvBulkDevice)
 {
     const tUSBDBulkDevice *psBulkDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvBulkDevice != 0);
 
     //
-    // Create the instance pointer.
+    // The bulk device structure pointer.
     //
-    psBulkDevice = (const tUSBDBulkDevice *)pvInstance;
+    psBulkDevice = (const tUSBDBulkDevice *)pvBulkDevice;
 
     //
     // Pass the event on to the client.
@@ -713,49 +761,50 @@ HandleResume(void *pvInstance)
 // This function is called periodically and provides us with a time reference
 // and method of implementing delayed or time-dependent operations.
 //
-// \param ulIndex is the index of the USB controller for which this tick
+// \param ui32Index is the index of the USB controller for which this tick
 // is being generated.
-// \param ulTimemS is the elapsed time in milliseconds since the last call
+// \param ui32TimemS is the elapsed time in milliseconds since the last call
 // to this function.
 //
 // \return None.
 //
 //*****************************************************************************
 static void
-BulkTickHandler(void *pvInstance, unsigned long ulTimemS)
+BulkTickHandler(void *pvBulkDevice, uint32_t ui32TimemS)
 {
     tBulkInstance *psInst;
-    unsigned long ulSize;
-    const tUSBDBulkDevice *psDevice;
+    uint32_t ui32Size;
+    tUSBDBulkDevice *psBulkDevice;
 
-    ASSERT(pvInstance != 0);
-
-    //
-    // Create the instance pointer.
-    //
-    psDevice = (const tUSBDBulkDevice *)pvInstance;
+    ASSERT(pvBulkDevice != 0);
 
     //
-    // Get our instance data pointer.
+    // The bulk device structure pointer.
     //
-    psInst = psDevice->psPrivateBulkData;
+    psBulkDevice = (tUSBDBulkDevice *)pvBulkDevice;
+
+    //
+    // Get a pointer to the bulk device instance data pointer
+    //
+    psInst = &psBulkDevice->sPrivateData;
 
     //
     // Do we have a deferred receive waiting
     //
-    if(psInst->usDeferredOpFlags & (1 << BULK_DO_PACKET_RX))
+    if(psInst->ui16DeferredOpFlags & (1 << BULK_DO_PACKET_RX))
     {
         //
         // Yes - how big is the waiting packet?
         //
-        ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint);
 
         //
         // Tell the client that there is a packet waiting for it.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData, USB_EVENT_RX_AVAILABLE,
-                                ulSize, (void *)0);
+        psBulkDevice->pfnRxCallback(psBulkDevice->pvRxCBData,
+                                    USB_EVENT_RX_AVAILABLE, ui32Size,
+                                    (void *)0);
     }
 
     return;
@@ -765,9 +814,9 @@ BulkTickHandler(void *pvInstance, unsigned long ulTimemS)
 //
 //! Initializes bulk device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for bulk device operation.
-//! \param psDevice points to a structure containing parameters customizing
+//! \param psBulkDevice points to a structure containing parameters customizing
 //! the operation of the bulk device.
 //!
 //! An application wishing to make use of a USB bulk communication channel
@@ -775,9 +824,9 @@ BulkTickHandler(void *pvInstance, unsigned long ulTimemS)
 //! device to the USB bus.  This function performs all required USB
 //! initialization.
 //!
-//! On successful completion, this function will return the \e psDevice pointer
-//! passed to it.  This must be passed on all future calls to the device driver
-//! related to this device.
+//! On successful completion, this function will return the \e psBulkDevice
+//! pointer passed to it.  This must be passed on all future calls to the
+//! device driver related to this device.
 //!
 //! The USBDBulk interface offers packet-based transmit and receive operation.
 //! If the application would rather use block based communication with
@@ -791,13 +840,13 @@ BulkTickHandler(void *pvInstance, unsigned long ulTimemS)
 //! outstanding.
 //!
 //! Once a packet of data has been acknowledged by the USB host, a
-//! USB_EVENT_TX_COMPLETE event is sent to the application callback to inform
-//! it that another packet may be transmitted.
+//! \b USB_EVENT_TX_COMPLETE event is sent to the application callback to
+//! inform it that another packet may be transmitted.
 //!
 //! Receive Operation:
 //!
 //! An incoming USB data packet will result in a call to the application
-//! callback with event USBD_EVENT_RX_AVAILABLE.  The application must then
+//! callback with event \b USBD_EVENT_RX_AVAILABLE.  The application must then
 //! call USBDBulkPacketRead(), passing a buffer capable of holding 64 bytes, to
 //! retrieve the data and acknowledge reception to the USB host.
 //!
@@ -805,114 +854,145 @@ BulkTickHandler(void *pvInstance, unsigned long ulTimemS)
 //! API if interacting with USB via the USB bulk device class API.  Doing so
 //! will cause unpredictable (though almost certainly unpleasant) behavior.
 //!
-//! \return Returns NULL on failure or the psDevice pointer on success.
+//! \return Returns NULL on failure or void pointer that should be used with
+//! the remaining USB bulk class APSs.
 //
 //*****************************************************************************
 void *
-USBDBulkInit(unsigned long ulIndex, const tUSBDBulkDevice *psDevice)
+USBDBulkInit(uint32_t ui32Index, tUSBDBulkDevice *psBulkDevice)
 {
-    void *pvInstance;
+    void *pvBulkDevice;
+    tDeviceDescriptor *psDevDesc;
+    tConfigDescriptor *psConfigDesc;
 
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
-    ASSERT(psDevice);
+    ASSERT(ui32Index == 0);
+    ASSERT(psBulkDevice);
 
-    pvInstance = USBDBulkCompositeInit(ulIndex, psDevice);
+    pvBulkDevice = USBDBulkCompositeInit(ui32Index, psBulkDevice, 0);
 
-    if(pvInstance)
+    if(pvBulkDevice)
     {
+        //
+        // Fix up the device descriptor with the client-supplied values.
+        //
+        psDevDesc = (tDeviceDescriptor *)g_pui8BulkDeviceDescriptor;
+        psDevDesc->idVendor = psBulkDevice->ui16VID;
+        psDevDesc->idProduct = psBulkDevice->ui16PID;
+
+        //
+        // Fix up the configuration descriptor with client-supplied values.
+        //
+        psConfigDesc = (tConfigDescriptor *)g_pui8BulkDescriptor;
+        psConfigDesc->bmAttributes = psBulkDevice->ui8PwrAttributes;
+        psConfigDesc->bMaxPower = (uint8_t)(psBulkDevice->ui16MaxPowermA / 2);
+
         //
         // All is well so now pass the descriptors to the lower layer and put
         // the bulk device on the bus.
         //
-        USBDCDInit(ulIndex, psDevice->psPrivateBulkData->psDevInfo);
+        USBDCDInit(ui32Index, &psBulkDevice->sPrivateData.sDevInfo,
+                   (void *)psBulkDevice);
     }
 
     //
     // Return the pointer to the instance indicating that everything went well.
     //
-    return(pvInstance);
+    return(pvBulkDevice);
 }
 
 //*****************************************************************************
 //
 //! Initializes bulk device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for bulk device operation.
-//! \param psDevice points to a structure containing parameters customizing
+//! \param psBulkDevice points to a structure containing parameters customizing
 //! the operation of the bulk device.
+//! \param psCompEntry is the composite device entry to initialize when
+//! creating a composite device.
 //!
 //! This call is very similar to USBDBulkInit() except that it is used for
 //! initializing an instance of the bulk device for use in a composite device.
+//! When this bulk device is part of a composite device, then the
+//! \e psCompEntry should point to the composite device entry to initialize.
+//! This is part of the array that is passed to the USBDCompositeInit()
+//! function.
 //!
 //! \return Returns zero on failure or a non-zero value that should be
-//! used with the remaining USB HID Bulk APIs.
+//! used with the remaining USB Bulk APIs.
 //
 //*****************************************************************************
 void *
-USBDBulkCompositeInit(unsigned long ulIndex, const tUSBDBulkDevice *psDevice)
+USBDBulkCompositeInit(uint32_t ui32Index, tUSBDBulkDevice *psBulkDevice,
+                      tCompositeEntry *psCompEntry)
 {
     tBulkInstance *psInst;
-    tDeviceDescriptor *psDevDesc;
 
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateBulkData);
-    ASSERT(psDevice->pfnRxCallback);
-    ASSERT(psDevice->pfnTxCallback);
+    ASSERT(ui32Index == 0);
+    ASSERT(psBulkDevice);
+    ASSERT(psBulkDevice->ppui8StringDescriptors);
+    ASSERT(psBulkDevice->pfnRxCallback);
+    ASSERT(psBulkDevice->pfnTxCallback);
 
     //
     // Initialize the workspace in the passed instance structure.
     //
-    psInst = psDevice->psPrivateBulkData;
-    psInst->psConfDescriptor = (tConfigDescriptor *)g_pBulkDescriptor;
-    psInst->psDevInfo = &g_sBulkDeviceInfo;
-    psInst->ulUSBBase = USB0_BASE;
-    psInst->eBulkRxState = BULK_STATE_UNCONFIGURED;
-    psInst->eBulkTxState = BULK_STATE_UNCONFIGURED;
-    psInst->usDeferredOpFlags = 0;
+    psInst = &psBulkDevice->sPrivateData;
+
+    //
+    // Initialize the composite entry that is used by the composite device
+    // class.
+    //
+    if(psCompEntry != 0)
+    {
+        psCompEntry->psDevInfo = &psInst->sDevInfo;
+        psCompEntry->pvInstance = (void *)psBulkDevice;
+    }
+
+    //
+    // Initialize the device information structure.
+    //
+    psInst->sDevInfo.psCallbacks = &g_sBulkHandlers;
+    psInst->sDevInfo.pui8DeviceDescriptor = g_pui8BulkDeviceDescriptor;
+    psInst->sDevInfo.ppsConfigDescriptors = g_ppBulkConfigDescriptors;
+    psInst->sDevInfo.ppui8StringDescriptors = 0;
+    psInst->sDevInfo.ui32NumStringDescriptors = 0;
+
+    //
+    // Set the basic state information for the class.
+    //
+    psInst->ui32USBBase = USB0_BASE;
+    psInst->iBulkRxState = eBulkStateUnconfigured;
+    psInst->iBulkTxState = eBulkStateUnconfigured;
+    psInst->ui16DeferredOpFlags = 0;
     psInst->bConnected = false;
+
+    //
+    // Initialize the device info structure for the Bulk device.
+    //
+    USBDCDDeviceInfoInit(0, &psInst->sDevInfo);
 
     //
     // Set the default endpoint and interface assignments.
     //
-    psInst->ucINEndpoint = DATA_IN_ENDPOINT;
-    psInst->ucOUTEndpoint = DATA_OUT_ENDPOINT;
-    psInst->ucInterface = 0;
-
-    //
-    // Fix up the device descriptor with the client-supplied values.
-    //
-    psDevDesc = (tDeviceDescriptor *)psInst->psDevInfo->pDeviceDescriptor;
-    psDevDesc->idVendor = psDevice->usVID;
-    psDevDesc->idProduct = psDevice->usPID;
-
-    //
-    // Fix up the configuration descriptor with client-supplied values.
-    //
-    psInst->psConfDescriptor->bmAttributes = psDevice->ucPwrAttributes;
-    psInst->psConfDescriptor->bMaxPower =
-                        (unsigned char)(psDevice->usMaxPowermA / 2);
+    psInst->ui8INEndpoint = DATA_IN_ENDPOINT;
+    psInst->ui8OUTEndpoint = DATA_OUT_ENDPOINT;
+    psInst->ui8Interface = 0;
 
     //
     // Plug in the client's string stable to the device information
     // structure.
     //
-    psInst->psDevInfo->ppStringDescriptors = psDevice->ppStringDescriptors;
-    psInst->psDevInfo->ulNumStringDescriptors
-            = psDevice->ulNumStringDescriptors;
-
-    //
-    // Set the device instance.
-    //
-    psInst->psDevInfo->pvInstance = (void *)psDevice;
+    psInst->sDevInfo.ppui8StringDescriptors =
+                                        psBulkDevice->ppui8StringDescriptors;
+    psInst->sDevInfo.ui32NumStringDescriptors =
+                                        psBulkDevice->ui32NumStringDescriptors;
 
     //
     // Initialize the USB tick module, this will prevent it from being
@@ -923,20 +1003,19 @@ USBDBulkCompositeInit(unsigned long ulIndex, const tUSBDBulkDevice *psDevice)
     //
     // Register our tick handler (this must be done after USBDCDInit).
     //
-    InternalUSBRegisterTickHandler(BulkTickHandler,
-                                   (void *)psDevice);
+    InternalUSBRegisterTickHandler(BulkTickHandler, (void *)psBulkDevice);
 
     //
     // Return the pointer to the instance indicating that everything went well.
     //
-    return((void *)psDevice);
+    return((void *)psBulkDevice);
 }
 
 //*****************************************************************************
 //
 //! Shut down the bulk device.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
 //!
 //! This function terminates device operation for the instance supplied and
@@ -945,32 +1024,30 @@ USBDBulkCompositeInit(unsigned long ulIndex, const tUSBDBulkDevice *psDevice)
 //! USBDCompositeTerm() function should be called for the full composite
 //! device.
 //!
-//! Following this call, the \e pvInstance instance should not me used in any
+//! Following this call, the \e pvBulkDevice instance should not me used in any
 //! other calls.
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBDBulkTerm(void *pvInstance)
+USBDBulkTerm(void *pvBulkDevice)
 {
     tBulkInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
-    // Get a pointer to our instance data.
+    // Get a pointer to the bulk device instance data pointer
     //
-    psInst = ((tUSBDBulkDevice *)pvInstance)->psPrivateBulkData;
+    psInst = &((tUSBDBulkDevice *)pvBulkDevice)->sPrivateData;
 
     //
     // Terminate the requested instance.
     //
-    USBDCDTerm(USB_BASE_TO_INDEX(psInst->ulUSBBase));
+    USBDCDTerm(USBBaseToIndex(psInst->ui32USBBase));
 
-    psInst->ulUSBBase = 0;
-    psInst->psDevInfo = (tDeviceInfo *)0;
-    psInst->psConfDescriptor = (tConfigDescriptor *)0;
+    psInst->ui32USBBase = 0;
 
     return;
 }
@@ -980,7 +1057,7 @@ USBDBulkTerm(void *pvInstance)
 //! Sets the client-specific pointer parameter for the receive channel
 //! callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the receive channel callback function.
@@ -990,8 +1067,8 @@ USBDBulkTerm(void *pvInstance)
 //! passed on USBDBulkInit().
 //!
 //! If a client wants to make runtime changes in the callback pointer, it must
-//! ensure that the \e pvInstance structure passed to USBDBulkInit() resides in
-//! RAM.  If this structure is in flash, callback pointer changes will not be
+//! ensure that the \e pvBulkDevice structure passed to USBDBulkInit() resides
+//! in RAM.  If this structure is in flash, callback pointer changes are not
 //! possible.
 //!
 //! \return Returns the previous callback pointer that was being used for
@@ -999,18 +1076,18 @@ USBDBulkTerm(void *pvInstance)
 //
 //*****************************************************************************
 void *
-USBDBulkSetRxCBData(void *pvInstance, void *pvCBData)
+USBDBulkSetRxCBData(void *pvBulkDevice, void *pvCBData)
 {
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
     // Set the callback data for the receive channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDBulkDevice *)pvInstance)->pvRxCBData;
-    ((tUSBDBulkDevice *)pvInstance)->pvRxCBData = pvCBData;
+    pvOldValue = ((tUSBDBulkDevice *)pvBulkDevice)->pvRxCBData;
+    ((tUSBDBulkDevice *)pvBulkDevice)->pvRxCBData = pvCBData;
 
     //
     // Return the previous callback pointer.
@@ -1022,7 +1099,7 @@ USBDBulkSetRxCBData(void *pvInstance, void *pvCBData)
 //
 //! Sets the client-specific pointer parameter for the transmit callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the transmit channel callback function.
@@ -1032,8 +1109,8 @@ USBDBulkSetRxCBData(void *pvInstance, void *pvCBData)
 //! passed on USBDBulkInit().
 //!
 //! If a client wants to make runtime changes in the callback pointer, it must
-//! ensure that the \e pvInstance structure passed to USBDBulkInit() resides in
-//! RAM.  If this structure is in flash, callback pointer changes will not be
+//! ensure that the \e pvBulkDevice structure passed to USBDBulkInit() resides
+//! in RAM.  If this structure is in flash, callback pointer changes are not
 //! possible.
 //!
 //! \return Returns the previous callback pointer that was being used for
@@ -1041,18 +1118,18 @@ USBDBulkSetRxCBData(void *pvInstance, void *pvCBData)
 //
 //*****************************************************************************
 void *
-USBDBulkSetTxCBData(void *pvInstance, void *pvCBData)
+USBDBulkSetTxCBData(void *pvBulkDevice, void *pvCBData)
 {
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
     // Set the callback pointer for the transmit channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDBulkDevice *)pvInstance)->pvTxCBData;
-    ((tUSBDBulkDevice *)pvInstance)->pvTxCBData = pvCBData;
+    pvOldValue = ((tUSBDBulkDevice *)pvBulkDevice)->pvTxCBData;
+    ((tUSBDBulkDevice *)pvBulkDevice)->pvTxCBData = pvCBData;
 
     //
     // Return the previous callback pointer value.
@@ -1064,10 +1141,10 @@ USBDBulkSetTxCBData(void *pvInstance, void *pvCBData)
 //
 //! Transmits a packet of data to the USB host via the bulk data interface.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
-//! \param pcData points to the first byte of data which is to be transmitted.
-//! \param ulLength is the number of bytes of data to transmit.
+//! \param pi8Data points to the first byte of data which is to be transmitted.
+//! \param ui32Length is the number of bytes of data to transmit.
 //! \param bLast indicates whether more data is to be written before a packet
 //! should be scheduled for transmission.  If \b true, the client will make
 //! a further call to this function.  If \b false, no further call will be
@@ -1077,13 +1154,13 @@ USBDBulkSetTxCBData(void *pvInstance, void *pvCBData)
 //! host in a single USB packet.  If no transmission is currently ongoing,
 //! the data is immediately copied to the relevant USB endpoint FIFO for
 //! transmission.  Whenever a USB packet is acknowledged by the host, a
-//! USB_EVENT_TX_COMPLETE event will be sent to the transmit channel callback
-//! indicating that more data can now be transmitted.
+//! \b USB_EVENT_TX_COMPLETE event will be sent to the transmit channel
+//! callback indicating that more data can now be transmitted.
 //!
-//! The maximum value for \e ulLength is 64 bytes (the maximum USB packet size
-//! for the bulk endpoints in use by the device).  Attempts to send more data
-//! than this will result in a return code of 0 indicating that the data cannot
-//! be sent.
+//! The maximum value for \e ui32Length is 64 bytes (the maximum USB packet
+//! size for the bulk endpoints in use by the device).  Attempts to send more
+//! data than this will result in a return code of 0 indicating that the data
+//! cannot be sent.
 //!
 //! The \e bLast parameter allows a client to make multiple calls to this
 //! function before scheduling transmission of the packet to the host.  This
@@ -1096,25 +1173,25 @@ USBDBulkSetTxCBData(void *pvInstance, void *pvCBData)
 //! transmission ongoing) or 0 to indicate a failure.
 //
 //*****************************************************************************
-unsigned long
-USBDBulkPacketWrite(void *pvInstance, unsigned char *pcData,
-                    unsigned long ulLength, tBoolean bLast)
+uint32_t
+USBDBulkPacketWrite(void *pvBulkDevice, uint8_t *pi8Data, uint32_t ui32Length,
+                    bool bLast)
 {
     tBulkInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
-    // Get our instance data pointer
+    // Get a pointer to the bulk device instance data pointer
     //
-    psInst = ((tUSBDBulkDevice *)pvInstance)->psPrivateBulkData;
+    psInst = &((tUSBDBulkDevice *)pvBulkDevice)->sPrivateData;
 
     //
     // Can we send the data provided?
     //
-    if((ulLength > DATA_IN_EP_MAX_SIZE) ||
-       (psInst->eBulkTxState != BULK_STATE_IDLE))
+    if((ui32Length > DATA_IN_EP_MAX_SIZE) ||
+       (psInst->iBulkTxState != eBulkStateIdle))
     {
         //
         // Either the packet was too big or we are in the middle of sending
@@ -1126,18 +1203,19 @@ USBDBulkPacketWrite(void *pvInstance, unsigned char *pcData,
     //
     // Copy the data into the USB endpoint FIFO.
     //
-    lRetcode = MAP_USBEndpointDataPut(psInst->ulUSBBase, psInst->ucINEndpoint,
-                                      pcData, ulLength);
+    i32Retcode = MAP_USBEndpointDataPut(psInst->ui32USBBase,
+                                        psInst->ui8INEndpoint,
+                                        pi8Data, ui32Length);
 
     //
     // Did we copy the data successfully?
     //
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // Remember how many bytes we sent.
         //
-        psInst->usLastTxSize += (unsigned short)ulLength;
+        psInst->ui16LastTxSize += (uint16_t)ui32Length;
 
         //
         // If this is the last call for this packet, schedule transmission.
@@ -1148,27 +1226,27 @@ USBDBulkPacketWrite(void *pvInstance, unsigned char *pcData,
             // Send the packet to the host if we have received all the data we
             // can expect for this packet.
             //
-            psInst->eBulkTxState = BULK_STATE_WAIT_DATA;
-            lRetcode = MAP_USBEndpointDataSend(psInst->ulUSBBase,
-                                               psInst->ucINEndpoint,
-                                               USB_TRANS_IN);
+            psInst->iBulkTxState = eBulkStateWaitData;
+            i32Retcode = MAP_USBEndpointDataSend(psInst->ui32USBBase,
+                                                 psInst->ui8INEndpoint,
+                                                 USB_TRANS_IN);
         }
     }
 
     //
     // Did an error occur while trying to send the data?
     //
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // No - tell the caller we sent all the bytes provided.
         //
-        return(ulLength);
+        return(ui32Length);
     }
     else
     {
         //
-        // Yes - tell the caller we couldn't send the data.
+        // Yes - tell the caller we could not send the data.
         //
         return(0);
     }
@@ -1179,15 +1257,15 @@ USBDBulkPacketWrite(void *pvInstance, unsigned char *pcData,
 //! Reads a packet of data received from the USB host via the bulk data
 //! interface.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
-//! \param pcData points to a buffer into which the received data will be
+//! \param pi8Data points to a buffer into which the received data will be
 //! written.
-//! \param ulLength is the size of the buffer pointed to by pcData.
+//! \param ui32Length is the size of the buffer pointed to by pi8Data.
 //! \param bLast indicates whether the client will make a further call to
 //! read additional data from the packet.
 //!
-//! This function reads up to \e ulLength bytes of data received from the USB
+//! This function reads up to \e ui32Length bytes of data received from the USB
 //! host into the supplied application buffer.  If the driver detects that the
 //! entire packet has been read, it is acknowledged to the host.
 //!
@@ -1198,77 +1276,77 @@ USBDBulkPacketWrite(void *pvInstance, unsigned char *pcData,
 //! \return Returns the number of bytes of data read.
 //
 //*****************************************************************************
-unsigned long
-USBDBulkPacketRead(void *pvInstance, unsigned char *pcData,
-                   unsigned long ulLength, tBoolean bLast)
+uint32_t
+USBDBulkPacketRead(void *pvBulkDevice, uint8_t *pi8Data, uint32_t ui32Length,
+                   bool bLast)
 {
-    unsigned long ulEPStatus, ulCount, ulPkt;
+    uint32_t ui32EPStatus, ui32Count, ui32Pkt;
     tBulkInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
     // Get our instance data pointer
     //
-    psInst = ((tUSBDBulkDevice *)pvInstance)->psPrivateBulkData;
+    psInst = &((tUSBDBulkDevice *)pvBulkDevice)->sPrivateData;
 
     //
     // Does the relevant endpoint FIFO have a packet waiting for us?
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8OUTEndpoint);
 
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // How many bytes are available for us to receive?
         //
-        ulPkt = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                         psInst->ucOUTEndpoint);
+        ui32Pkt = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                           psInst->ui8OUTEndpoint);
 
         //
         // Get as much data as we can.
         //
-        ulCount = ulLength;
-        lRetcode = MAP_USBEndpointDataGet(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint,
-                                          pcData, &ulCount);
+        ui32Count = ui32Length;
+        i32Retcode = MAP_USBEndpointDataGet(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint,
+                                            pi8Data, &ui32Count);
 
         //
         // Did we read the last of the packet data?
         //
-        if(ulCount == ulPkt)
+        if(ui32Count == ui32Pkt)
         {
             //
             // Clear the endpoint status so that we know no packet is
             // waiting.
             //
-            MAP_USBDevEndpointStatusClear(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint,
-                                          ulEPStatus);
+            MAP_USBDevEndpointStatusClear(psInst->ui32USBBase,
+                                          psInst->ui8OUTEndpoint,
+                                          ui32EPStatus);
 
             //
             // Acknowledge the data, thus freeing the host to send the
             // next packet.
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, psInst->ucOUTEndpoint,
-                                      true);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase,
+                                      psInst->ui8OUTEndpoint, true);
 
             //
             // Clear the flag we set to indicate that a packet read is
             // pending.
             //
-            SetDeferredOpFlag(&psInst->usDeferredOpFlags, BULK_DO_PACKET_RX,
+            SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, BULK_DO_PACKET_RX,
                               false);
         }
 
         //
         // If all went well, tell the caller how many bytes they got.
         //
-        if(lRetcode != -1)
+        if(i32Retcode != -1)
         {
-            return(ulCount);
+            return(ui32Count);
         }
     }
 
@@ -1283,7 +1361,7 @@ USBDBulkPacketRead(void *pvInstance, unsigned char *pcData,
 //
 //! Returns the number of free bytes in the transmit buffer.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
 //!
 //! This function returns the maximum number of bytes that can be passed on a
@@ -1294,22 +1372,22 @@ USBDBulkPacketRead(void *pvInstance, unsigned char *pcData,
 //! \return Returns the number of bytes available in the transmit buffer.
 //
 //*****************************************************************************
-unsigned long
-USBDBulkTxPacketAvailable(void *pvInstance)
+uint32_t
+USBDBulkTxPacketAvailable(void *pvBulkDevice)
 {
     tBulkInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
     // Get our instance data pointer.
     //
-    psInst = ((tUSBDBulkDevice *)pvInstance)->psPrivateBulkData;
+    psInst = &((tUSBDBulkDevice *)pvBulkDevice)->sPrivateData;
 
     //
     // Do we have a packet transmission currently ongoing?
     //
-    if(psInst->eBulkTxState != BULK_STATE_IDLE)
+    if(psInst->iBulkTxState != eBulkStateIdle)
     {
         //
         // We are not ready to receive a new packet so return 0.
@@ -1331,7 +1409,7 @@ USBDBulkTxPacketAvailable(void *pvInstance)
 //! Determines whether a packet is available and, if so, the size of the
 //! buffer required to read it.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvBulkDevice is the pointer to the device instance structure as
 //! returned by USBDBulkInit().
 //!
 //! This function may be used to determine if a received packet remains to be
@@ -1342,35 +1420,34 @@ USBDBulkTxPacketAvailable(void *pvInstance)
 //! size of the packet if a packet is waiting to be read.
 //
 //*****************************************************************************
-unsigned long
-USBDBulkRxPacketAvailable(void *pvInstance)
+uint32_t
+USBDBulkRxPacketAvailable(void *pvBulkDevice)
 {
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus, ui32Size;
     tBulkInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
-    // Get our instance data pointer
+    // Get a pointer to the bulk device instance data pointer
     //
-    psInst = ((tUSBDBulkDevice *)pvInstance)->psPrivateBulkData;
+    psInst = &((tUSBDBulkDevice *)pvBulkDevice)->sPrivateData;
 
     //
     // Does the relevant endpoint FIFO have a packet waiting for us?
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8OUTEndpoint);
 
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // Yes - a packet is waiting.  How big is it?
         //
-        ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint);
 
-        return(ulSize);
+        return(ui32Size);
     }
     else
     {
@@ -1385,9 +1462,9 @@ USBDBulkRxPacketAvailable(void *pvInstance)
 //
 //! Reports the device power status (bus- or self-powered) to the USB library.
 //!
-//! \param pvInstance is the pointer to the bulk device instance structure.
-//! \param ucPower indicates the current power status, either \b
-//! USB_STATUS_SELF_PWR or \b USB_STATUS_BUS_PWR.
+//! \param pvBulkDevice is the pointer to the bulk device instance structure.
+//! \param ui8Power indicates the current power status, either
+//! \b USB_STATUS_SELF_PWR or \b USB_STATUS_BUS_PWR.
 //!
 //! Applications which support switching between bus- or self-powered
 //! operation should call this function whenever the power source changes
@@ -1399,27 +1476,27 @@ USBDBulkRxPacketAvailable(void *pvInstance)
 //
 //*****************************************************************************
 void
-USBDBulkPowerStatusSet(void *pvInstance, unsigned char ucPower)
+USBDBulkPowerStatusSet(void *pvBulkDevice, uint8_t ui8Power)
 {
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
     // Pass the request through to the lower layer.
     //
-    USBDCDPowerStatusSet(0, ucPower);
+    USBDCDPowerStatusSet(0, ui8Power);
 }
 
 //*****************************************************************************
 //
 //! Requests a remote wake up to resume communication when in suspended state.
 //!
-//! \param pvInstance is the pointer to the bulk device instance structure.
+//! \param pvBulkDevice is the pointer to the bulk device instance structure.
 //!
 //! When the bus is suspended, an application which supports remote wake up
-//! (advertised to the host via the configuration descriptor) may call this function
-//! to initiate remote wake up signaling to the host.  If the remote wake up
-//! feature has not been disabled by the host, this will cause the bus to
-//! resume operation within 20mS.  If the host has disabled remote wake up,
+//! (advertised to the host via the configuration descriptor) may call this
+//! function to initiate remote wake up signaling to the host.  If the remote
+//! wake up feature has not been disabled by the host, this will cause the bus
+//! to resume operation within 20mS.  If the host has disabled remote wake up,
 //! \b false will be returned to indicate that the wake up request was not
 //! successful.
 //!
@@ -1428,10 +1505,10 @@ USBDBulkPowerStatusSet(void *pvInstance, unsigned char ucPower)
 //! signaling is currently ongoing following a previous call to this function.
 //
 //*****************************************************************************
-tBoolean
-USBDBulkRemoteWakeupRequest(void *pvInstance)
+bool
+USBDBulkRemoteWakeupRequest(void *pvBulkDevice)
 {
-    ASSERT(pvInstance);
+    ASSERT(pvBulkDevice);
 
     //
     // Pass the request through to the lower layer.

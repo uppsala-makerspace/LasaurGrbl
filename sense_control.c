@@ -17,6 +17,8 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
@@ -29,6 +31,7 @@
 #include <driverlib/timer.h>
 #include <driverlib/rom.h>
 #include <driverlib/interrupt.h>
+#include <driverlib/pin_map.h>
 
 #include "config.h"
 

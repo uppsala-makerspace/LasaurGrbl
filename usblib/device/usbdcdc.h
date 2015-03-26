@@ -2,7 +2,7 @@
 //
 // usbdcdc.h - USBLib support for generic CDC ACM (serial) device.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -66,22 +66,22 @@ typedef enum
     //
     // Unconfigured.
     //
-    CDC_STATE_UNCONFIGURED,
+    eCDCStateUnconfigured,
 
     //
     // No outstanding transaction remains to be completed.
     //
-    CDC_STATE_IDLE,
+    eCDCStateIdle,
 
     //
     // Waiting on completion of a send or receive transaction.
     //
-    CDC_STATE_WAIT_DATA,
+    eCDCStateWaitData,
 
     //
     // Waiting for client to process data.
     //
-    CDC_STATE_WAIT_CLIENT
+    eCDCStateWaitClient
 }
 tCDCState;
 
@@ -90,53 +90,121 @@ tCDCState;
 // PRIVATE
 //
 // This structure defines the private instance data and state variables for the
-// CDC Serial device.  The memory for this structure is pointed to by the
-// psPrivateCDCSerData field in the tUSBDCDCDevice structure passed on
-// USBDCDCInit().
+// CDC Serial device.  The memory for this structure is allocated in the
+// tUSBDCDCDevice structure passed on USBDCDCInit().
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulUSBBase;
-    tDeviceInfo *psDevInfo;
-    tConfigDescriptor *psConfDescriptor;
-    volatile tCDCState eCDCRxState;
-    volatile tCDCState eCDCTxState;
-    volatile tCDCState eCDCRequestState;
-    volatile tCDCState eCDCInterruptState;
-    volatile unsigned char ucPendingRequest;
-    unsigned short usBreakDuration;
-    unsigned short usControlLineState;
-    unsigned short usSerialState;
-    volatile unsigned short usDeferredOpFlags;
-    unsigned short usLastTxSize;
+    //
+    // Base address for the USB controller.
+    //
+    uint32_t ui32USBBase;
+
+    //
+    // The device info to interact with the lower level DCD code.
+    //
+    tDeviceInfo sDevInfo;
+
+    //
+    // The state of the serial receive state.
+    //
+    volatile tCDCState iCDCRxState;
+
+    //
+    // The state of the serial transmit state.
+    //
+    volatile tCDCState iCDCTxState;
+
+    //
+    // The state of the serial request state.
+    //
+    volatile tCDCState iCDCRequestState;
+
+    //
+    // The state of the serial interrupt state.
+    //
+    volatile tCDCState iCDCInterruptState;
+
+    //
+    // The current pending request.
+    //
+    volatile uint8_t ui8PendingRequest;
+
+    //
+    // The current break duration used during send break requests.
+    //
+    uint16_t ui16BreakDuration;
+
+    //
+    // The current line control state for the serial port.
+    //
+    uint16_t ui16ControlLineState;
+
+    //
+    // The general serial state.
+    //
+    uint16_t ui16SerialState;
+
+    //
+    // State of any pending operations that could not be handled immediately
+    // upon receipt.
+    //
+    volatile uint16_t ui16DeferredOpFlags;
+
+    //
+    // Size of the last transmit.
+    //
+    uint16_t ui16LastTxSize;
+
+    //
+    // The current serial line coding.
+    //
     tLineCoding sLineCoding;
-    volatile tBoolean bRxBlocked;
-    volatile tBoolean bControlBlocked;
-    volatile tBoolean bConnected;
-    unsigned char ucControlEndpoint;
-    unsigned char ucBulkINEndpoint;
-    unsigned char ucBulkOUTEndpoint;
-    unsigned char ucInterfaceControl;
-    unsigned char ucInterfaceData;
+
+    //
+    // Serial port receive is blocked.
+    //
+    volatile bool bRxBlocked;
+
+    //
+    // Serial control port is blocked.
+    //
+    volatile bool bControlBlocked;
+
+    //
+    // The connection status of the device.
+    //
+    volatile bool bConnected;
+
+    //
+    // The control endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8ControlEndpoint;
+
+    //
+    // The IN endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8BulkINEndpoint;
+
+    //
+    // The OUT endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8BulkOUTEndpoint;
+
+    //
+    // The interface number for the control interface, this is modified in
+    // composite devices.
+    //
+    uint8_t ui8InterfaceControl;
+
+    //
+    // The interface number for the data interface, this is modified in
+    // composite devices.
+    //
+    uint8_t ui8InterfaceData;
 }
 tCDCSerInstance;
-
-
-#ifndef DEPRECATED
-//*****************************************************************************
-//
-// The number of bytes of workspace required by the CDC device class driver.
-// The client must provide a block of RAM of at least this size in the
-// psPrivateCDCSerData field of the tUSBCDCDevice structure passed on
-// USBDCDCInit().
-//
-// This value is deprecated and should not be used, any new code should just
-// pass in a tUSBCDCDevice structure in the psPrivateCDCSerData field.
-//
-//*****************************************************************************
-#define USB_CDCSER_WORKSPACE_SIZE (sizeof(tCDCSerInstance))
-#endif
 
 //*****************************************************************************
 //
@@ -146,21 +214,40 @@ tCDCSerInstance;
 
 //*****************************************************************************
 //
+// This is the size of the g_pui8IADSerDescriptor array in bytes.
+//
+//*****************************************************************************
+#define SERDESCRIPTOR_SIZE      (8)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8CDCSerCommInterface array in bytes.
+//
+//*****************************************************************************
+#define SERCOMMINTERFACE_SIZE   (35)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8CDCSerDataInterface array in bytes.
+//
+//*****************************************************************************
+#define SERDATAINTERFACE_SIZE    (23)
+
+//*****************************************************************************
+//
 //! The size of the memory that should be allocated to create a configuration
 //! descriptor for a single instance of the USB Serial CDC Device.
 //! This does not include the configuration descriptor which is automatically
 //! ignored by the composite device class.
 //
-// For reference this is sizeof(g_pIADSerDescriptor) +
-// sizeof(g_pCDCSerCommInterface) + sizeof(g_pCDCSerDataInterface)
-//
 //*****************************************************************************
-#define COMPOSITE_DCDC_SIZE     (8 + 35 + 23)
+#define COMPOSITE_DCDC_SIZE     (SERDESCRIPTOR_SIZE + SERCOMMINTERFACE_SIZE + \
+                                 SERDATAINTERFACE_SIZE)
 
 //*****************************************************************************
 //
 // CDC-specific events These events are provided to the application in the
-// \e ulMsg parameter of the tUSBCallback function.
+// \e ui32Msg parameter of the tUSBCallback function.
 //
 //*****************************************************************************
 
@@ -179,7 +266,7 @@ tCDCSerInstance;
 
 //
 //! The host requests that the device set the RS232 signaling lines to
-//! a particular state.  The ulMsgValue parameter contains the RTS and
+//! a particular state.  The ui32MsgValue parameter contains the RTS and
 //! DTR control line states as defined in table 51 of the USB CDC class
 //! definition and is a combination of the following values:
 //!
@@ -215,31 +302,31 @@ typedef struct
     //
     //! The vendor ID that this device is to present in the device descriptor.
     //
-    unsigned short usVID;
+    const uint16_t ui16VID;
 
     //
     //! The product ID that this device is to present in the device descriptor.
     //
-    unsigned short usPID;
+    const uint16_t ui16PID;
 
     //
     //! The maximum power consumption of the device, expressed in milliamps.
     //
-    unsigned short usMaxPowermA;
+    const uint16_t ui16MaxPowermA;
 
     //
     //! Indicates whether the device is self- or bus-powered and whether or not
     //! it supports remote wakeup.  Valid values are USB_CONF_ATTR_SELF_PWR or
     //! USB_CONF_ATTR_BUS_PWR, optionally ORed with USB_CONF_ATTR_RWAKE.
     //
-    unsigned char ucPwrAttributes;
+    const uint8_t ui8PwrAttributes;
 
     //
     //! A pointer to the callback function which will be called to notify
     //! the application of all asynchronous control events related to the
     //! operation of the device.
     //
-    tUSBCallback pfnControlCallback;
+    const tUSBCallback pfnControlCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
@@ -252,7 +339,7 @@ typedef struct
     //! A pointer to the callback function which will be called to notify
     //! the application of events related to the device's data receive channel.
     //
-    tUSBCallback pfnRxCallback;
+    const tUSBCallback pfnRxCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
@@ -266,7 +353,7 @@ typedef struct
     //! the application of events related to the device's data transmit
     //! channel.
     //
-    tUSBCallback pfnTxCallback;
+    const tUSBCallback pfnTxCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
@@ -287,52 +374,46 @@ typedef struct
     //! must be repeated for each of the other languages defined in the
     //! language descriptor.
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The number of descriptors provided in the ppStringDescriptors
     //! array.  This must be 1 + (5 * number of supported languages).
     //
-    unsigned long ulNumStringDescriptors;
+    const uint32_t ui32NumStringDescriptors;
 
     //
-    //! A pointer to the private instance data for this device.  This memory
-    //! must remain accessible for as long as the CDC device is in use and must
-    //! not be modified by any code outside the CDC class driver.
+    //! The private instance data for this device.  This memory
+    //! must remain accessible for as long as the CDC device is in use and
+    //! must not be modified by any code outside the CDC class driver.
     //
-    tCDCSerInstance *psPrivateCDCSerData;
+    tCDCSerInstance sPrivateData;
 }
 tUSBDCDCDevice;
-
-extern tDeviceInfo g_sCDCSerDeviceInfo;
 
 //*****************************************************************************
 //
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void * USBDCDCCompositeInit(unsigned long ulIndex,
-                                   const tUSBDCDCDevice *psCDCDevice);
-extern void *USBDCDCInit(unsigned long ulIndex,
-                         const tUSBDCDCDevice *psCDCDevice);
-extern void USBDCDCTerm(void *pvInstance);
-extern void *USBDCDCSetControlCBData(void *pvInstance, void *pvCBData);
-extern void *USBDCDCSetRxCBData(void *pvInstance, void *pvCBData);
-extern void *USBDCDCSetTxCBData(void *pvInstance, void *pvCBData);
-extern unsigned long USBDCDCPacketWrite(void *pvInstance,
-                                        unsigned char *pcData,
-                                        unsigned long ulLength,
-                                        tBoolean bLast);
-extern unsigned long USBDCDCPacketRead(void *pvInstance,
-                                       unsigned char *pcData,
-                                       unsigned long ulLength,
-                                       tBoolean bLast);
-extern unsigned long USBDCDCTxPacketAvailable(void *pvInstance);
-extern unsigned long USBDCDCRxPacketAvailable(void *pvInstance);
-extern void USBDCDCSerialStateChange(void *pvInstance,
-                                     unsigned short usState);
-extern void USBDCDCPowerStatusSet(void *pvInstance, unsigned char ucPower);
-extern tBoolean USBDCDCRemoteWakeupRequest(void *pvInstance);
+extern void *USBDCDCCompositeInit(uint32_t ui32Index,
+                                  tUSBDCDCDevice *psCDCDevice,
+                                  tCompositeEntry *psCompEntry);
+extern void *USBDCDCInit(uint32_t ui32Index,
+                         tUSBDCDCDevice *psCDCDevice);
+extern void USBDCDCTerm(void *pvCDCDevice);
+extern void *USBDCDCSetControlCBData(void *pvCDCDevice, void *pvCBData);
+extern void *USBDCDCSetRxCBData(void *pvCDCDevice, void *pvCBData);
+extern void *USBDCDCSetTxCBData(void *pvCDCDevice, void *pvCBData);
+extern uint32_t USBDCDCPacketWrite(void *pvCDCDevice, uint8_t *pi8Data,
+                                   uint32_t ui32Length, bool bLast);
+extern uint32_t USBDCDCPacketRead(void *pvCDCDevice, uint8_t *pi8Data,
+                                  uint32_t ui32Length, bool bLast);
+extern uint32_t USBDCDCTxPacketAvailable(void *pvCDCDevice);
+extern uint32_t USBDCDCRxPacketAvailable(void *pvCDCDevice);
+extern void USBDCDCSerialStateChange(void *pvCDCDevice, uint16_t ui16State);
+extern void USBDCDCPowerStatusSet(void *pvCDCDevice, uint8_t ui8Power);
+extern bool USBDCDCRemoteWakeupRequest(void *pvCDCDevice);
 
 //*****************************************************************************
 //

@@ -11,13 +11,14 @@
 #include "inc/hw_sysctl.h"
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/times.h>
 #include <sys/unistd.h>
 #include "driverlib/uart.h"
 
-#include "USBCDCD.h"
+#include "serial.h"
 
 #ifndef STDOUT_USART
 #define STDOUT_USART 1
@@ -56,7 +57,7 @@ int _write(int file, char *ptr, int len) {
 
     switch (file) {
     case STDOUT_FILENO: /*stdout*/
-    	USBCDCD_sendData((const uint8_t*)ptr, len);
+    	serial_write((const uint8_t*)ptr, len);
     	break;
 
     case STDERR_FILENO:

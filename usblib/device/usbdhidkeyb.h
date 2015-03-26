@@ -2,7 +2,7 @@
 //
 // usbdhidkeyb.h - Definitions used by HID keyboard class devices.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -123,24 +123,24 @@ typedef struct
     // The USB configuration number set by the host or 0 of the device is
     // currently unconfigured.
     //
-    unsigned char ucUSBConfigured;
+    uint8_t ui8USBConfigured;
 
     //
     // The protocol requested by the host, USB_HID_PROTOCOL_BOOT or
     // USB_HID_PROTOCOL_REPORT.
     //
-    unsigned char ucProtocol;
+    uint8_t ui8Protocol;
 
     //
     // The current states that the keyboard LEDs are to be set to.
     //
-    volatile unsigned char ucLEDStates;
+    volatile uint8_t ui8LEDStates;
 
     //
     // The total number of keys currently pressed.  This indicates the number
-    // of key press entries in the pucKeysPressed array.
+    // of key press entries in the pui8KeysPressed array.
     //
-    unsigned char ucKeyCount;
+    uint8_t ui8KeyCount;
 
     //
     // The current state of the keyboard interrupt IN endpoint.
@@ -151,23 +151,23 @@ typedef struct
     // A flag to indicate that the application pressed or released a key
     // but that we couldn't send the report immediately.
     //
-    volatile tBoolean bChangeMade;
+    volatile bool bChangeMade;
 
     //
     // A buffer used to receive output reports from the host.
     //
-    unsigned char pucDataBuffer[KEYB_OUT_REPORT_SIZE];
+    uint8_t pui8DataBuffer[KEYB_OUT_REPORT_SIZE];
 
     //
     // A buffer used to hold the last input report sent to the host.
     //
-    unsigned char pucReport[KEYB_IN_REPORT_SIZE];
+    uint8_t pui8Report[KEYB_IN_REPORT_SIZE];
 
     //
     // A buffer containing the usage codes of all non-modifier keys currently
     // in the pressed state.
     //
-    unsigned char pucKeysPressed[KEYB_MAX_CHARS_PER_REPORT];
+    uint8_t pui8KeysPressed[KEYB_MAX_CHARS_PER_REPORT];
 
     //
     // The idle timeout control structure for our input report.  This is
@@ -176,31 +176,11 @@ typedef struct
     tHIDReportIdle sReportIdle;
 
     //
-    // The lower level HID driver's instance data.
-    //
-    tHIDInstance sHIDInstance;
-
-    //
     // This is needed for the lower level HID driver.
     //
     tUSBDHIDDevice sHIDDevice;
 }
 tHIDKeyboardInstance;
-
-#ifndef DEPRECATED
-//*****************************************************************************
-//
-// The number of bytes of workspace required by the HID keyboard driver.
-// The client must provide a block of RAM of at least this size in the
-// psPrivateHIDKbdData field of the tUSBHIDKeyboardDevice structure passed on
-// USBDHIDKeyboardInit().
-//
-// This value is deprecated and should not be used, any new code should just
-// pass in a psPrivateHIDKbdData structure in the psPrivateHIDKbdData field.
-//
-//*****************************************************************************
-#define USB_HID_KEYB_WORKSPACE_SIZE (sizeof(tHIDKeyboardInstance))
-#endif
 
 //*****************************************************************************
 //
@@ -213,30 +193,30 @@ typedef struct
     //
     //! The vendor ID that this device is to present in the device descriptor.
     //
-    unsigned short usVID;
+    const uint16_t ui16VID;
 
     //
     //! The product ID that this device is to present in the device descriptor.
     //
-    unsigned short usPID;
+    const uint16_t ui16PID;
 
     //
     //! The maximum power consumption of the device, expressed in milliamps.
     //
-    unsigned short usMaxPowermA;
+    const uint16_t ui16MaxPowermA;
 
     //
     //! Indicates whether the device is self- or bus-powered and whether or not
     //! it supports remote wakeup.  Valid values are USB_CONF_ATTR_SELF_PWR or
     //! USB_CONF_ATTR_BUS_PWR, optionally ORed with USB_CONF_ATTR_RWAKE.
     //
-    unsigned char ucPwrAttributes;
+    const uint8_t ui8PwrAttributes;
 
     //! A pointer to the callback function which will be called to notify
     //! the application of general events and those related to reception of
     //! Output and Feature reports via the (optional) interrupt OUT endpoint.
     //
-    tUSBCallback pfnCallback;
+    const tUSBCallback pfnCallback;
 
     //
     //! A client-supplied pointer which will be sent as the first
@@ -257,20 +237,20 @@ typedef struct
     //! string descriptor 0) must be repeated for each language defined in the
     //! language descriptor.
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The number of descriptors provided in the ppStringDescriptors
     //! array.  This must be (1 + (5 * (num languages))).
     //
-    unsigned long ulNumStringDescriptors;
+    const uint32_t ui32NumStringDescriptors;
 
     //
-    //! A pointer to private instance data for this device.  This memory must
-    //! remain accessible for as long as the keyboard device is in use and must
-    //! not be modified by any code outside the HID keyboard driver.
+    //! The private instance data for this device.  This memory must
+    //! remain accessible for as long as the keyboard device is in use and
+    //! must not be modified by any code outside the HID keyboard driver.
     //
-    tHIDKeyboardInstance *psPrivateHIDKbdData;
+    tHIDKeyboardInstance sPrivateData;
 }
 tUSBDHIDKeyboardDevice;
 
@@ -283,7 +263,7 @@ tUSBDHIDKeyboardDevice;
 //*****************************************************************************
 //
 //! This event indicates that the keyboard LED states are to be set.  The
-//! ulMsgValue parameter contains the requested state for each of the LEDs
+//! ui32MsgValue parameter contains the requested state for each of the LEDs
 //! defined as a collection of ORed bits where a 1 indicates that the LED is
 //! to be turned on and a 0 indicates that it should be turned off.  The
 //! individual LED bits are defined using labels HID_KEYB_NUM_LOCK,
@@ -325,7 +305,7 @@ tUSBDHIDKeyboardDevice;
 //*****************************************************************************
 //
 //! USBDHIDKeyboardKeyStateChange returns this value if it is called with the
-//! bPress parameter set to false but with a ucUsageCode parameter which does
+//! bPress parameter set to false but with a ui8UsageCode parameter which does
 //! does not indicate a key that is currently recorded as being pressed.  This
 //! may occur if an attempt was previously made to report more than 6 pressed
 //! keys and the earlier pressed keys are released before the later ones.  This
@@ -349,19 +329,21 @@ tUSBDHIDKeyboardDevice;
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void *USBDHIDKeyboardInit(unsigned long ulIndex,
-                         const tUSBDHIDKeyboardDevice *psDevice);
-extern void *USBDHIDKeyboardCompositeInit(unsigned long ulIndex,
-                                          const tUSBDHIDKeyboardDevice *psDevice);
-extern void USBDHIDKeyboardTerm(void *pvInstance);
-extern void *USBDHIDKeyboardSetCBData(void *pvInstance, void *pvCBData);
-extern unsigned long USBDHIDKeyboardKeyStateChange(void *pvInstance,
-                                                   unsigned char ucModifiers,
-                                                   unsigned char ucUsageCode,
-                                                   tBoolean bPressed);
-extern void USBDHIDKeyboardPowerStatusSet(void *pvInstance,
-                                          unsigned char ucPower);
-extern tBoolean USBDHIDKeyboardRemoteWakeupRequest(void *pvInstance);
+extern void *USBDHIDKeyboardInit(uint32_t ui32Index,
+                                 tUSBDHIDKeyboardDevice *psHIDKbDevice);
+extern void *USBDHIDKeyboardCompositeInit(uint32_t ui32Index,
+                                        tUSBDHIDKeyboardDevice *psHIDKbDevice,
+                                        tCompositeEntry *psCompEntry);
+extern void USBDHIDKeyboardTerm(void *pvKeyboardInstance);
+extern void *USBDHIDKeyboardSetCBData(void *pvKeyboardInstance,
+                                      void *pvCBData);
+extern uint32_t USBDHIDKeyboardKeyStateChange(void *pvKeyboardInstance,
+                                              uint8_t ui8Modifiers,
+                                              uint8_t ui8UsageCode,
+                                              bool bPressed);
+extern void USBDHIDKeyboardPowerStatusSet(void *pvKeyboardInstance,
+                                          uint8_t ui8Power);
+extern bool USBDHIDKeyboardRemoteWakeupRequest(void *pvKeyboardInstance);
 
 //*****************************************************************************
 //

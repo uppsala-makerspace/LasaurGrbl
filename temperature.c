@@ -18,6 +18,8 @@
 */
 
 #include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <inc/hw_ints.h>
 #include <inc/hw_types.h>

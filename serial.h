@@ -26,7 +26,7 @@
 #include <stdint.h>
 
 void serial_init();
-void serial_write(uint8_t data);
+uint32_t serial_write(const uint8_t *pStr, uint32_t length);
 
 void printString(const char *s);
 void printPgmString(const char *s);

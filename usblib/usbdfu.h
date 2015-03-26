@@ -2,7 +2,7 @@
 //
 // usbdfu.h - Definitions related to the USB Device Firmware Upgrade class.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -30,10 +30,11 @@
 // DFU attributes as published in the functional descriptor.
 //
 //*****************************************************************************
-#define DFU_ATTR_WILL_DETACH        0x08
-#define DFU_ATTR_MANIFEST_TOLERANT  0x04
-#define DFU_ATTR_CAN_UPLOAD         0x02
-#define DFU_ATTR_CAN_DOWNLOAD       0x01
+#define DFU_ATTR_WILL_DETACH    0x08
+#define DFU_ATTR_MANIFEST_TOLERANT                                            \
+                                0x04
+#define DFU_ATTR_CAN_UPLOAD     0x02
+#define DFU_ATTR_CAN_DOWNLOAD   0x01
 
 //*****************************************************************************
 //
@@ -43,17 +44,17 @@
 //*****************************************************************************
 typedef enum
 {
-   STATE_APP_IDLE = 0,
-   STATE_APP_DETACH,
-   STATE_IDLE,
-   STATE_DNLOAD_SYNC,
-   STATE_DNBUSY,
-   STATE_DNLOAD_IDLE,
-   STATE_MANIFEST_SYNC,
-   STATE_MANIFEST,
-   STATE_MANIFEST_WAIT_RESET,
-   STATE_UPLOAD_IDLE,
-   STATE_ERROR
+   eDFUStateAppIdle = 0,
+   eDFUStateAppDetach,
+   eDFUStateIdle,
+   eDFUStateDnloadSync,
+   eDFUStateDnBusy,
+   eDFUStateDnloadIdle,
+   eDFUStateManifestSync,
+   eDFUStateManifest,
+   eDFUStateManifestWaitReset,
+   eDFUStateUploadIdle,
+   eDFUStateError
 }
 tDFUState;
 
@@ -65,22 +66,22 @@ tDFUState;
 //*****************************************************************************
 typedef enum
 {
-   STATUS_OK = 0,
-   STATUS_ERR_TARGET,
-   STATUS_ERR_FILE,
-   STATUS_ERR_WRITE,
-   STATUS_ERR_ERASE,
-   STATUS_ERR_CHECK_ERASED,
-   STATUS_ERR_PROG,
-   STATUS_ERR_VERIFY,
-   STATUS_ERR_ADDRESS,
-   STATUS_ERR_NOTDONE,
-   STATUS_ERR_FIRMWARE,
-   STATUS_ERR_VENDOR,
-   STATUS_ERR_USBR,
-   STATUS_ERR_POR,
-   STATUS_ERR_UNKNOWN,
-   STATUS_ERR_STALLEDPKT
+   eDFUStatusOk = 0,
+   eDFUStatusErrTarget,
+   eDFUStatusErrFile,
+   eDFUStatusErrWrite,
+   eDFUStatusErrErase,
+   eDFUStatusErrCheckErased,
+   eDFUStatusErrProg,
+   eDFUStatusErrVerify,
+   eDFUStatusErrAddress,
+   eDFUStatusErrNotDone,
+   eDFUStatusErrFirmware,
+   eDFUStatusErrVendor,
+   eDFUStatusErrUSBR,
+   eDFUStatusErrPOR,
+   eDFUStatusErrUnknown,
+   eDFUStatusErrStalledPkt
 }
 tDFUStatus;
 
@@ -89,7 +90,8 @@ tDFUStatus;
 // The descriptor type for the DFU functional descriptor.
 //
 //*****************************************************************************
-#define USB_DFU_FUNC_DESCRIPTOR_TYPE   0x21
+#define USB_DFU_FUNC_DESCRIPTOR_TYPE                                          \
+                                0x21
 
 //*****************************************************************************
 //
@@ -97,7 +99,7 @@ tDFUStatus;
 // bInterfaceSubClass field of the DFU interface descriptor.
 //
 //*****************************************************************************
-#define USB_DFU_SUBCLASS                0x01
+#define USB_DFU_SUBCLASS        0x01
 
 //*****************************************************************************
 //
@@ -105,21 +107,25 @@ tDFUStatus;
 // bInterfaceProtocol field of the DFU interface descriptor.
 //
 //*****************************************************************************
-#define USB_DFU_PROTOCOL                0x02
-#define USB_DFU_RUNTIME_PROTOCOL        0x01
+#define USB_DFU_PROTOCOL        0x02
+#define USB_DFU_RUNTIME_PROTOCOL                                              \
+                                0x01
 
 //*****************************************************************************
 //
 // DFU class-specific request identifiers.
 //
 //*****************************************************************************
-#define USBD_DFU_REQUEST_DETACH         0
-#define USBD_DFU_REQUEST_DNLOAD         1
-#define USBD_DFU_REQUEST_UPLOAD         2
-#define USBD_DFU_REQUEST_GETSTATUS      3
-#define USBD_DFU_REQUEST_CLRSTATUS      4
-#define USBD_DFU_REQUEST_GETSTATE       5
-#define USBD_DFU_REQUEST_ABORT          6
+#define USBD_DFU_REQUEST_DETACH 0
+#define USBD_DFU_REQUEST_DNLOAD 1
+#define USBD_DFU_REQUEST_UPLOAD 2
+#define USBD_DFU_REQUEST_GETSTATUS                                            \
+                                3
+#define USBD_DFU_REQUEST_CLRSTATUS                                            \
+                                4
+#define USBD_DFU_REQUEST_GETSTATE                                             \
+                                5
+#define USBD_DFU_REQUEST_ABORT  6
 
 //*****************************************************************************
 //
@@ -131,28 +137,30 @@ tDFUStatus;
 
 //*****************************************************************************
 //
-// Stellaris-specific request identifier.  This is used to determine whether
+// USBLib-specific request identifier.  This is used to determine whether
 // the target device supports our DFU command protocol.  It is expected that
 // a device not supporting our extensions will stall this request.  This
-// request is only supported while the DFU device is in STATE_IDLE.
+// request is only supported while the DFU device is in eDFUStateIdle.
 //
 // An IN request containing the following parameters will result in the device
-// sending back a tDFUQueryStellarisProtocol structure indicating that Stellaris
-// extensions are supported.  The actual values in wValue and wIndex have no
-// meaning other than to act as markers in the unlikely event that another
-// DFU device also choses to use request ID 0x42 for some other purpose.
+// sending back a tDFUQueryTivaProtocol structure indicating that
+// USBLib extensions are supported.  The actual values in wValue and wIndex
+// have no meaning other than to act as markers in the unlikely event that
+// another DFU device also chooses to use request ID 0x42 for some other
+// purpose.
 //
-// wValue        - 0x23(REQUEST_STELLARIS_VALUE)
+// wValue        - 0x23(REQUEST_TIVA_VALUE)
 // wIndex        - Interface number
-// wLength       - sizeof(tDFUQueryStellarisProtocol)
+// wLength       - sizeof(tDFUQueryTivaProtocol)
 //
 //*****************************************************************************
-#define USBD_DFU_REQUEST_STELLARIS    0x42
+#define USBD_DFU_REQUEST_TIVA 0x42
+#define REQUEST_TIVA_VALUE    0x23
 
-#define REQUEST_STELLARIS_VALUE 0x23
-
-#define LM_DFU_PROTOCOL_MARKER    0x4C4D
-#define LM_DFU_PROTOCOL_VERSION_1 0x0001
+#define DFU_PROTOCOL_TIVA_MARKER                                            \
+                                0x4C4D
+#define DFU_PROTOCOL_TIVA_VERSION_1                                         \
+                                0x0001
 
 #ifdef ewarm
 #pragma pack(1)
@@ -160,16 +168,23 @@ tDFUStatus;
 
 //*****************************************************************************
 //
-// The structure sent to the host when a valid USBD_DFU_REQUEST_STELLARIS is
+// The structure sent to the host when a valid USBD_DFU_REQUEST_TIVA is
 // received while the DFU device is in idle state.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned short usMarker;        // LM_DFU_PROTOCOL_MARKER
-    unsigned short usVersion;       // LM_DFU_PROTOCOL_VERSION_1
+    //
+    // The protocol marker(DFU_PROTOCOL_TIVA_MARKER)
+    //
+    uint16_t ui16Marker;
+
+    //
+    // The protocol version(DFU_PROTOCOL_TIVA_VERSION_1)
+    //
+    uint16_t ui16Version;
 }
-PACKED tDFUQueryStellarisProtocol;
+PACKED tDFUQueryTivaProtocol;
 
 //*****************************************************************************
 //
@@ -178,10 +193,10 @@ PACKED tDFUQueryStellarisProtocol;
 //*****************************************************************************
 typedef struct
 {
-    unsigned char bStatus;
-    unsigned char bwPollTimeout[3];
-    unsigned char bState;
-    unsigned char iString;
+    uint8_t bStatus;
+    uint8_t bwPollTimeout[3];
+    uint8_t bState;
+    uint8_t iString;
 }
 PACKED tDFUGetStatusResponse;
 
@@ -201,13 +216,13 @@ PACKED tDFUGetStatusResponse;
 // Supported command identifiers
 //
 //*****************************************************************************
-#define DFU_CMD_PROG  0x01
-#define DFU_CMD_READ  0x02
-#define DFU_CMD_CHECK 0x03
-#define DFU_CMD_ERASE 0x04
-#define DFU_CMD_INFO  0x05
-#define DFU_CMD_BIN   0x06
-#define DFU_CMD_RESET 0x07
+#define DFU_CMD_PROG            0x01
+#define DFU_CMD_READ            0x02
+#define DFU_CMD_CHECK           0x03
+#define DFU_CMD_ERASE           0x04
+#define DFU_CMD_INFO            0x05
+#define DFU_CMD_BIN             0x06
+#define DFU_CMD_RESET           0x07
 
 //*****************************************************************************
 //
@@ -216,8 +231,15 @@ PACKED tDFUGetStatusResponse;
 //*****************************************************************************
 typedef struct
 {
-    unsigned char ucCommand;     // Command identifier.
-    unsigned char ucData[7];     // Command-specific data elements.
+    //
+    // Command identifier.
+    //
+    uint8_t ui8Command;
+
+    //
+    // Command-specific data elements.
+    //
+    uint8_t pui8Data[7];
 }
 PACKED tDFUDownloadHeader;
 
@@ -229,9 +251,9 @@ PACKED tDFUDownloadHeader;
 // which immediately follows the header. The start address of the data is
 // expressed as a 1KB block number so 0 would represent the bottom of flash
 // (which, incidentally, the USB boot loader will not let you program) and 0x10
-// would represent address 16KB or 16384 (0x4000).  The usLength field contains
-// the total number of bytes of data in the following programming operation.
-// The DFU device will not look for any command header on following
+// would represent address 16KB or 16384 (0x4000).  The ui32Length field
+// contains the total number of bytes of data in the following programming
+// operation.  The DFU device will not look for any command header on following
 // USBD_DFU_REQUEST_DNLOAD requests until the operation is completed or
 // aborted.
 //
@@ -249,11 +271,26 @@ PACKED tDFUDownloadHeader;
 //*****************************************************************************
 typedef struct
 {
-    unsigned char  ucCommand;   // DFU_CMD_PROG
-    unsigned char  ucReserved;  // Reserved - set to 0x00.
-    unsigned short usStartAddr; // Block start address / 1024
-    unsigned long  ulLength;    // Total length, in bytes, of following data
-                                // for the complete download operation.
+    //
+    // DFU_CMD_PROG
+    //
+    uint8_t  ui8Command;
+
+    //
+    // Reserved - set to 0x00.
+    //
+    uint8_t  ui8Reserved;
+
+    //
+    // Block start address / 1024
+    //
+    uint16_t ui16StartAddr;
+
+    //
+    // Total length, in bytes, of following data for the complete download
+    // operation.
+    //
+    uint32_t  ui32Length;
 }
 PACKED tDFUDownloadProgHeader;
 
@@ -265,30 +302,44 @@ PACKED tDFUDownloadProgHeader;
 // returned on subsequent USBD_DFU_REQUEST_UPLOAD requests from the host.
 //
 // To read back a the contents of a region of flash, the host should send
-// USBD_DFU_REQUEST_DNLOAD with ucCommand DFU_CMD_READ, usStartAddr set to the
-// 1KB block start address and ulLength set to the number of bytes to read.
-// The host should then send one or more USBD_DFU_REQUEST_UPLOAD requests
-// to receive the current flash contents from the configured addresses.  Data
-// returned will include an 8 byte DFU_CMD_PROG prefix structure unless
-// the prefix has been disabled by sending a DFU_CMD_BIN command with the
-// bBinary parameter set to 1.
+// USBD_DFU_REQUEST_DNLOAD with ui8Command DFU_CMD_READ, ui16StartAddr set to
+// the 1KB block start address and ui32Length set to the number of bytes to
+// read.  The host should then send one or more USBD_DFU_REQUEST_UPLOAD
+// requests to receive the current flash contents from the configured
+// addresses.  Data returned will include an 8 byte DFU_CMD_PROG prefix
+// structure unless the prefix has been disabled by sending a DFU_CMD_BIN
+// command with the bBinary parameter set to 1.
 //
 // To check that a region of flash is erased, the DFU_CMD_CHECK command should
-// be sent with usStartAddr and ulLength set to describe the region to check.
-// The host should then send a USBD_DFU_REQUEST_GETSTATUS.  If the erase check
-// was successful, the returned bStatus value will be STATUS_OK, otherwise it
-// will be STATUS_ERR_CHECK_ERASED. Note that ulLength passed must be a
-// a multiple of 4.  If this is not the case, the value will be truncated before
-// the check is performed.
+// be sent with ui16StartAddr and ui32Length set to describe the region to
+// check.  The host should then send a USBD_DFU_REQUEST_GETSTATUS.  If the
+// erase check was successful, the returned bStatus value will be STATUS_OK,
+// otherwise it will be STATUS_ERR_CHECK_ERASED. Note that ui32Length passed
+// must be a multiple of 4.  If this is not the case, the value will be
+// truncated before the check is performed.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned char  ucCommand;    // DFU_CMD_READ or DFU_CMD_CHECK
-    unsigned char  ucReserved;   // Reserved - write to 0
-    unsigned short usStartAddr;  // Block start address / 1024
-    unsigned long  ulLength;     // The number of bytes of data to read back or
-                                 // check.
+    //
+    // DFU_CMD_READ or DFU_CMD_CHECK
+    //
+    uint8_t  ui8Command;
+
+    //
+    // Reserved - write to 0
+    //
+    uint8_t  ui8Reserved;
+
+    //
+    // Block start address / 1024
+    //
+    uint16_t ui16StartAddr;
+
+    //
+    // The number of bytes of data to read back or check.
+    //
+    uint32_t  ui32Length;
 }
 PACKED tDFUDownloadReadCheckHeader;
 
@@ -297,18 +348,37 @@ PACKED tDFUDownloadReadCheckHeader;
 // Header for the DFU_CMD_ERASE command.
 //
 // This command may be used to erase a number of flash blocks.  The address of
-// the first block to be erased is passed in usStartAddr with usNumBlocks
+// the first block to be erased is passed in ui16StartAddr with ui16NumBlocks
 // containing the number of blocks to be erased from this address.  The block
 // size of the device may be determined using the DFU_CMD_INFO command.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned char  ucCommand;      // DFU_CMD_ERASE
-    unsigned char  ucReserved;     // Reserved - set to 0.
-    unsigned short usStartAddr;    // Block start address / 1024
-    unsigned short usNumBlocks;    // The number of blocks to erase.
-    unsigned char  ucReserved2[2]; // Reserved - set to 0.
+    //
+    // DFU_CMD_ERASE
+    //
+    uint8_t  ui8Command;
+
+    //
+    // Reserved - set to 0.
+    //
+    uint8_t  ui8Reserved;
+
+    //
+    // Block start address / 1024
+    //
+    uint16_t ui16StartAddr;
+
+    //
+    // The number of blocks to erase.
+    //
+    uint16_t ui16NumBlocks;
+
+    //
+    // Reserved - set to 0.
+    //
+    uint8_t  pui8Reserved2[2];
 }
 PACKED tDFUDownloadEraseHeader;
 
@@ -323,11 +393,17 @@ PACKED tDFUDownloadEraseHeader;
 //*****************************************************************************
 typedef struct
 {
-    unsigned char ucCommand;     // DFU_CMD_INFO
-    unsigned char ucReserved[7]; // Reserved - set to 0.
+    //
+    // DFU_CMD_INFO
+    //
+    uint8_t ui8Command;
+
+    //
+    // Reserved - set to 0.
+    //
+    uint8_t pui8Reserved[7];
 }
 PACKED tDFUDownloadInfoHeader;
-
 
 //*****************************************************************************
 //
@@ -346,23 +422,33 @@ PACKED tDFUDownloadInfoHeader;
 // until the command is sent once again with bBinary set to \b false.
 //
 // Note that the format choice affects only image data sent and not responses
-// read via USBD_DFU_REQUEST_UPLOAD following Stellaris-specific commands such
+// read via USBD_DFU_REQUEST_UPLOAD following USBLib-specific commands such
 // as DFU_CMD_INFO.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned char ucCommand;     // DFU_CMD_BIN
-    unsigned char bBinary;       // Set to true to omit image header or false
-                                 // to include it (the default).
-    unsigned char ucReserved[6]; // Reserved - set to 0.
+    //
+    // DFU_CMD_BIN
+    //
+    uint8_t ui8Command;
+
+    //
+    // Set to true to omit image header or false to include it (the default).
+    //
+    uint8_t ui8Binary;
+
+    //
+    // Reserved - set to 0.
+    //
+    uint8_t pui8Reserved[6];
 }
 PACKED tDFUDownloadBinHeader;
 
 //*****************************************************************************
 //
 // The DFU_CMD_RESET command uses a tDFUDownloadHeader structure since
-// only the ucCommand field is important.  This command causes an immediate
+// only the ui8Command field is important.  This command causes an immediate
 // reset of the the target board.
 //
 //*****************************************************************************
@@ -380,48 +466,36 @@ typedef struct
     //
     //! The size of a flash block in bytes.
     //
-    unsigned short usFlashBlockSize;
+    uint16_t ui16FlashBlockSize;
 
     //
     //! The number of blocks of flash in the  device.  Total flash size is
-    //! usNumFlashBlocks * usFlashBlockSize.
+    //! ui16NumFlashBlocks * ui16FlashBlockSize.
     //
-    unsigned short usNumFlashBlocks;
+    uint16_t ui16NumFlashBlocks;
 
     //
     //! Information on the part number, family, version and package as
     //! read from SYSCTL register DID1.
     //
-    unsigned long ulPartInfo;
+    uint32_t ui32PartInfo;
 
     //
     //! Information on the part class and revision as read from SYSCTL DID0.
     //
-    unsigned long ulClassInfo;
+    uint32_t ui32ClassInfo;
 
     //
     //! Address 1 byte above the highest location the boot loader can access.
     //
-    unsigned long ulFlashTop;
+    uint32_t ui32FlashTop;
 
     //
     //! Lowest address the boot loader can write or erase.
     //
-    unsigned long ulAppStartAddr;
+    uint32_t ui32AppStartAddr;
 }
 PACKED tDFUDeviceInfo;
-
-#ifndef DEPRECATED
-//*****************************************************************************
-//
-// Various deprecated definitions.  These are included to ensure backwards
-// compatibility.
-//
-//*****************************************************************************
-#define USBD_DFU_REQUEST_LUMINARY USBD_DFU_REQUEST_STELLARIS
-#define REQUEST_LUMINARY_VALUE REQUEST_STELLARIS_VALUE
-#define tDFUQueryLuminaryProtocol uDFUQueryStellarisProtocol
-#endif
 
 #ifdef ewarm
 #pragma pack()

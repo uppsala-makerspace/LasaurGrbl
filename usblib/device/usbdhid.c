@@ -2,7 +2,7 @@
 //
 // usbdhid.c - USB HID device class driver.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
@@ -29,6 +31,7 @@
 #include "driverlib/rom.h"
 #include "driverlib/rom_map.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/usbhid.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdhid.h"
@@ -61,24 +64,14 @@
 
 //*****************************************************************************
 //
-// Flags that may appear in usDeferredOpFlags to indicate some operation that
+// Flags that may appear in ui16DeferredOpFlags to indicate some operation that
 // has been requested but could not be processed at the time it was received.
 // Each deferred operation is defined as the bit number that should be set in
-// tHIDInstance->usDeferredOpFlags to indicate that the operation is pending.
+// tHIDInstance->ui16DeferredOpFlags to indicate that the operation is pending.
 //
 //*****************************************************************************
 #define HID_DO_PACKET_RX        5
 #define HID_DO_SEND_IDLE_REPORT 6
-
-//*****************************************************************************
-//
-// Macros to convert between USB controller base address and an index.  These
-// are currently trivial but are included to allow for the possibility of
-// supporting more than one controller in the future.
-//
-//*****************************************************************************
-#define USB_BASE_TO_INDEX(BaseAddr) (0)
-#define USB_INDEX_TO_BASE(Index)    (USB0_BASE)
 
 //*****************************************************************************
 //
@@ -90,23 +83,11 @@
 
 //*****************************************************************************
 //
-// Maximum packet size for the interrupt endpoints used for report transmission
-// and reception and the associated FIFO sizes to set aside for each endpoint.
-//
-//*****************************************************************************
-#define INT_IN_EP_FIFO_SIZE     USB_FIFO_SZ_64
-#define INT_OUT_EP_FIFO_SIZE    USB_FIFO_SZ_64
-
-#define INT_IN_EP_MAX_SIZE      USB_FIFO_SZ_TO_BYTES(INT_IN_EP_FIFO_SIZE)
-#define INT_OUT_EP_MAX_SIZE     USB_FIFO_SZ_TO_BYTES(INT_IN_EP_FIFO_SIZE)
-
-//*****************************************************************************
-//
 // Device Descriptor.  This is stored in RAM to allow several fields to be
 // changed at runtime based on the client's requirements.
 //
 //*****************************************************************************
-unsigned char g_pHIDDeviceDescriptor[] =
+uint8_t g_pui8HIDDeviceDescriptor[] =
 {
     18,                         // Size of this structure.
     USB_DTYPE_DEVICE,           // Type of this structure.
@@ -115,7 +96,7 @@ unsigned char g_pHIDDeviceDescriptor[] =
     USB_CLASS_DEVICE,           // USB Device Class
     0,                          // USB Device Sub-class
     USB_HID_PROTOCOL_NONE,      // USB Device protocol
-    64,                         // Maximum packet size for default pipe.
+    USBDHID_MAX_PACKET,         // Maximum packet size for default pipe.
     USBShort(0),                // Vendor ID (VID).
     USBShort(0),                // Product ID (PID).
     USBShort(0x100),            // Device Version BCD.
@@ -127,191 +108,20 @@ unsigned char g_pHIDDeviceDescriptor[] =
 
 //*****************************************************************************
 //
-// HID device configuration descriptor.
-//
-// It is vital that the configuration descriptor bConfigurationValue field
-// (byte 6) is 1 for the first configuration and increments by 1 for each
-// additional configuration defined here.  This relationship is assumed in the
-// device stack for simplicity even though the USB 2.0 specification imposes
-// no such restriction on the bConfigurationValue values.
-//
-// Note that this structure is deliberately located in RAM since we need to
-// be able to patch some values in it based on client requirements.
-//
-//*****************************************************************************
-unsigned char g_pHIDDescriptor[] =
-{
-    //
-    // Configuration descriptor header.
-    //
-    9,                          // Size of the configuration descriptor.
-    USB_DTYPE_CONFIGURATION,    // Type of this descriptor.
-    USBShort(34),               // The total size of this full structure.
-    1,                          // The number of interfaces in this
-                                // configuration.
-    1,                          // The unique value for this configuration.
-    5,                          // The string identifier that describes this
-                                // configuration.
-    USB_CONF_ATTR_SELF_PWR,     // Bus Powered, Self Powered, remote wake up.
-    250,                        // The maximum power in 2mA increments.
-};
-
-//*****************************************************************************
-//
-// The remainder of the configuration descriptor is stored in flash since we
-// don't need to modify anything in it at runtime.
-//
-//*****************************************************************************
-unsigned char g_pHIDInterface[] =
-{
-    //
-    // HID Device Class Interface Descriptor.
-    //
-    9,                          // Size of the interface descriptor.
-    USB_DTYPE_INTERFACE,        // Type of this descriptor.
-    0,                          // The index for this interface.
-    0,                          // The alternate setting for this interface.
-    2,                          // The number of endpoints used by this
-                                // interface.
-    USB_CLASS_HID,              // The interface class
-    0,                          // The interface sub-class.
-    0,                          // The interface protocol for the sub-class
-                                // specified above.
-    4,                          // The string index for this interface.
-};
-
-const unsigned char g_pHIDInEndpoint[] =
-{
-    //
-    // Interrupt IN endpoint descriptor
-    //
-    7,                          // The size of the endpoint descriptor.
-    USB_DTYPE_ENDPOINT,         // Descriptor type is an endpoint.
-    USB_EP_DESC_IN | USB_EP_TO_INDEX(INT_IN_ENDPOINT),
-    USB_EP_ATTR_INT,            // Endpoint is an interrupt endpoint.
-    USBShort(INT_IN_EP_MAX_SIZE), // The maximum packet size.
-    16,                         // The polling interval for this endpoint.
-};
-
-const unsigned char g_pHIDOutEndpoint[] =
-{
-    //
-    // Interrupt OUT endpoint descriptor
-    //
-    7,                          // The size of the endpoint descriptor.
-    USB_DTYPE_ENDPOINT,         // Descriptor type is an endpoint.
-    USB_EP_DESC_OUT | USB_EP_TO_INDEX(INT_OUT_ENDPOINT),
-    USB_EP_ATTR_INT,            // Endpoint is an interrupt endpoint.
-    USBShort(INT_OUT_EP_MAX_SIZE), // The maximum packet size.
-    16,                         // The polling interval for this endpoint.
-};
-
-//*****************************************************************************
-//
-// The HID configuration descriptor is defined as four or five sections
-// depending upon the client's configuration choice.  These sections are:
-//
-// 1.  The 9 byte configuration descriptor (RAM).
-// 2.  The interface descriptor (RAM).
-// 3.  The HID report and physical descriptors (provided by the client)
-//     (FLASH).
-// 4.  The mandatory interrupt IN endpoint descriptor (FLASH).
-// 5.  The optional interrupt OUT endpoint descriptor (FLASH).
-//
-//*****************************************************************************
-const tConfigSection g_sHIDConfigSection =
-{
-    sizeof(g_pHIDDescriptor),
-    g_pHIDDescriptor
-};
-
-const tConfigSection g_sHIDInterfaceSection =
-{
-    sizeof(g_pHIDInterface),
-    g_pHIDInterface
-};
-
-const tConfigSection g_sHIDInEndpointSection =
-{
-    sizeof(g_pHIDInEndpoint),
-    g_pHIDInEndpoint
-};
-
-const tConfigSection g_sHIDOutEndpointSection =
-{
-    sizeof(g_pHIDOutEndpoint),
-    g_pHIDOutEndpoint
-};
-
-//*****************************************************************************
-//
-// Place holder for the user's HID descriptor block.
-//
-//*****************************************************************************
-tConfigSection g_sHIDDescriptorSection =
-{
-   0, (void *)0
-};
-
-//*****************************************************************************
-//
-// This array lists all the sections that must be concatenated to make a
-// single, complete HID configuration descriptor.
-//
-//*****************************************************************************
-const tConfigSection *g_psHIDSections[] =
-{
-    &g_sHIDConfigSection,
-    &g_sHIDInterfaceSection,
-    &g_sHIDDescriptorSection,
-    &g_sHIDInEndpointSection,
-    &g_sHIDOutEndpointSection
-};
-
-#define NUM_HID_SECTIONS (sizeof(g_psHIDSections) /                         \
-                          sizeof(tConfigSection *))
-
-//*****************************************************************************
-//
-// The header for the single configuration we support.  This is the root of
-// the data structure that defines all the bits and pieces that are pulled
-// together to generate the configuration descriptor.  Note that this must be
-// in RAM since we need to include or exclude the final section based on
-// client supplied initialization parameters.
-//
-//*****************************************************************************
-tConfigHeader g_sHIDConfigHeader =
-{
-    NUM_HID_SECTIONS,
-    g_psHIDSections
-};
-
-//*****************************************************************************
-//
-// Configuration Descriptor.
-//
-//*****************************************************************************
-const tConfigHeader * const g_pHIDConfigDescriptors[] =
-{
-    &g_sHIDConfigHeader
-};
-
-//*****************************************************************************
-//
 // Forward references for device handler callbacks
 //
 //*****************************************************************************
-static void HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest);
-static void HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest);
-static void HandleConfigChange(void *pvInstance, unsigned long ulInfo);
-static void HandleEP0DataReceived(void *pvInstance, unsigned long ulInfo);
-static void HandleEP0DataSent(void *pvInstance, unsigned long ulInfo);
-static void HandleReset(void *pvInstance);
-static void HandleSuspend(void *pvInstance);
-static void HandleResume(void *pvInstance);
-static void HandleDisconnect(void *pvInstance);
-static void HandleEndpoints(void *pvInstance, unsigned long ulStatus);
-static void HandleDevice(void *pvInstance, unsigned long ulRequest,
+static void HandleGetDescriptor(void *pvHIDInstance, tUSBRequest *psUSBRequest);
+static void HandleRequest(void *pvHIDInstance, tUSBRequest *psUSBRequest);
+static void HandleConfigChange(void *pvHIDInstance, uint32_t ui32Info);
+static void HandleEP0DataReceived(void *pvHIDInstance, uint32_t ui32Info);
+static void HandleEP0DataSent(void *pvHIDInstance, uint32_t ui32Info);
+static void HandleReset(void *pvHIDInstance);
+static void HandleSuspend(void *pvHIDInstance);
+static void HandleResume(void *pvHIDInstance);
+static void HandleDisconnect(void *pvHIDInstance);
+static void HandleEndpoints(void *pvHIDInstance, uint32_t ui32Status);
+static void HandleDevice(void *pvHIDInstance, uint32_t ui32Request,
                          void *pvRequestData);
 
 //*****************************************************************************
@@ -319,38 +129,75 @@ static void HandleDevice(void *pvInstance, unsigned long ulRequest,
 // The device information structure for the USB HID devices.
 //
 //*****************************************************************************
-tDeviceInfo g_sHIDDeviceInfo =
+const tCustomHandlers g_sHIDHandlers =
 {
     //
-    // Device event handler callbacks.
+    // GetDescriptor
     //
-    {
-        HandleGetDescriptor,   // GetDescriptor
-        HandleRequest,         // RequestHandler
-        0,                     // InterfaceChange
-        HandleConfigChange,    // ConfigChange
-        HandleEP0DataReceived, // DataReceived
-        HandleEP0DataSent,     // DataSentCallback
-        HandleReset,           // ResetHandler
-        HandleSuspend,         // SuspendHandler
-        HandleResume,          // ResumeHandler
-        HandleDisconnect,      // DisconnectHandler
-        HandleEndpoints,       // EndpointHandler
-        HandleDevice           // Device handler.
-    },
-    g_pHIDDeviceDescriptor,
-    g_pHIDConfigDescriptors,
-    0,                         // Will be completed during USBDHIDInit().
-    0,                         // Will be completed during USBDHIDInit().
-    &g_sUSBDefaultFIFOConfig
+    HandleGetDescriptor,
+
+    //
+    // RequestHandler
+    //
+    HandleRequest,
+
+    //
+    // InterfaceChange
+    //
+    0,
+
+    //
+    // ConfigChange
+    //
+    HandleConfigChange,
+
+    //
+    // DataReceived
+    //
+    HandleEP0DataReceived,
+
+    //
+    // DataSentCallback
+    //
+    HandleEP0DataSent,
+
+    //
+    // ResetHandler
+    //
+    HandleReset,
+
+    //
+    // SuspendHandler
+    //
+    HandleSuspend,
+
+    //
+    // ResumeHandler
+    //
+    HandleResume,
+
+    //
+    // DisconnectHandler
+    //
+    HandleDisconnect,
+
+    //
+    // EndpointHandler
+    //
+    HandleEndpoints,
+
+    //
+    // Device handler.
+    //
+    HandleDevice
 };
 
 //*****************************************************************************
 //
 // Set or clear deferred operation flags in an "atomic" manner.
 //
-// \param pusDeferredOp points to the flags variable which is to be modified.
-// \param usBit indicates which bit number is to be set or cleared.
+// \param pui16DeferredOp points to the flags variable which is to be modified.
+// \param ui16Bit indicates which bit number is to be set or cleared.
 // \param bSet indicates the state that the flag must be set to.  If \b true,
 // the flag is set, if \b false, the flag is cleared.
 //
@@ -362,13 +209,13 @@ tDeviceInfo g_sHIDDeviceInfo =
 //
 //*****************************************************************************
 static void
-SetDeferredOpFlag(volatile unsigned short *pusDeferredOp,
-                  unsigned short usBit, tBoolean bSet)
+SetDeferredOpFlag(volatile uint16_t *pui16DeferredOp, uint16_t ui16Bit,
+                  bool bSet)
 {
     //
     // Set the flag bit to 1 or 0 using a bitband access.
     //
-    HWREGBITH(pusDeferredOp, usBit) = bSet ? 1 : 0;
+    HWREGBITH(pui16DeferredOp, ui16Bit) = bSet ? 1 : 0;
 }
 
 //*****************************************************************************
@@ -376,30 +223,31 @@ SetDeferredOpFlag(volatile unsigned short *pusDeferredOp,
 // This function is called to clear the counter used to keep track of the time
 // elapsed since a given report was last sent.
 //
-// \param psDevice points to the HID device structure whose report timer is to
-// be cleared.
-// \param ucReportID is the first byte of the report to be sent.  If this
+// \param psHIDDevice points to the HID device structure whose report timer is
+// to be cleared.
+// \param ui8ReportID is the first byte of the report to be sent.  If this
 // device offers more than one input report, this value is used to find the
-// relevant report timer structure in the psDevice structure.
+// relevant report timer structure in the psHIDDevice structure.
 //
 // \return None.
 //
 //*****************************************************************************
 static void
-ClearReportTimer(const tUSBDHIDDevice *psDevice, unsigned char ucReportID)
+ClearReportTimer(const tUSBDHIDDevice *psHIDDevice, uint8_t ui8ReportID)
 {
-    unsigned long ulLoop;
+    uint32_t ui32Loop;
 
-    if(psDevice->ucNumInputReports > 1)
+    if(psHIDDevice->ui8NumInputReports > 1)
     {
         //
         // We have more than 1 input report so the report must begin with a
         // byte containing the report ID.  Scan the table we were provided
         // when the device was initialized to find the entry for this report.
         //
-        for(ulLoop = 0; ulLoop < psDevice->ucNumInputReports; ulLoop++)
+        for(ui32Loop = 0; ui32Loop < psHIDDevice->ui8NumInputReports;
+            ui32Loop++)
         {
-            if(psDevice->psReportIdle[ulLoop].ucReportID == ucReportID)
+            if(psHIDDevice->psReportIdle[ui32Loop].ui8ReportID == ui8ReportID)
             {
                 break;
             }
@@ -407,16 +255,16 @@ ClearReportTimer(const tUSBDHIDDevice *psDevice, unsigned char ucReportID)
     }
     else
     {
-        ulLoop = 0;
+        ui32Loop = 0;
     }
 
     //
-    // If we drop out of the loop with an index less than ucNumInputReports,
+    // If we drop out of the loop with an index less than ui8NumInputReports,
     // we found the relevant report so clear its timer.
     //
-    if(ulLoop < psDevice->ucNumInputReports)
+    if(ui32Loop < psHIDDevice->ui8NumInputReports)
     {
-        psDevice->psReportIdle[ulLoop].ulTimeSinceReportmS = 0;
+        psHIDDevice->psReportIdle[ui32Loop].ui32TimeSinceReportmS = 0;
     }
 }
 
@@ -425,26 +273,26 @@ ClearReportTimer(const tUSBDHIDDevice *psDevice, unsigned char ucReportID)
 // This function is called to clear the idle period timers for each input
 // report supported by the device.
 //
-// \param psDevice points to the HID device structure whose timers are to be
+// \param psHIDDevice points to the HID device structure whose timers are to be
 // cleared.
-// \param ulTimemS is the elapsed time in milliseconds since the last call
+// \param ui32TimemS is the elapsed time in milliseconds since the last call
 // to this function.
 //
 // \return None.
 //
 //*****************************************************************************
 static void
-ClearIdleTimers(const tUSBDHIDDevice *psDevice)
+ClearIdleTimers(const tUSBDHIDDevice *psHIDDevice)
 {
-    unsigned long ulLoop;
+    uint32_t ui32Loop;
 
     //
     // Clear the "time till next report" counters for each input report.
     //
-    for(ulLoop = 0; ulLoop < psDevice->ucNumInputReports; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psHIDDevice->ui8NumInputReports; ui32Loop++)
     {
-        psDevice->psReportIdle[ulLoop].usTimeTillNextmS =
-            psDevice->psReportIdle[ulLoop].ucDuration4mS * 4;
+        psHIDDevice->psReportIdle[ui32Loop].ui16TimeTillNextmS =
+                        psHIDDevice->psReportIdle[ui32Loop].ui8Duration4mS * 4;
     }
 }
 
@@ -453,27 +301,26 @@ ClearIdleTimers(const tUSBDHIDDevice *psDevice)
 // This function is called periodically to allow us to process the report idle
 // timers.
 //
-// \param psDevice points to the HID device structure whose timers are to be
+// \param psHIDDevice points to the HID device structure whose timers are to be
 // updated.
-// \param ulElapsedmS indicates the number of milliseconds that have elapsed
+// \param ui32ElapsedmS indicates the number of milliseconds that have elapsed
 // since the last call to this function.
 //
 // \return None.
 //
 //*****************************************************************************
 static void
-ProcessIdleTimers(const tUSBDHIDDevice *psDevice, unsigned long ulElapsedmS)
+ProcessIdleTimers(const tUSBDHIDDevice *psHIDDevice, uint32_t ui32ElapsedmS)
 {
-    unsigned long ulLoop;
-    unsigned long ulSizeReport;
+    uint32_t ui32Loop, ui32SizeReport;
     void *pvReport;
     tHIDInstance *psInst;
-    tBoolean bDeferred;
+    bool bDeferred;
 
     //
     // Get our instance data pointer
     //
-    psInst = ((tUSBDHIDDevice *)psDevice)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)psHIDDevice)->sPrivateData;
 
     //
     // We have not had to defer any report transmissions yet.
@@ -483,28 +330,30 @@ ProcessIdleTimers(const tUSBDHIDDevice *psDevice, unsigned long ulElapsedmS)
     //
     // Look at each of the input report idle timers in turn.
     //
-    for(ulLoop = 0; ulLoop < psDevice->ucNumInputReports; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psHIDDevice->ui8NumInputReports; ui32Loop++)
     {
         //
         // Update the time since the last report was sent.
         //
-        psDevice->psReportIdle[ulLoop].ulTimeSinceReportmS += ulElapsedmS;
+        psHIDDevice->psReportIdle[ui32Loop].ui32TimeSinceReportmS +=
+                                                                ui32ElapsedmS;
 
         //
         // Is this timer running?
         //
-        if(psDevice->psReportIdle[ulLoop].ucDuration4mS)
+        if(psHIDDevice->psReportIdle[ui32Loop].ui8Duration4mS)
         {
             //
             // Yes - is it about to expire?
             //
-            if(psDevice->psReportIdle[ulLoop].usTimeTillNextmS <= ulElapsedmS)
+            if(psHIDDevice->psReportIdle[ui32Loop].ui16TimeTillNextmS <=
+               ui32ElapsedmS)
             {
                 //
                 // The timer is about to expire.  Can we send a report right
                 // now?
                 //
-                if((psInst->eHIDTxState == HID_STATE_IDLE) &&
+                if((psInst->iHIDTxState == eHIDStateIdle) &&
                    (psInst->bSendInProgress == false))
                 {
                     //
@@ -512,23 +361,23 @@ ProcessIdleTimers(const tUSBDHIDDevice *psDevice, unsigned long ulElapsedmS)
                     // application to retrieve its latest report for
                     // transmission to the host.
                     //
-                    ulSizeReport = psDevice->pfnRxCallback(
-                               psDevice->pvRxCBData,
+                    ui32SizeReport = psHIDDevice->pfnRxCallback(
+                               psHIDDevice->pvRxCBData,
                                USBD_HID_EVENT_IDLE_TIMEOUT,
-                               psDevice->psReportIdle[ulLoop].ucReportID,
+                               psHIDDevice->psReportIdle[ui32Loop].ui8ReportID,
                                &pvReport);
 
                     //
                     // Schedule the report for transmission.
                     //
-                    USBDHIDReportWrite((void *)psDevice, pvReport,
-                                       ulSizeReport, true);
+                    USBDHIDReportWrite((void *)psHIDDevice, pvReport,
+                                       ui32SizeReport, true);
 
                     //
                     // Reload the timer for the next period.
                     //
-                    psDevice->psReportIdle[ulLoop].usTimeTillNextmS =
-                        psDevice->psReportIdle[ulLoop].ucDuration4mS * 4;
+                    psHIDDevice->psReportIdle[ui32Loop].ui16TimeTillNextmS =
+                        psHIDDevice->psReportIdle[ui32Loop].ui8Duration4mS * 4;
                 }
                 else
                 {
@@ -536,7 +385,7 @@ ProcessIdleTimers(const tUSBDHIDDevice *psDevice, unsigned long ulElapsedmS)
                     // We can't send the report straight away so flag it for
                     // transmission as soon as the previous transmission ends.
                     //
-                    psDevice->psReportIdle[ulLoop].usTimeTillNextmS = 0;
+                    psHIDDevice->psReportIdle[ui32Loop].ui16TimeTillNextmS = 0;
                     bDeferred = true;
                 }
             }
@@ -546,7 +395,8 @@ ProcessIdleTimers(const tUSBDHIDDevice *psDevice, unsigned long ulElapsedmS)
                 // The timer is not about to expire.  Update the time till the
                 // next report transmission.
                 //
-                psDevice->psReportIdle[ulLoop].usTimeTillNextmS -= ulElapsedmS;
+                psHIDDevice->psReportIdle[ui32Loop].ui16TimeTillNextmS -=
+                                                                ui32ElapsedmS;
             }
         }
     }
@@ -555,16 +405,16 @@ ProcessIdleTimers(const tUSBDHIDDevice *psDevice, unsigned long ulElapsedmS)
     // If we had to defer transmission of any report, remember this so that we
     // will process it as soon as possible.
     //
-    SetDeferredOpFlag(&psInst->usDeferredOpFlags,
-                      HID_DO_SEND_IDLE_REPORT, bDeferred);
+    SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, HID_DO_SEND_IDLE_REPORT,
+                      bDeferred);
 }
 
 static void
-SetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID,
-               unsigned char ucTimeout4mS)
+SetIdleTimeout(const tUSBDHIDDevice *psHIDDevice, uint8_t ui8ReportID,
+               uint8_t ui8Timeout4mS)
 {
-    unsigned long ulLoop;
-    tBoolean bReportNeeded;
+    uint32_t ui32Loop;
+    bool bReportNeeded;
     tHIDReportIdle *psIdle;
 
     //
@@ -577,43 +427,43 @@ SetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID,
     // Search through all the input reports looking for ones that fit the
     // requirements.
     //
-    for(ulLoop = 0; ulLoop < psDevice->ucNumInputReports; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psHIDDevice->ui8NumInputReports; ui32Loop++)
     {
-        psIdle = &psDevice->psReportIdle[ulLoop];
+        psIdle = &psHIDDevice->psReportIdle[ui32Loop];
 
         //
         // If the report ID passed matches the report ID in the idle timer
         // control structure or we were passed a report ID of zero, which
         // indicates that all timers are to be set...
         //
-        if(!ucReportID || (ucReportID == psIdle->ucReportID))
+        if(!ui8ReportID || (ui8ReportID == psIdle->ui8ReportID))
         {
             //
             // Save the new duration for the idle timer.
             //
-            psIdle->ucDuration4mS = ucTimeout4mS;
+            psIdle->ui8Duration4mS = ui8Timeout4mS;
 
             //
             // Are we enabling the idle timer?  If so, fix up the time until it
             // needs to fire.
             //
-            if(ucTimeout4mS)
+            if(ui8Timeout4mS)
             {
                 //
                 // Determine what the timeout is for this report given the time
                 // since the last report of this type was sent.
                 //
-                if(psIdle->ulTimeSinceReportmS >=
-                   ((unsigned long)ucTimeout4mS * 4))
+                if(psIdle->ui32TimeSinceReportmS >=
+                   ((uint32_t)ui8Timeout4mS * 4))
                 {
-                    psIdle->usTimeTillNextmS = 0;
+                    psIdle->ui16TimeTillNextmS = 0;
                     bReportNeeded = true;
                 }
                 else
                 {
-                    psIdle->usTimeTillNextmS =
-                                        (((unsigned short)ucTimeout4mS * 4) -
-                                         psIdle->ulTimeSinceReportmS);
+                    psIdle->ui16TimeTillNextmS =
+                                        (((uint16_t)ui8Timeout4mS * 4) -
+                                         psIdle->ui32TimeSinceReportmS);
                 }
             }
         }
@@ -626,7 +476,7 @@ SetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID,
     //
     if(bReportNeeded)
     {
-        ProcessIdleTimers(psDevice, 0);
+        ProcessIdleTimers(psHIDDevice, 0);
     }
 }
 
@@ -634,9 +484,9 @@ SetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID,
 //
 // Find the idle timeout for a given HID input report.
 //
-// \param psDevice points to the HID device whose report idle timeout is to be
-// found.
-// \param ucReportID identifies the report whose timeout is requested.  If 0,
+// \param psHIDDevice points to the HID device whose report idle timeout is to
+// be found.
+// \param ui8ReportID identifies the report whose timeout is requested.  If 0,
 // the timeout for the first report is returns, regardless of its ID (or
 // whether it has one).
 //
@@ -649,37 +499,37 @@ SetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID,
 // \return Returns the current idle timeout for the given report.
 //
 //*****************************************************************************
-static unsigned long
-GetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID)
+static uint32_t
+GetIdleTimeout(const tUSBDHIDDevice *psHIDDevice, uint8_t ui8ReportID)
 {
-    unsigned long ulLoop;
+    uint32_t ui32Loop;
     tHIDReportIdle *psIdle;
 
     //
     // Search through all the input reports looking for ones that fit the
     // requirements.
     //
-    for(ulLoop = 0; ulLoop < psDevice->ucNumInputReports; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psHIDDevice->ui8NumInputReports; ui32Loop++)
     {
-        psIdle = &psDevice->psReportIdle[ulLoop];
+        psIdle = &psHIDDevice->psReportIdle[ui32Loop];
 
         //
         // If the report ID passed matches the report ID in the idle timer
         // control structure or we were passed a report ID of zero, which
         // indicates that all timers are to be set...
         //
-        if(!ucReportID || (ucReportID == psIdle->ucReportID))
+        if(!ui8ReportID || (ui8ReportID == psIdle->ui8ReportID))
         {
             //
             // We found a report matching the required ID or we were not passed
             // an ID and we are looking at the first report information.
             //
-            return((unsigned long)psIdle->ucDuration4mS);
+            return((uint32_t)psIdle->ui8Duration4mS);
         }
     }
 
     //
-    // If we drop out, the report couldn't be found so we need to indicate
+    // If we drop out, the report could not be found so we need to indicate
     // an error.
     //
     return(HID_NOT_FOUND);
@@ -690,11 +540,11 @@ GetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID)
 // Find the n-th HID class descriptor of a given type in the client-provided
 // descriptor table.
 //
-// \param psDevice points to the HID device which is to be searched for the
+// \param psHIDDevice points to the HID device which is to be searched for the
 // required class descriptor.
-// \param ucType is the type of class descriptor being requested.  This will
+// \param ui8Type is the type of class descriptor being requested.  This will
 // be either USB_HID_DTYPE_REPORT or USB_HID_DTYPE_PHYSICAL.
-// \param ulIndex is the zero-based index of the descriptor that is being
+// \param ui32Index is the zero-based index of the descriptor that is being
 // requested.
 //
 // This function parses the supplied HID descriptor to find the index into the
@@ -708,32 +558,30 @@ GetIdleTimeout(const tUSBDHIDDevice *psDevice, unsigned char ucReportID)
 // of the tHIDDevice structure if found or HID_NOT_FOUND otherwise.
 //
 //*****************************************************************************
-static unsigned long
-FindHIDDescriptor(const tUSBDHIDDevice *psDevice, unsigned char ucType,
-                  unsigned long ulIndex, unsigned long *pulLen)
+static uint32_t
+FindHIDDescriptor(const tUSBDHIDDevice *psHIDDevice, uint8_t ui8Type,
+                  uint32_t ui32Index, uint32_t *pui32Len)
 {
-    tBoolean bFoundType;
-    unsigned long ulLoop;
-    unsigned long ulCount;
-    unsigned long ulLastFound;
+    bool bFoundType;
+    uint32_t ui32Loop, ui32Count, ui32LastFound;
     const tHIDClassDescriptorInfo *psDesc;
 
     //
     // Remember that we have not found any descriptor with a matching type yet.
     //
     bFoundType = false;
-    ulCount = 0;
-    ulLastFound = 0;
+    ui32Count = 0;
+    ui32LastFound = 0;
 
     //
     // Walk through all the class descriptors looking for the one which
     // matches the requested index and type.
     //
-    for(ulLoop = 0; ulLoop < psDevice->psHIDDescriptor->bNumDescriptors;
-        ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psHIDDevice->psHIDDescriptor->bNumDescriptors;
+        ui32Loop++)
     {
-        psDesc = &(psDevice->psHIDDescriptor->sClassDescriptor[ulLoop]);
-        if(psDesc->bDescriptorType == ucType)
+        psDesc = &(psHIDDevice->psHIDDescriptor->sClassDescriptor[ui32Loop]);
+        if(psDesc->bDescriptorType == ui8Type)
         {
             //
             // We found a descriptor of the correct type.  Is this the
@@ -744,14 +592,14 @@ FindHIDDescriptor(const tUSBDHIDDevice *psDevice, unsigned char ucType,
             //
             // Is this the descriptor we are looking for?
             //
-            if(ulCount == ulIndex)
+            if(ui32Count == ui32Index)
             {
                 //
                 // Yes - we found it so return the index and size to the
                 // caller.
                 //
-                *pulLen = (unsigned long)psDesc->wDescriptorLength;
-                return(ulLoop);
+                *pui32Len = (uint32_t)psDesc->wDescriptorLength;
+                return(ui32Loop);
             }
             else
             {
@@ -760,34 +608,35 @@ FindHIDDescriptor(const tUSBDHIDDevice *psDevice, unsigned char ucType,
                 // when we found this descriptor in case we need to return the
                 // last physical descriptor.
                 //
-                ulCount++;
-                ulLastFound = ulLoop;
+                ui32Count++;
+                ui32LastFound = ui32Loop;
             }
         }
     }
 
     //
-    // If we drop out, we didn't find the requested descriptor.  Now handle
+    // If we drop out, we did not find the requested descriptor.  Now handle
     // the special case of a physical descriptor - if we found any physical
     // descriptors, return the last one.
     //
-    if((ucType == USB_HID_DTYPE_PHYSICAL) && bFoundType)
+    if((ui8Type == USB_HID_DTYPE_PHYSICAL) && bFoundType)
     {
         //
         // Get the length of the last descriptor we found.
         //
-        psDesc = &(psDevice->psHIDDescriptor->sClassDescriptor[ulLastFound]);
-        *pulLen = (unsigned long)psDesc->wDescriptorLength;
+        psDesc =
+            &(psHIDDevice->psHIDDescriptor->sClassDescriptor[ui32LastFound]);
+        *pui32Len = (uint32_t)psDesc->wDescriptorLength;
 
         //
         // Return the index to the caller.
         //
-        return(ulLastFound);
+        return(ui32LastFound);
     }
     else
     {
         //
-        // We couldn't find the descriptor so return an appropriate error.
+        // We could not find the descriptor so return an appropriate error.
         //
         return(HID_NOT_FOUND);
     }
@@ -797,76 +646,77 @@ FindHIDDescriptor(const tUSBDHIDDevice *psDevice, unsigned char ucType,
 //
 // Schedule transmission of the next packet forming part of an input report.
 //
-// \param psInst points to the device instance whose input report is to be
-// sent.
+// \param psHIDInst points to the HID device instance whose input report is to
+// be sent.
 //
 // This function is called to transmit the next packet of an input report
 // passed to the driver via a call to USBDHIDReportWrite.  If any data remains
 // to be sent, a USB packet is written to the FIFO and scheduled for
 // transmission to the host.  The function ensures that reports are sent as
-// a sequence of full packets followed by either a single short packet or a
+// a sequence of full packets followed by either a single int16_t packet or a
 // packet with no data to indicate the end of the transaction.
 //
 //*****************************************************************************
-static long
-ScheduleReportTransmission(tHIDInstance *psInst)
+static int32_t
+ScheduleReportTransmission(tHIDInstance *psHIDInst)
 {
-    unsigned long ulNumBytes;
-    unsigned char *pucData;
-    long lRetcode;
+    uint32_t ui32NumBytes;
+    uint8_t *pui8Data;
+    int32_t i32Retcode;
 
     //
     // Set the number of bytes to send this iteration.
     //
-    ulNumBytes = (unsigned long)(psInst->usInReportSize -
-                                 psInst->usInReportIndex);
+    ui32NumBytes = (uint32_t)(psHIDInst->ui16InReportSize -
+                              psHIDInst->ui16InReportIndex);
 
     //
     // Limit individual transfers to the maximum packet size for the endpoint.
     //
-    if(ulNumBytes > INT_IN_EP_MAX_SIZE)
+    if(ui32NumBytes > USBDHID_MAX_PACKET)
     {
-        ulNumBytes = INT_IN_EP_MAX_SIZE;
+        ui32NumBytes = USBDHID_MAX_PACKET;
     }
 
     //
     // Where are we sending this data from?
     //
-    pucData = psInst->pucInReportData + psInst->usInReportIndex;
+    pui8Data = psHIDInst->pui8InReportData + psHIDInst->ui16InReportIndex;
 
     //
     // Put the data in the correct FIFO.
     //
-    lRetcode = MAP_USBEndpointDataPut(psInst->ulUSBBase, psInst->ucINEndpoint,
-                                      pucData, ulNumBytes);
+    i32Retcode = MAP_USBEndpointDataPut(psHIDInst->ui32USBBase,
+                                        psHIDInst->ui8INEndpoint,
+                                        pui8Data, ui32NumBytes);
 
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // Update the count and index ready for the next time round.
         //
-        psInst->usInReportIndex += ulNumBytes;
+        psHIDInst->ui16InReportIndex += ui32NumBytes;
 
         //
         // Send out the current data.
         //
-        lRetcode = MAP_USBEndpointDataSend(psInst->ulUSBBase,
-                                           psInst->ucINEndpoint,
-                                           USB_TRANS_IN);
+        i32Retcode = MAP_USBEndpointDataSend(psHIDInst->ui32USBBase,
+                                             psHIDInst->ui8INEndpoint,
+                                             USB_TRANS_IN);
     }
 
     //
     // Tell the caller how we got on.
     //
-    return(lRetcode);
+    return(i32Retcode);
 }
 
 //*****************************************************************************
 //
 // Receives notifications related to data received from the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psHIDDevice is the device instance whose endpoint is to be processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts signaling
@@ -878,55 +728,56 @@ ScheduleReportTransmission(tHIDInstance *psInst)
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-static tBoolean
-ProcessDataFromHost(const tUSBDHIDDevice *psDevice, unsigned long ulStatus)
+static bool
+ProcessDataFromHost(tUSBDHIDDevice *psHIDDevice, uint32_t ui32Status)
 {
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus, ui32Size;
     tHIDInstance *psInst;
 
     //
     // Get a pointer to our instance data.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ucOUTEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(USB0_BASE, psInst->ui8OUTEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(USB0_BASE, psInst->ucOUTEndpoint, ulEPStatus);
+    MAP_USBDevEndpointStatusClear(USB0_BASE, psInst->ui8OUTEndpoint,
+                                  ui32EPStatus);
 
     //
     // Has a packet been received?
     //
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // Set the flag we use to indicate that a packet read is pending.  This
-        // will be cleared if the packet is read.  If the client doesn't read
+        // will be cleared if the packet is read.  If the client does not read
         // the packet in the context of the USB_EVENT_RX_AVAILABLE callback,
         // the event will be signaled later during tick processing.
         //
-        SetDeferredOpFlag(&psInst->usDeferredOpFlags, HID_DO_PACKET_RX, true);
+        SetDeferredOpFlag(&psInst->ui16DeferredOpFlags, HID_DO_PACKET_RX,
+                          true);
 
         //
-        // How big is the packet we've just been sent?
+        // How big is the packet we have just been sent?
         //
-        ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint);
 
         //
         // The receive channel is not blocked so let the caller know
         // that a packet is waiting.  The parameters are set to indicate
         // that the packet has not been read from the hardware FIFO yet.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                USB_EVENT_RX_AVAILABLE, ulSize,
-                                (void *)0);
+        psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                   USB_EVENT_RX_AVAILABLE, ui32Size,
+                                   (void *)0);
     }
     else
     {
@@ -934,15 +785,15 @@ ProcessDataFromHost(const tUSBDHIDDevice *psDevice, unsigned long ulStatus)
         // No packet was received.  Some error must have been reported.  Check
         // and pass this on to the client if necessary.
         //
-        if(ulEPStatus & USB_RX_ERROR_FLAGS)
+        if(ui32EPStatus & USB_RX_ERROR_FLAGS)
         {
             //
             // This is an error we report to the client so...
             //
-            psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                    USB_EVENT_ERROR,
-                                    (ulEPStatus & USB_RX_ERROR_FLAGS),
-                                    (void *)0);
+            psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                       USB_EVENT_ERROR,
+                                       (ui32EPStatus & USB_RX_ERROR_FLAGS),
+                                       (void *)0);
         }
         return(false);
     }
@@ -954,8 +805,8 @@ ProcessDataFromHost(const tUSBDHIDDevice *psDevice, unsigned long ulStatus)
 //
 // Receives notifications related to data sent to the host.
 //
-// \param psDevice is the device instance whose endpoint is to be processed.
-// \param ulStatus is the USB interrupt status that caused this function to
+// \param psHIDDevice is the device instance whose endpoint is to be processed.
+// \param ui32Status is the USB interrupt status that caused this function to
 // be called.
 //
 // This function is called from HandleEndpoints for all interrupts originating
@@ -966,55 +817,57 @@ ProcessDataFromHost(const tUSBDHIDDevice *psDevice, unsigned long ulStatus)
 // \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-static tBoolean
-ProcessDataToHost(const tUSBDHIDDevice *psDevice, unsigned long ulStatus)
+static bool
+ProcessDataToHost(tUSBDHIDDevice *psHIDDevice, uint32_t ui32Status)
 {
     tHIDInstance *psInst;
-    unsigned long ulEPStatus;
+    uint32_t ui32EPStatus;
 
     //
     // Get a pointer to our instance data.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // Get the endpoint status to see why we were called.
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase, psInst->ucINEndpoint);
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8INEndpoint);
 
     //
     // Clear the status bits.
     //
-    MAP_USBDevEndpointStatusClear(psInst->ulUSBBase, psInst->ucINEndpoint,
-                                  ulEPStatus);
+    MAP_USBDevEndpointStatusClear(psInst->ui32USBBase, psInst->ui8INEndpoint,
+                                  ui32EPStatus);
 
     //
     // Our last packet was transmitted successfully.  Is there any more data to
     // send or have we finished sending the whole report?  We know we finished
-    // if the usInReportIndex has reached the usInReportSize value.
+    // if the ui16InReportIndex has reached the ui16InReportSize value.
     //
-    if(psInst->usInReportSize == psInst->usInReportIndex)
+    if(psInst->ui16InReportSize == psInst->ui16InReportIndex)
     {
         //
         // We finished sending the last report so are idle once again.
         //
-        psInst->eHIDTxState = HID_STATE_IDLE;
+        psInst->iHIDTxState = eHIDStateIdle;
 
         //
         // Notify the client that the report transmission completed.
         //
-        psDevice->pfnTxCallback(psDevice->pvTxCBData, USB_EVENT_TX_COMPLETE,
-                                psInst->usInReportSize, (void *)0);
+        psHIDDevice->pfnTxCallback(psHIDDevice->pvTxCBData,
+                                   USB_EVENT_TX_COMPLETE,
+                                   psInst->ui16InReportSize, (void *)0);
 
         //
         // Do we have any reports to send as a result of idle timer timeouts?
         //
-        if(psInst->usDeferredOpFlags & (1 << HID_DO_SEND_IDLE_REPORT))
+        if(psInst->ui16DeferredOpFlags & (1 << HID_DO_SEND_IDLE_REPORT))
         {
             //
             // Yes - send reports for any timers that expired recently.
             //
-            ProcessIdleTimers(psDevice, 0);
+            ProcessIdleTimers(psHIDDevice, 0);
         }
     }
     else
@@ -1034,41 +887,41 @@ ProcessDataToHost(const tUSBDHIDDevice *psDevice, unsigned long ulStatus)
 // Called by the USB stack for any activity involving one of our endpoints
 // other than EP0.  This function is a fan out that merely directs the call to
 // the correct handler depending upon the endpoint and transaction direction
-// signaled in ulStatus.
+// signaled in ui32Status.
 //
 //*****************************************************************************
 static void
-HandleEndpoints(void *pvInstance, unsigned long ulStatus)
+HandleEndpoints(void *pvHIDInstance, uint32_t ui32Status)
 {
-    const tUSBDHIDDevice *psHIDInst;
+    tUSBDHIDDevice *psHIDInst;
     tHIDInstance *psInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Determine if the serial device is in single or composite mode because
-    // the meaning of ulIndex is different in both cases.
+    // the meaning of ui32Index is different in both cases.
     //
-    psHIDInst = (const tUSBDHIDDevice *)pvInstance;
-    psInst = psHIDInst->psPrivateHIDData;
+    psHIDInst = (tUSBDHIDDevice *)pvHIDInstance;
+    psInst = &psHIDInst->sPrivateData;
 
     //
     // Handler for the interrupt OUT data endpoint.
     //
-    if(ulStatus & (0x10000 << USB_EP_TO_INDEX(psInst->ucOUTEndpoint)))
+    if(ui32Status & (0x10000 << USBEPToIndex(psInst->ui8OUTEndpoint)))
     {
         //
         // Data is being sent to us from the host.
         //
-        ProcessDataFromHost(pvInstance, ulStatus);
+        ProcessDataFromHost(pvHIDInstance, ui32Status);
     }
 
     //
     // Handler for the interrupt IN data endpoint.
     //
-    if(ulStatus & (1 << USB_EP_TO_INDEX(psInst->ucINEndpoint)))
+    if(ui32Status & (1 << USBEPToIndex(psInst->ui8INEndpoint)))
     {
-        ProcessDataToHost(pvInstance, ulStatus);
+        ProcessDataToHost(pvHIDInstance, ui32Status);
     }
 }
 
@@ -1078,28 +931,28 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
 //
 //*****************************************************************************
 static void
-HandleConfigChange(void *pvInstance, unsigned long ulInfo)
+HandleConfigChange(void *pvHIDInstance, uint32_t ui32Info)
 {
     tHIDInstance *psInst;
-    const tUSBDHIDDevice *psDevice;
+    tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = pvInstance;
+    psHIDDevice = pvHIDInstance;
 
     //
     // Get a pointer to our instance data.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // Set all our endpoints to idle state.
     //
-    psInst->eHIDRxState = HID_STATE_IDLE;
-    psInst->eHIDTxState = HID_STATE_IDLE;
+    psInst->iHIDRxState = eHIDStateIdle;
+    psInst->iHIDTxState = eHIDStateIdle;
 
     //
     // If we are not currently connected let the client know we are open for
@@ -1110,14 +963,14 @@ HandleConfigChange(void *pvInstance, unsigned long ulInfo)
         //
         // Pass the connected event to the client.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData, USB_EVENT_CONNECTED, 0,
-                                (void *)0);
+        psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                   USB_EVENT_CONNECTED, 0, (void *)0);
     }
 
     //
     // Clear the idle timers for each input report.
     //
-    ClearIdleTimers(psDevice);
+    ClearIdleTimers(psHIDDevice);
 
     //
     // Remember that we are connected.
@@ -1131,30 +984,30 @@ HandleConfigChange(void *pvInstance, unsigned long ulInfo)
 //
 //*****************************************************************************
 static void
-HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
+HandleDevice(void *pvHIDInstance, uint32_t ui32Request, void *pvRequestData)
 {
     tHIDInstance *psInst;
-    unsigned char *pucData;
+    uint8_t *pui8Data;
 
     //
     // Create the serial instance data.
     //
-    psInst = ((tUSBDHIDDevice *)pvInstance)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)pvHIDInstance)->sPrivateData;
 
     //
-    // Create the char array used by the events supported by the USB CDC
+    // Create the int8_t array used by the events supported by the USB CDC
     // serial class.
     //
-    pucData = (unsigned char *)pvRequestData;
+    pui8Data = (uint8_t *)pvRequestData;
 
-    switch(ulRequest)
+    switch(ui32Request)
     {
         //
         // This was an interface change event.
         //
         case USB_EVENT_COMP_IFACE_CHANGE:
         {
-            psInst->ucInterface = pucData[1];
+            psInst->ui8Interface = pui8Data[1];
             break;
         }
 
@@ -1166,18 +1019,16 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
             //
             // Determine if this is an IN or OUT endpoint that has changed.
             //
-            if(pucData[0] & USB_EP_DESC_IN)
+            if(pui8Data[0] & USB_EP_DESC_IN)
             {
-                psInst->ucINEndpoint =
-                    INDEX_TO_USB_EP((pucData[1] & 0x7f));
+                psInst->ui8INEndpoint = IndexToUSBEP((pui8Data[1] & 0x7f));
             }
             else
             {
                 //
                 // Extract the new endpoint number.
                 //
-                psInst->ucOUTEndpoint =
-                    INDEX_TO_USB_EP(pucData[1] & 0x7f);
+                psInst->ui8OUTEndpoint = IndexToUSBEP(pui8Data[1] & 0x7f);
             }
             break;
         }
@@ -1195,34 +1046,34 @@ HandleDevice(void *pvInstance, unsigned long ulRequest, void *pvRequestData)
 //
 //*****************************************************************************
 static void
-HandleDisconnect(void *pvInstance)
+HandleDisconnect(void *pvHIDInstance)
 {
-    const tUSBDHIDDevice *psDevice;
+    tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = (const tUSBDHIDDevice *)pvInstance;
+    psHIDDevice = (tUSBDHIDDevice *)pvHIDInstance;
 
     //
     // If we are not currently connected so let the client know we are open
     // for business.
     //
-    if(psDevice->psPrivateHIDData->bConnected)
+    if(psHIDDevice->sPrivateData.bConnected)
     {
         //
         // Pass the disconnected event to the client.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData, USB_EVENT_DISCONNECTED,
-                                0, (void *)0);
+        psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                   USB_EVENT_DISCONNECTED, 0, (void *)0);
     }
 
     //
     // Remember that we are no longer connected.
     //
-    psDevice->psPrivateHIDData->bConnected = false;
+    psHIDDevice->sPrivateData.bConnected = false;
 }
 
 //*****************************************************************************
@@ -1230,8 +1081,8 @@ HandleDisconnect(void *pvInstance)
 // This function is called by the USB device stack whenever a request for a
 // non-standard descriptor is received.
 //
-// \param pvInstance is the instance data for this request.
-// \param pUSBRequest points to the request received.
+// \param pvHIDInstance is the instance data for this request.
+// \param psUSBRequest points to the request received.
 //
 // This call parses the provided request structure and determines which
 // descriptor is being requested.  Assuming the descriptor can be found, it is
@@ -1240,23 +1091,22 @@ HandleDisconnect(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
+HandleGetDescriptor(void *pvHIDInstance, tUSBRequest *psUSBRequest)
 {
-    unsigned long ulSize;
-    unsigned long ulDesc;
-    const tUSBDHIDDevice *psDevice;
+    uint32_t ui32Size, ui32Desc;
+    const tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Which device are we dealing with?
     //
-    psDevice = pvInstance;
+    psHIDDevice = pvHIDInstance;
 
     //
     // Which type of class descriptor are we being asked for?
     //
-    switch(pUSBRequest->wValue >> 8)
+    switch(psUSBRequest->wValue >> 8)
     {
         //
         // This is a request for a HID report or physical descriptor.
@@ -1267,15 +1117,16 @@ HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // Find the index to the descriptor that is being queried.
             //
-            ulSize = 0;
-            ulDesc = FindHIDDescriptor(psDevice, pUSBRequest->wValue >> 8,
-                                       pUSBRequest->wValue & 0xFF,
-                                       &ulSize);
+            ui32Size = 0;
+            ui32Desc = FindHIDDescriptor(psHIDDevice,
+                                         psUSBRequest->wValue >> 8,
+                                         psUSBRequest->wValue & 0xFF,
+                                         &ui32Size);
 
             //
             // Did we find the descriptor?
             //
-            if(ulDesc == HID_NOT_FOUND)
+            if(ui32Desc == HID_NOT_FOUND)
             {
                 //
                 // No - stall the endpoint and return.
@@ -1288,16 +1139,17 @@ HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
             // If there is more data to send than the host requested then just
             // send the requested amount of data.
             //
-            if(ulSize > pUSBRequest->wLength)
+            if(ui32Size > psUSBRequest->wLength)
             {
-                ulSize = pUSBRequest->wLength;
+                ui32Size = psUSBRequest->wLength;
             }
 
             //
             // Send the data via endpoint 0.
             //
             USBDCDSendDataEP0(0,
-                (unsigned char *)psDevice->ppClassDescriptors[ulDesc], ulSize);
+                (uint8_t *)psHIDDevice->ppui8ClassDescriptors[ui32Desc],
+                ui32Size);
 
             break;
         }
@@ -1311,22 +1163,22 @@ HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // How big is the HID descriptor?
             //
-            ulSize = (unsigned long)psDevice->psHIDDescriptor->bLength;
+            ui32Size = (uint32_t)psHIDDevice->psHIDDescriptor->bLength;
 
             //
             // If there is more data to send than the host requested then just
             // send the requested amount of data.
             //
-            if(ulSize > pUSBRequest->wLength)
+            if(ui32Size > psUSBRequest->wLength)
             {
-                ulSize = pUSBRequest->wLength;
+                ui32Size = psUSBRequest->wLength;
             }
 
             //
             // Send the data via endpoint 0.
             //
-            USBDCDSendDataEP0(0, (unsigned char *)psDevice->psHIDDescriptor,
-                              ulSize);
+            USBDCDSendDataEP0(0, (uint8_t *)psHIDDevice->psHIDDescriptor,
+                              ui32Size);
             break;
         }
 
@@ -1346,8 +1198,8 @@ HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
 // This function is called by the USB device stack whenever a non-standard
 // request is received.
 //
-// \param pvInstance is the instance data for this HID device.
-// \param pUSBRequest points to the request received.
+// \param pvHIDInstance is the instance data for this HID device.
+// \param psUSBRequest points to the request received.
 //
 // This call parses the provided request structure.  Assuming the request is
 // understood, it is handled and any required response generated.  If the
@@ -1356,28 +1208,30 @@ HandleGetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
 //
 //*****************************************************************************
 static void
-HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
+HandleRequest(void *pvHIDInstance, tUSBRequest *psUSBRequest)
 {
     tHIDInstance *psInst;
-    unsigned char ucProtocol;
-    const tUSBDHIDDevice *psDevice;
+    uint8_t ui8Protocol;
+    uint32_t ui32Size, ui32Timeout;
+    uint8_t *pui8Report;
+    tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Which device are we dealing with?
     //
-    psDevice = pvInstance;
+    psHIDDevice = pvHIDInstance;
 
     //
     // Get a pointer to our instance data.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // Make sure the request was for this interface.
     //
-    if(pUSBRequest->wIndex != psInst->ucInterface)
+    if(psUSBRequest->wIndex != psInst->ui8Interface)
     {
         return;
     }
@@ -1385,7 +1239,7 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
     //
     // Determine the type of request.
     //
-    switch(pUSBRequest->bRequest)
+    switch(psUSBRequest->bRequest)
     {
         //
         // A Set Report request is received from the host when it sends an
@@ -1397,21 +1251,21 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
             // Ask the application for a buffer large enough to hold the
             // report we are to be sent.
             //
-            psInst->usOutReportSize = pUSBRequest->wLength;
-            psInst->pucOutReportData =
-                (unsigned char *)psDevice->pfnRxCallback(
-                               psDevice->pvRxCBData,
+            psInst->ui16OutReportSize = psUSBRequest->wLength;
+            psInst->pui8OutReportData =
+                (uint8_t *)psHIDDevice->pfnRxCallback(
+                               psHIDDevice->pvRxCBData,
                                USBD_HID_EVENT_GET_REPORT_BUFFER,
-                               pUSBRequest->wValue,
-                               (void *)(unsigned long)(pUSBRequest->wLength));
+                               psUSBRequest->wValue,
+                               (void *)(uint32_t)(psUSBRequest->wLength));
 
             //
             // Did the client provide us a buffer?
             //
-            if(!psInst->pucOutReportData)
+            if(!psInst->pui8OutReportData)
             {
                 //
-                // The application couldn't provide us a buffer so stall the
+                // The application could not provide us a buffer so stall the
                 // request.
                 //
                 USBDCDStallEP0(0);
@@ -1426,14 +1280,14 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
                 //
                 // Set the state to indicate we are waiting for data.
                 //
-                psInst->eHIDRxState = HID_STATE_WAIT_DATA;
+                psInst->iHIDRxState = eHIDStateWaitData;
 
                 //
                 // Now read the payload of the request.  We handle the actual
                 // operation in the data callback once this data is received.
                 //
-                USBDCDRequestDataEP0(0, psInst->pucOutReportData,
-                                     (unsigned long)pUSBRequest->wLength);
+                USBDCDRequestDataEP0(0, psInst->pui8OutReportData,
+                                     (uint32_t)psUSBRequest->wLength);
 
                 //
                 // Need to ACK the data on end point 0 in this case.  Do this
@@ -1441,7 +1295,7 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
                 // occur if you acknowledge before setting up to receive the
                 // request data.
                 //
-                MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, false);
+                MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, false);
             }
 
             break;
@@ -1453,26 +1307,23 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
         //
         case USBREQ_GET_REPORT:
         {
-            unsigned long ulSize;
-            unsigned char *pucReport;
-
             //
             // Get the latest report from the application.
             //
-            ulSize = psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                             USBD_HID_EVENT_GET_REPORT,
-                                             pUSBRequest->wValue, &pucReport);
+            ui32Size = psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                            USBD_HID_EVENT_GET_REPORT,
+                                            psUSBRequest->wValue, &pui8Report);
 
             //
             // Need to ACK the data on end point 0 in this case.
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, true);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, true);
 
             //
             // ..then send back the requested report.
             //
             psInst->bGetRequestPending = true;
-            USBDCDSendDataEP0(0, pucReport, ulSize);
+            USBDCDSendDataEP0(0, pui8Report, ui32Size);
 
             break;
         }
@@ -1487,13 +1338,13 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
             //
             // Set the idle timeout for the requested report(s).
             //
-            SetIdleTimeout(psDevice, pUSBRequest->wValue & 0xFF,
-                           (pUSBRequest->wValue >> 8) & 0xFF);
+            SetIdleTimeout(psHIDDevice, psUSBRequest->wValue & 0xFF,
+                           (psUSBRequest->wValue >> 8) & 0xFF);
 
             //
             // Need to ACK the data on end point 0 in this case.
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, true);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, true);
 
             break;
         }
@@ -1504,24 +1355,22 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
         //
         case USBREQ_GET_IDLE:
         {
-            unsigned long ulTimeout;
-
             //
             // Determine the timeout for the requested report.
             //
-            ulTimeout = GetIdleTimeout(psDevice, pUSBRequest->wValue);
+            ui32Timeout = GetIdleTimeout(psHIDDevice, psUSBRequest->wValue);
 
-            if(ulTimeout != HID_NOT_FOUND)
+            if(ui32Timeout != HID_NOT_FOUND)
             {
                 //
                 // Need to ACK the data on end point 0 in this case.
                 //
-                MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, true);
+                MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, true);
 
                 //
                 // Send our response to the host.
                 //
-                USBDCDSendDataEP0(0, (unsigned char *)&ulTimeout, 1);
+                USBDCDSendDataEP0(0, (uint8_t *)&ui32Timeout, 1);
             }
             else
             {
@@ -1539,21 +1388,21 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
         //
         case USBREQ_SET_PROTOCOL:
         {
-            if(psDevice->ucSubclass == USB_HID_SCLASS_BOOT)
+            if(psHIDDevice->ui8Subclass == USB_HID_SCLASS_BOOT)
             {
                 //
                 // We need to ACK the data on end point 0 in this case.
                 //
-                MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, true);
+                MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, true);
 
                 //
                 // We are a boot subclass device so pass this on to the
                 // application.
                 //
-                psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                        USBD_HID_EVENT_SET_PROTOCOL,
-                                        pUSBRequest->wValue,
-                                        (void *)0);
+                psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                           USBD_HID_EVENT_SET_PROTOCOL,
+                                           psUSBRequest->wValue,
+                                           (void *)0);
             }
             else
             {
@@ -1572,25 +1421,25 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
         //
         case USBREQ_GET_PROTOCOL:
         {
-            if(psDevice->ucSubclass == USB_HID_SCLASS_BOOT)
+            if(psHIDDevice->ui8Subclass == USB_HID_SCLASS_BOOT)
             {
                 //
                 // We need to ACK the data on end point 0 in this case.
                 //
-                MAP_USBDevEndpointDataAck(psInst->ulUSBBase, USB_EP_0, true);
+                MAP_USBDevEndpointDataAck(psInst->ui32USBBase, USB_EP_0, true);
 
                 //
                 // We are a boot subclass device so pass this on to the
                 // application callback to get the answer.
                 //
-                ucProtocol = (unsigned char)psDevice->pfnRxCallback(
-                    psDevice->pvRxCBData, USBD_HID_EVENT_GET_PROTOCOL, 0,
+                ui8Protocol = (uint8_t)psHIDDevice->pfnRxCallback(
+                    psHIDDevice->pvRxCBData, USBD_HID_EVENT_GET_PROTOCOL, 0,
                     (void *)0);
 
                 //
                 // Send our response to the host.
                 //
-                USBDCDSendDataEP0(0, (unsigned char *)&ucProtocol, 1);
+                USBDCDSendDataEP0(0, (uint8_t *)&ui8Protocol, 1);
             }
             else
             {
@@ -1621,22 +1470,22 @@ HandleRequest(void *pvInstance, tUSBRequest *pUSBRequest)
 //
 //*****************************************************************************
 static void
-HandleEP0DataReceived(void *pvInstance, unsigned long ulDataSize)
+HandleEP0DataReceived(void *pvHIDInstance, uint32_t ui32DataSize)
 {
     tHIDInstance *psInst;
-    const tUSBDHIDDevice *psDevice;
+    tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Which device are we dealing with?
     //
-    psDevice = pvInstance;
+    psHIDDevice = pvHIDInstance;
 
     //
     // If we were not passed any data, just return.
     //
-    if(ulDataSize == 0)
+    if(ui32DataSize == 0)
     {
         return;
     }
@@ -1644,12 +1493,12 @@ HandleEP0DataReceived(void *pvInstance, unsigned long ulDataSize)
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // Make sure we are actually expecting something.
     //
-    if(psInst->eHIDRxState != HID_STATE_WAIT_DATA)
+    if(psInst->iHIDRxState != eHIDStateWaitData)
     {
         return;
     }
@@ -1658,16 +1507,17 @@ HandleEP0DataReceived(void *pvInstance, unsigned long ulDataSize)
     // Change the endpoint state back to idle now that we have been passed
     // the data we were waiting for.
     //
-    psInst->eHIDRxState = HID_STATE_IDLE;
+    psInst->iHIDRxState = eHIDStateIdle;
 
     //
     // The only things we ever request via endpoint zero are reports sent to
     // us via a Set_Report request.  Pass the newly received report on to
     // the client.
     //
-    psDevice->pfnRxCallback(psDevice->pvRxCBData, USBD_HID_EVENT_SET_REPORT,
-                            psInst->usOutReportSize,
-                            psInst->pucOutReportData);
+    psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                               USBD_HID_EVENT_SET_REPORT,
+                               psInst->ui16OutReportSize,
+                               psInst->pui8OutReportData);
 }
 
 //*****************************************************************************
@@ -1677,22 +1527,22 @@ HandleEP0DataReceived(void *pvInstance, unsigned long ulDataSize)
 //
 //*****************************************************************************
 static void
-HandleEP0DataSent(void *pvInstance, unsigned long ulInfo)
+HandleEP0DataSent(void *pvHIDInstance, uint32_t ui32Info)
 {
     tHIDInstance *psInst;
-    const tUSBDHIDDevice *psDevice;
+    tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Which device are we dealing with?
     //
-    psDevice = pvInstance;
+    psHIDDevice = pvHIDInstance;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // If we just sent a report in response to a Get_Report request, send an
@@ -1705,8 +1555,8 @@ HandleEP0DataSent(void *pvInstance, unsigned long ulInfo)
         //
         psInst->bGetRequestPending = false;
 
-        psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                USBD_HID_EVENT_REPORT_SENT, 0, (void *)0);
+        psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                   USBD_HID_EVENT_REPORT_SENT, 0, (void *)0);
     }
 
     return;
@@ -1720,15 +1570,15 @@ HandleEP0DataSent(void *pvInstance, unsigned long ulInfo)
 //
 //*****************************************************************************
 static void
-HandleReset(void *pvInstance)
+HandleReset(void *pvHIDInstance)
 {
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Merely call the disconnect handler.  This causes a disconnect message to
     // be sent to the client if we think we are currently connected.
     //
-    HandleDisconnect(pvInstance);
+    HandleDisconnect(pvHIDInstance);
 }
 
 //*****************************************************************************
@@ -1738,22 +1588,22 @@ HandleReset(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleSuspend(void *pvInstance)
+HandleSuspend(void *pvHIDInstance)
 {
-    const tUSBDHIDDevice *psDevice;
+    const tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = (const tUSBDHIDDevice *)pvInstance;
+    psHIDDevice = (const tUSBDHIDDevice *)pvHIDInstance;
 
     //
     // Pass the event on to the client.
     //
-    psDevice->pfnRxCallback(psDevice->pvRxCBData, USB_EVENT_SUSPEND, 0,
-                            (void *)0);
+    psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData, USB_EVENT_SUSPEND, 0,
+                               (void *)0);
 }
 
 //*****************************************************************************
@@ -1763,22 +1613,22 @@ HandleSuspend(void *pvInstance)
 //
 //*****************************************************************************
 static void
-HandleResume(void *pvInstance)
+HandleResume(void *pvHIDInstance)
 {
-    const tUSBDHIDDevice *psDevice;
+    const tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = (const tUSBDHIDDevice *)pvInstance;
+    psHIDDevice = (const tUSBDHIDDevice *)pvHIDInstance;
 
     //
     // Pass the event on to the client.
     //
-    psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                            USB_EVENT_RESUME, 0, (void *)0);
+    psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData, USB_EVENT_RESUME, 0,
+                               (void *)0);
 }
 
 //*****************************************************************************
@@ -1786,55 +1636,56 @@ HandleResume(void *pvInstance)
 // This function is called periodically and provides us with a time reference
 // and method of implementing delayed or time-dependent operations.
 //
-// \param pvInstance is the instance data for this request.
-// \param ulTimemS is the elapsed time in milliseconds since the last call
+// \param pvHIDInstance is the instance data for this request.
+// \param ui32TimemS is the elapsed time in milliseconds since the last call
 // to this function.
 //
 // \return None.
 //
 //*****************************************************************************
 static void
-HIDTickHandler(void *pvInstance, unsigned long ulTimemS)
+HIDTickHandler(void *pvHIDInstance, uint32_t ui32TimemS)
 {
     tHIDInstance *psInst;
-    unsigned long ulSize;
-    const tUSBDHIDDevice *psDevice;
+    uint32_t ui32Size;
+    tUSBDHIDDevice *psHIDDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvHIDInstance != 0);
 
     //
     // Create the instance pointer.
     //
-    psDevice = (const tUSBDHIDDevice *)pvInstance;
+    psHIDDevice = (tUSBDHIDDevice *)pvHIDInstance;
 
     //
     // Get our instance data pointer.
     //
-    psInst = psDevice->psPrivateHIDData;
+    psInst = &psHIDDevice->sPrivateData;
 
     //
     // If we are connected, process our idle timers.
     //
     if(psInst->bConnected)
     {
-        ProcessIdleTimers(psDevice, ulTimemS);
+        ProcessIdleTimers(psHIDDevice, ui32TimemS);
     }
 
     //
     // Do we have a deferred receive waiting
     //
-    if(psInst->usDeferredOpFlags & (1 << HID_DO_PACKET_RX))
+    if(psInst->ui16DeferredOpFlags & (1 << HID_DO_PACKET_RX))
     {
         //
         // Yes - how big is the waiting packet?
         //
-        ulSize = MAP_USBEndpointDataAvail(USB0_BASE, psInst->ucOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(USB0_BASE, psInst->ui8OUTEndpoint);
 
         //
         // Tell the client that there is a packet waiting for it.
         //
-        psDevice->pfnRxCallback(psDevice->pvRxCBData,
-                                USB_EVENT_RX_AVAILABLE, ulSize, (void *)0);
+        psHIDDevice->pfnRxCallback(psHIDDevice->pvRxCBData,
+                                   USB_EVENT_RX_AVAILABLE, ui32Size,
+                                   (void *)0);
     }
 
     return;
@@ -1844,9 +1695,9 @@ HIDTickHandler(void *pvInstance, unsigned long ulTimemS)
 //
 //! Initializes HID device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for HID device operation.
-//! \param psDevice points to a structure containing parameters customizing
+//! \param psHIDDevice points to a structure containing parameters customizing
 //! the operation of the HID device.
 //!
 //! An application wishing to offer a USB HID interface to a host system
@@ -1854,17 +1705,17 @@ HIDTickHandler(void *pvInstance, unsigned long ulTimemS)
 //! device to the USB bus.  This function performs all required USB
 //! initialization.
 //!
-//! On successful completion, this function will return the \e psDevice pointer
-//! passed to it.  This must be passed on all future calls from the application
-//! to the HID device class driver.
+//! On successful completion, this function will return the \e psHIDDevice
+//! pointer passed to it.  This must be passed on all future calls from the
+//! application to the HID device class driver.
 //!
 //! The USB HID device class API offers the application a report-based transmit
 //! interface for Input reports.  Output reports may be received via the
 //! control endpoint or via a dedicated Interrupt OUT endpoint.  If using the
 //! dedicated endpoint, report data is delivered to the application packet-by-
-//! packet.  If the application uses reports longer than 64 bytes and would
-//! rather receive full reports, it may use a USB buffer above the receive
-//! channel to allow full reports to be read.
+//! packet.  If the application uses reports longer than \b USBDHID_MAX_PACKET
+//! bytes and would rather receive full reports, it may use a USB buffer above
+//! the receive channel to allow full reports to be read.
 //!
 //! Transmit Operation:
 //!
@@ -1873,13 +1724,13 @@ HIDTickHandler(void *pvInstance, unsigned long ulTimemS)
 //! packets as are necessary to complete the transmission.
 //!
 //! Once a full Input report has been acknowledged by the USB host, a
-//! USB_EVENT_TX_COMPLETE event is sent to the application transmit callback to
-//! inform it that another report may be transmitted.
+//! \b USB_EVENT_TX_COMPLETE event is sent to the application transmit callback
+//! to inform it that another report may be transmitted.
 //!
 //! Receive Operation (when using a dedicated interrupt OUT endpoint):
 //!
 //! An incoming USB data packet will result in a call to the application
-//! callback with event USB_EVENT_RX_AVAILABLE.  The application must then
+//! callback with event \b USB_EVENT_RX_AVAILABLE.  The application must then
 //! call USBDHIDPacketRead(), passing a buffer capable of holding the received
 //! packet.  The size of the packet may be determined by calling function
 //! USBDHIDRxPacketAvailable() prior to reading the packet.
@@ -1888,165 +1739,200 @@ HIDTickHandler(void *pvInstance, unsigned long ulTimemS)
 //!
 //! If no dedicated OUT endpoint is used, Output and Feature reports are sent
 //! from the host using the control endpoint, endpoint zero.  When such a
-//! report is received, USBD_HID_EVENT_GET_REPORT_BUFFER is sent to the
+//! report is received, \b USBD_HID_EVENT_GET_REPORT_BUFFER is sent to the
 //! application which must respond with a buffer large enough to hold the
 //! report.  The device class driver will then copy the received report into
-//! the supplied buffer before sending USBD_HID_EVENT_SET_REPORT to indicate
+//! the supplied buffer before sending \b USBD_HID_EVENT_SET_REPORT to indicate
 //! that the report is now available.
 //!
 //! \note The application must not make any calls to the low level USB device
 //! interface if interacting with USB via the USB HID device class API.  Doing
 //! so will cause unpredictable (though almost certainly unpleasant) behavior.
 //!
-//! \return Returns NULL on failure or the \e psDevice pointer on success.
+//! \return Returns NULL on failure or the \e psHIDDevice pointer on success.
 //
 //*****************************************************************************
 void *
-USBDHIDInit(unsigned long ulIndex, const tUSBDHIDDevice *psDevice)
+USBDHIDInit(uint32_t ui32Index, tUSBDHIDDevice *psHIDDevice)
 {
+    tDeviceDescriptor *pi16DevDesc;
+
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateHIDData);
-    ASSERT(psDevice->pfnRxCallback);
-    ASSERT(psDevice->pfnTxCallback);
-    ASSERT(psDevice->ppClassDescriptors);
-    ASSERT(psDevice->psHIDDescriptor);
-    ASSERT((psDevice->ucNumInputReports == 0) || psDevice->psReportIdle);
+    ASSERT(ui32Index == 0);
+    ASSERT(psHIDDevice);
+    ASSERT(psHIDDevice->ppui8StringDescriptors);
+    ASSERT(psHIDDevice->pfnRxCallback);
+    ASSERT(psHIDDevice->pfnTxCallback);
+    ASSERT(psHIDDevice->ppui8ClassDescriptors);
+    ASSERT(psHIDDevice->psHIDDescriptor);
+    ASSERT((psHIDDevice->ui8NumInputReports == 0) || psHIDDevice->psReportIdle);
 
-    USBDHIDCompositeInit(ulIndex, psDevice);
+    USBDHIDCompositeInit(ui32Index, psHIDDevice, 0);
+
+    //
+    // Fix up the device descriptor with the client-supplied values.
+    //
+    pi16DevDesc = (tDeviceDescriptor *)psHIDDevice->sPrivateData.sDevInfo.pui8DeviceDescriptor;
+    pi16DevDesc->idVendor = psHIDDevice->ui16VID;
+    pi16DevDesc->idProduct = psHIDDevice->ui16PID;
 
     //
     // All is well so now pass the descriptors to the lower layer and put
     // the HID device on the bus.
     //
-    USBDCDInit(ulIndex, psDevice->psPrivateHIDData->psDevInfo);
+    USBDCDInit(ui32Index, &psHIDDevice->sPrivateData.sDevInfo,
+               (void *)psHIDDevice);
 
     //
     // Return the pointer to the instance indicating that everything went well.
     //
-    return((void *)psDevice);
+    return((void *)psHIDDevice);
 }
 
 //*****************************************************************************
 //
 //! Initializes HID device operation for a given USB controller.
 //!
-//! \param ulIndex is the index of the USB controller which is to be
+//! \param ui32Index is the index of the USB controller which is to be
 //! initialized for HID device operation.
-//! \param psDevice points to a structure containing parameters customizing
+//! \param psHIDDevice points to a structure containing parameters customizing
 //! the operation of the HID device.
+//! \param psCompEntry is the composite device entry to initialize when
+//! creating a composite device.
 //!
+//! USB HID device classes call this function to initialize the lower level
+//! HID interface in the USB controller.  If this HID device device is part of
+//! a composite device, then the \e psCompEntry should point to the composite
+//! device entry to initialize.  This is part of the array that is passed to
+//! the USBDCompositeInit() function.
 //!
-//! \return Returns NULL on failure or the \e psDevice pointer on success.
+//! \return Returns zero on failure or a non-zero instance value that should be
+//! used with the remaining USB HID APIs.
 //
 //*****************************************************************************
 void *
-USBDHIDCompositeInit(unsigned long ulIndex, const tUSBDHIDDevice *psDevice)
+USBDHIDCompositeInit(uint32_t ui32Index, tUSBDHIDDevice *psHIDDevice,
+                     tCompositeEntry *psCompEntry)
 {
     tHIDInstance *psInst;
-    tDeviceDescriptor *psDevDesc;
-    tInterfaceDescriptor *psDevIf;
+    tEndpointDescriptor *psEndpoint;
 
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
-    ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateHIDData);
-    ASSERT(psDevice->pfnRxCallback);
-    ASSERT(psDevice->pfnTxCallback);
-    ASSERT(psDevice->ppClassDescriptors);
-    ASSERT(psDevice->psHIDDescriptor);
-    ASSERT((psDevice->ucNumInputReports == 0) || psDevice->psReportIdle);
+    ASSERT(ui32Index == 0);
+    ASSERT(psHIDDevice);
+    ASSERT(psHIDDevice->ppsConfigDescriptor);
+    ASSERT(psHIDDevice->ppui8StringDescriptors);
+    ASSERT(psHIDDevice->pfnRxCallback);
+    ASSERT(psHIDDevice->pfnTxCallback);
+    ASSERT(psHIDDevice->ppui8ClassDescriptors);
+    ASSERT(psHIDDevice->psHIDDescriptor);
+    ASSERT((psHIDDevice->ui8NumInputReports == 0) || psHIDDevice->psReportIdle);
 
     //
     // Initialize the workspace in the passed instance structure.
     //
-    psInst = psDevice->psPrivateHIDData;
-    psInst->psConfDescriptor = (tConfigDescriptor *)g_pHIDDescriptor;
-    psInst->psDevInfo = &g_sHIDDeviceInfo;
-    psInst->ulUSBBase = USB0_BASE;
-    psInst->eHIDRxState = HID_STATE_UNCONFIGURED;
-    psInst->eHIDTxState = HID_STATE_UNCONFIGURED;
-    psInst->usDeferredOpFlags = 0;
+    psInst = &psHIDDevice->sPrivateData;
+
+    //
+    // Initialize the device information structure.
+    //
+    psInst->sDevInfo.psCallbacks = &g_sHIDHandlers;
+    psInst->sDevInfo.pui8DeviceDescriptor = g_pui8HIDDeviceDescriptor;
+    psInst->sDevInfo.ppsConfigDescriptors = psHIDDevice->ppsConfigDescriptor;
+    psInst->sDevInfo.ppui8StringDescriptors =
+                                        psHIDDevice->ppui8StringDescriptors;
+    psInst->sDevInfo.ui32NumStringDescriptors =
+                                        psHIDDevice->ui32NumStringDescriptors;
+
+    //
+    // Default the endpoints zero before looking for them in the configuration
+    // descriptor.
+    //
+    psInst->ui8Interface = 0;
+    psInst->ui8INEndpoint = 0;
+    psInst->ui8OUTEndpoint = 0;
+
+    //
+    // Get the first endpoint descriptor on interface 0.
+    //
+    psEndpoint =
+        USBDCDConfigGetInterfaceEndpoint(psHIDDevice->ppsConfigDescriptor[0],
+                                         psInst->ui8Interface, 0, 0);
+
+    if(psEndpoint)
+    {
+        if(psEndpoint->bEndpointAddress & 0x80)
+        {
+            psInst->ui8INEndpoint = IndexToUSBEP(psEndpoint->bEndpointAddress);
+        }
+        else
+        {
+            psInst->ui8OUTEndpoint = IndexToUSBEP(psEndpoint->bEndpointAddress);
+        }
+    }
+
+    //
+    // Get the second endpoint descriptor on interface 0.
+    //
+    psEndpoint =
+        USBDCDConfigGetInterfaceEndpoint(psHIDDevice->ppsConfigDescriptor[0],
+                                         psInst->ui8Interface, 0, 1);
+    if(psEndpoint)
+    {
+        if(psEndpoint->bEndpointAddress & 0x80)
+        {
+            psInst->ui8INEndpoint = IndexToUSBEP(psEndpoint->bEndpointAddress);
+        }
+        else
+        {
+            psInst->ui8OUTEndpoint = IndexToUSBEP(psEndpoint->bEndpointAddress);
+        }
+    }
+
+    //
+    // Must have at least an IN endpoint.
+    //
+    if(psInst->ui8INEndpoint == 0)
+    {
+        return((void *)0);
+    }
+
+    //
+    // Initialize the composite entry that is used by the composite device
+    // class.
+    //
+    if(psCompEntry != 0)
+    {
+        psCompEntry->psDevInfo = &psInst->sDevInfo;
+        psCompEntry->pvInstance = (void *)psHIDDevice;
+    }
+
+    psInst->ui32USBBase = USB0_BASE;
+    psInst->iHIDRxState = eHIDStateUnconfigured;
+    psInst->iHIDTxState = eHIDStateUnconfigured;
+    psInst->ui16DeferredOpFlags = 0;
     psInst->bConnected = false;
     psInst->bGetRequestPending = false;
     psInst->bSendInProgress = false;
-    psInst->usInReportIndex = 0;
-    psInst->usInReportSize = 0;
-    psInst->pucInReportData = (unsigned char *)0;
-    psInst->usOutReportSize = 0;
-    psInst->pucOutReportData = (unsigned char *)0;
+    psInst->ui16InReportIndex = 0;
+    psInst->ui16InReportSize = 0;
+    psInst->pui8InReportData = (uint8_t *)0;
+    psInst->ui16OutReportSize = 0;
+    psInst->pui8OutReportData = (uint8_t *)0;
 
     //
-    // Set the default endpoint and interface assignments.
+    // Initialize the device info structure for the HID device.
     //
-    psInst->ucINEndpoint = INT_IN_ENDPOINT;
-    psInst->ucOUTEndpoint = INT_OUT_ENDPOINT;
-    psInst->ucInterface = 0;
-
-    //
-    // Fix up the device descriptor with the client-supplied values.
-    //
-    psDevDesc = (tDeviceDescriptor *)psInst->psDevInfo->pDeviceDescriptor;
-    psDevDesc->idVendor = psDevice->usVID;
-    psDevDesc->idProduct = psDevice->usPID;
-
-    //
-    // Fix up the configuration descriptor with client-supplied values.
-    //
-    psInst->psConfDescriptor->bmAttributes = psDevice->ucPwrAttributes;
-    psInst->psConfDescriptor->bMaxPower =
-                        (unsigned char)(psDevice->usMaxPowermA / 2);
-
-    //
-    // Slot the client's HID descriptor into our standard configuration
-    // descriptor.
-    //
-    g_sHIDDescriptorSection.usSize = psDevice->psHIDDescriptor->bLength;
-    g_sHIDDescriptorSection.pucData =
-                                (unsigned char *)psDevice->psHIDDescriptor;
-
-    //
-    // Fix up the interface and endpoint descriptors depending upon client
-    // choices.
-    //
-    psDevIf = (tInterfaceDescriptor *)g_pHIDInterface;
-    psDevIf->bNumEndpoints = psDevice->bUseOutEndpoint ? 2 : 1;
-    psDevIf->bInterfaceSubClass = psDevice->ucSubclass;
-    psDevIf->bInterfaceProtocol = psDevice->ucProtocol;
-
-    //
-    // If necessary, remove the interrupt OUT endpoint from the configuration
-    // descriptor.
-    //
-    if(psDevice->bUseOutEndpoint == false)
-    {
-        g_sHIDConfigHeader.ucNumSections = (NUM_HID_SECTIONS - 1);
-    }
-    else
-    {
-        g_sHIDConfigHeader.ucNumSections = NUM_HID_SECTIONS;
-    }
-
-    //
-    // Plug in the client's string table to the device information
-    // structure.
-    //
-    psInst->psDevInfo->ppStringDescriptors = psDevice->ppStringDescriptors;
-    psInst->psDevInfo->ulNumStringDescriptors
-            = psDevice->ulNumStringDescriptors;
-    psInst->psDevInfo->pvInstance = (void *)psDevice;
+    USBDCDDeviceInfoInit(0, &psInst->sDevInfo);
 
     //
     // Initialize the input report idle timers if any input reports exist.
     //
-    ClearIdleTimers(psDevice);
+    ClearIdleTimers(psHIDDevice);
 
     //
     // Initialize the USB tick module, this will prevent it from being
@@ -2057,20 +1943,19 @@ USBDHIDCompositeInit(unsigned long ulIndex, const tUSBDHIDDevice *psDevice)
     //
     // Register our tick handler (this must be done after USBDCDInit).
     //
-    InternalUSBRegisterTickHandler(HIDTickHandler,
-                                   (void *)psDevice);
+    InternalUSBRegisterTickHandler(HIDTickHandler, (void *)psHIDDevice);
 
     //
     // Return the pointer to the instance indicating that everything went well.
     //
-    return((void *)psDevice);
+    return((void *)psHIDDevice);
 }
 
 //*****************************************************************************
 //
 //! Shuts down the HID device.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
 //!
 //! This function terminates HID operation for the instance supplied and
@@ -2079,32 +1964,30 @@ USBDHIDCompositeInit(unsigned long ulIndex, const tUSBDHIDDevice *psDevice)
 //! USBDCompositeTerm() function should be called for the full composite
 //! device.
 //!
-//! Following this call, the \e pvInstance instance should not me used in any
-//! other calls.
+//! Following this call, the \e pvHIDInstance instance should not me used in
+//! any other calls.
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBDHIDTerm(void *pvInstance)
+USBDHIDTerm(void *pvHIDInstance)
 {
     tHIDInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Get a pointer to our instance data.
     //
-    psInst = ((tUSBDHIDDevice *)pvInstance)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)pvHIDInstance)->sPrivateData;
 
     //
     // Terminate the requested instance.
     //
-    USBDCDTerm(USB_BASE_TO_INDEX(psInst->ulUSBBase));
+    USBDCDTerm(USBBaseToIndex(psInst->ui32USBBase));
 
-    psInst->ulUSBBase = 0;
-    psInst->psDevInfo = (tDeviceInfo *)0;
-    psInst->psConfDescriptor = (tConfigDescriptor *)0;
+    psInst->ui32USBBase = 0;
 }
 
 //*****************************************************************************
@@ -2112,7 +1995,7 @@ USBDHIDTerm(void *pvInstance)
 //! Sets the client-specific pointer parameter for the receive channel
 //! callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the receive channel callback function.
@@ -2122,7 +2005,7 @@ USBDHIDTerm(void *pvInstance)
 //! passed on USBDHIDInit().
 //!
 //! If a client wants to make runtime changes in the callback pointer, it must
-//! ensure that the pvInstance structure passed to USBDHIDInit() resides in
+//! ensure that the pvHIDInstance structure passed to USBDHIDInit() resides in
 //! RAM.  If this structure is in flash, callback data changes will not be
 //! possible.
 //!
@@ -2131,18 +2014,18 @@ USBDHIDTerm(void *pvInstance)
 //
 //*****************************************************************************
 void *
-USBDHIDSetRxCBData(void *pvInstance, void *pvCBData)
+USBDHIDSetRxCBData(void *pvHIDInstance, void *pvCBData)
 {
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Set the callback data for the receive channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDHIDDevice *)pvInstance)->pvRxCBData;
-    ((tUSBDHIDDevice *)pvInstance)->pvRxCBData = pvCBData;
+    pvOldValue = ((tUSBDHIDDevice *)pvHIDInstance)->pvRxCBData;
+    ((tUSBDHIDDevice *)pvHIDInstance)->pvRxCBData = pvCBData;
 
     //
     // Return the previous callback data value.
@@ -2154,7 +2037,7 @@ USBDHIDSetRxCBData(void *pvInstance, void *pvCBData)
 //
 //! Sets the client-specific data pointer for the transmit callback.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
 //! \param pvCBData is the pointer that client wishes to be provided on each
 //! event sent to the transmit channel callback function.
@@ -2164,7 +2047,7 @@ USBDHIDSetRxCBData(void *pvInstance, void *pvCBData)
 //! passed on USBDHIDInit().
 //!
 //! If a client wants to make runtime changes in the callback data, it must
-//! ensure that the pvInstance structure passed to USBDHIDInit() resides in
+//! ensure that the pvHIDInstance structure passed to USBDHIDInit() resides in
 //! RAM.  If this structure is in flash, callback data changes will not be
 //! possible.
 //!
@@ -2173,18 +2056,18 @@ USBDHIDSetRxCBData(void *pvInstance, void *pvCBData)
 //
 //*****************************************************************************
 void *
-USBDHIDSetTxCBData(void *pvInstance, void *pvCBData)
+USBDHIDSetTxCBData(void *pvHIDInstance, void *pvCBData)
 {
     void *pvOldValue;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Set the callback data for the transmit channel after remembering the
     // previous value.
     //
-    pvOldValue = ((tUSBDHIDDevice *)pvInstance)->pvTxCBData;
-    ((tUSBDHIDDevice *)pvInstance)->pvTxCBData = pvCBData;
+    pvOldValue = ((tUSBDHIDDevice *)pvHIDInstance)->pvTxCBData;
+    ((tUSBDHIDDevice *)pvHIDInstance)->pvTxCBData = pvCBData;
 
     //
     // Return the previous callback data value.
@@ -2197,10 +2080,10 @@ USBDHIDSetTxCBData(void *pvInstance, void *pvCBData)
 //! Transmits a HID device report to the USB host via the HID interrupt IN
 //! endpoint.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
-//! \param pcData points to the first byte of data which is to be transmitted.
-//! \param ulLength is the number of bytes of data to transmit.
+//! \param pi8Data points to the first byte of data which is to be transmitted.
+//! \param ui32Length is the number of bytes of data to transmit.
 //! \param bLast is ignored in this implementation.  This parameter is required
 //! to ensure compatibility with other device class drivers and USB buffers.
 //!
@@ -2213,7 +2096,7 @@ USBDHIDSetTxCBData(void *pvInstance, void *pvCBData)
 //! application transmit callback indicating that another report can now be
 //! transmitted.
 //!
-//! The caller must ensure that the data pointed to by pucData remains
+//! The caller must ensure that the data pointed to by \e pui8Data remains
 //! accessible and unaltered until the \b USB_EVENT_TX_COMPLETE is received.
 //!
 //! \return Returns the number of bytes actually scheduled for transmission.
@@ -2221,19 +2104,19 @@ USBDHIDSetTxCBData(void *pvInstance, void *pvCBData)
 //! indicate a failure.
 //
 //*****************************************************************************
-unsigned long
-USBDHIDReportWrite(void *pvInstance, unsigned char *pcData,
-                   unsigned long ulLength, tBoolean bLast)
+uint32_t
+USBDHIDReportWrite(void *pvHIDInstance, uint8_t *pi8Data, uint32_t ui32Length,
+                   bool bLast)
 {
     tHIDInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Get our instance data pointer
     //
-    psInst = ((tUSBDHIDDevice *)pvInstance)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)pvHIDInstance)->sPrivateData;
 
     //
     // Set a flag indicating that we are currently in the process of sending
@@ -2244,7 +2127,7 @@ USBDHIDReportWrite(void *pvInstance, unsigned char *pcData,
     //
     // Can we send the data provided?
     //
-    if(psInst->eHIDTxState != HID_STATE_IDLE)
+    if(psInst->iHIDTxState != eHIDStateIdle)
     {
         //
         // We are in the middle of sending another report.  Return 0 to
@@ -2258,24 +2141,24 @@ USBDHIDReportWrite(void *pvInstance, unsigned char *pcData,
     //
     // Clear the elapsed time since this report was last sent.
     //
-    if(ulLength)
+    if(ui32Length)
     {
-        ClearReportTimer(pvInstance, *pcData);
+        ClearReportTimer(pvHIDInstance, *pi8Data);
     }
 
     //
     // Keep track of the whereabouts of the report so that we can send it in
     // multiple packets if necessary.
     //
-    psInst->pucInReportData = pcData;
-    psInst->usInReportIndex = 0;
-    psInst->usInReportSize = ulLength;
+    psInst->pui8InReportData = pi8Data;
+    psInst->ui16InReportIndex = 0;
+    psInst->ui16InReportSize = ui32Length;
 
     //
     // Schedule transmission of the first packet of the report.
     //
-    psInst->eHIDTxState = HID_STATE_WAIT_DATA;
-    lRetcode = ScheduleReportTransmission(psInst);
+    psInst->iHIDTxState = eHIDStateWaitData;
+    i32Retcode = ScheduleReportTransmission(psInst);
 
     //
     // Clear the flag we use to indicate that we are in the midst of sending
@@ -2286,17 +2169,17 @@ USBDHIDReportWrite(void *pvInstance, unsigned char *pcData,
     //
     // Did an error occur while trying to send the data?
     //
-    if(lRetcode != -1)
+    if(i32Retcode != -1)
     {
         //
         // No - tell the caller we sent all the bytes provided.
         //
-        return(ulLength);
+        return(ui32Length);
     }
     else
     {
         //
-        // Yes - tell the caller we couldn't send the data.
+        // Yes - tell the caller we could not send the data.
         //
         return(0);
     }
@@ -2307,15 +2190,15 @@ USBDHIDReportWrite(void *pvInstance, unsigned char *pcData,
 //! Reads a packet of data received from the USB host via the interrupt OUT
 //! endpoint (if in use).
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
-//! \param pcData points to a buffer into which the received data will be
+//! \param pi8Data points to a buffer into which the received data will be
 //! written.
-//! \param ulLength is the size of the buffer pointed to by pcData.
+//! \param ui32Length is the size of the buffer pointed to by pi8Data.
 //! \param bLast indicates whether the client will make a further call to
 //! read additional data from the packet.
 //!
-//! This function reads up to ulLength bytes of data received from the USB
+//! This function reads up to \e ui32Length bytes of data received from the USB
 //! host into the supplied application buffer.  If the driver detects that the
 //! entire packet has been read, it is acknowledged to the host.
 //!
@@ -2326,76 +2209,76 @@ USBDHIDReportWrite(void *pvInstance, unsigned char *pcData,
 //! \return Returns the number of bytes of data read.
 //
 //*****************************************************************************
-unsigned long
-USBDHIDPacketRead(void *pvInstance, unsigned char *pcData,
-                  unsigned long ulLength, tBoolean bLast)
+uint32_t
+USBDHIDPacketRead(void *pvHIDInstance, uint8_t *pi8Data, uint32_t ui32Length,
+                  bool bLast)
 {
-    unsigned long ulEPStatus, ulCount, ulPkt;
+    uint32_t ui32EPStatus, ui32Count, ui32Pkt;
     tHIDInstance *psInst;
-    long lRetcode;
+    int32_t i32Retcode;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Get our instance data pointer
     //
-    psInst = ((tUSBDHIDDevice *)pvInstance)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)pvHIDInstance)->sPrivateData;
 
     //
     // Does the relevant endpoint FIFO have a packet waiting for us?
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucOUTEndpoint);
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8OUTEndpoint);
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // How many bytes are available for us to receive?
         //
-        ulPkt = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                         psInst->ucOUTEndpoint);
+        ui32Pkt = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                           psInst->ui8OUTEndpoint);
 
         //
         // Get as much data as we can.
         //
-        ulCount = ulLength;
-        lRetcode = MAP_USBEndpointDataGet(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint,
-                                          pcData, &ulCount);
+        ui32Count = ui32Length;
+        i32Retcode = MAP_USBEndpointDataGet(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint,
+                                            pi8Data, &ui32Count);
 
         //
         // Did we read the last of the packet data?
         //
-        if(ulCount == ulPkt)
+        if(ui32Count == ui32Pkt)
         {
             //
             // Clear the endpoint status so that we know no packet is
             // waiting.
             //
-            MAP_USBDevEndpointStatusClear(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint,
-                                          ulEPStatus);
+            MAP_USBDevEndpointStatusClear(psInst->ui32USBBase,
+                                          psInst->ui8OUTEndpoint,
+                                          ui32EPStatus);
 
             //
             // Acknowledge the data, thus freeing the host to send the
             // next packet.
             //
-            MAP_USBDevEndpointDataAck(psInst->ulUSBBase, psInst->ucOUTEndpoint,
-                                      true);
+            MAP_USBDevEndpointDataAck(psInst->ui32USBBase,
+                                      psInst->ui8OUTEndpoint, true);
 
             //
             // Clear the flag we set to indicate that a packet read is
             // pending.
             //
-            SetDeferredOpFlag(&psInst->usDeferredOpFlags,
+            SetDeferredOpFlag(&psInst->ui16DeferredOpFlags,
                               HID_DO_PACKET_RX, false);
         }
 
         //
         // If all went well, tell the caller how many bytes they got.
         //
-        if(lRetcode != -1)
+        if(i32Retcode != -1)
         {
-            return(ulCount);
+            return(ui32Count);
         }
     }
 
@@ -2410,39 +2293,39 @@ USBDHIDPacketRead(void *pvInstance, unsigned char *pcData,
 //
 //! Returns the number of free bytes in the transmit buffer.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
 //!
 //! This function indicates to the caller whether or not it is safe to send a
 //! new report using a call to USBDHIDReportWrite().  The value returned will
-//! be the maximum USB packet size (64) if no transmission is currently
-//! outstanding or 0 if a transmission is in progress.  Since the function
-//! USBDHIDReportWrite() can accept full reports longer than a single USB
-//! packet, the caller should be aware that the returned value from this
+//! be the maximum USB packet size (\b USBDHID_MAX_PACKET) if no transmission
+//! is currently outstanding or 0 if a transmission is in progress.  Since the
+//! function USBDHIDReportWrite() can accept full reports longer than a single
+//! USB packet, the caller should be aware that the returned value from this
 //! class driver, unlike others, does not indicate the maximum size of report
 //! that can be written but is merely an indication that another report can be
 //! written.
 //!
-//! \return Returns 0 if an outgoing report is still being transmitted or 64
-//! if no transmission is currently in progress.
+//! \return Returns 0 if an outgoing report is still being transmitted or
+//! \b USBDHID_MAX_PACKET if no transmission is currently in progress.
 //
 //*****************************************************************************
-unsigned long
-USBDHIDTxPacketAvailable(void *pvInstance)
+uint32_t
+USBDHIDTxPacketAvailable(void *pvHIDInstance)
 {
     tHIDInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Get our instance data pointer.
     //
-    psInst = ((tUSBDHIDDevice *)pvInstance)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)pvHIDInstance)->sPrivateData;
 
     //
     // Do we have a packet transmission currently ongoing?
     //
-    if(psInst->eHIDTxState != HID_STATE_IDLE)
+    if(psInst->iHIDTxState != eHIDStateIdle)
     {
         //
         // We are not ready to receive a new packet so return 0.
@@ -2455,7 +2338,7 @@ USBDHIDTxPacketAvailable(void *pvInstance)
         // We can receive a packet so return the max packet size for the
         // relevant endpoint.
         //
-        return(INT_IN_EP_MAX_SIZE);
+        return(USBDHID_MAX_PACKET);
     }
 }
 
@@ -2464,7 +2347,7 @@ USBDHIDTxPacketAvailable(void *pvInstance)
 //! Determines whether a packet is available and, if so, the size of the
 //! buffer required to read it.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
+//! \param pvHIDInstance is the pointer to the device instance structure as
 //! returned by USBDHIDInit().
 //!
 //! This function may be used to determine if a received packet remains to be
@@ -2475,34 +2358,33 @@ USBDHIDTxPacketAvailable(void *pvInstance)
 //! size of the packet if a packet is waiting to be read.
 //
 //*****************************************************************************
-unsigned long
-USBDHIDRxPacketAvailable(void *pvInstance)
+uint32_t
+USBDHIDRxPacketAvailable(void *pvHIDInstance)
 {
-    unsigned long ulEPStatus;
-    unsigned long ulSize;
+    uint32_t ui32EPStatus, ui32Size;
     tHIDInstance *psInst;
 
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Get our instance data pointer
     //
-    psInst = ((tUSBDHIDDevice *)pvInstance)->psPrivateHIDData;
+    psInst = &((tUSBDHIDDevice *)pvHIDInstance)->sPrivateData;
 
     //
     // Does the relevant endpoint FIFO have a packet waiting for us?
     //
-    ulEPStatus = MAP_USBEndpointStatus(psInst->ulUSBBase,
-                                       psInst->ucOUTEndpoint);
-    if(ulEPStatus & USB_DEV_RX_PKT_RDY)
+    ui32EPStatus = MAP_USBEndpointStatus(psInst->ui32USBBase,
+                                         psInst->ui8OUTEndpoint);
+    if(ui32EPStatus & USB_DEV_RX_PKT_RDY)
     {
         //
         // Yes - a packet is waiting.  How big is it?
         //
-        ulSize = MAP_USBEndpointDataAvail(psInst->ulUSBBase,
-                                          psInst->ucOUTEndpoint);
+        ui32Size = MAP_USBEndpointDataAvail(psInst->ui32USBBase,
+                                            psInst->ui8OUTEndpoint);
 
-        return(ulSize);
+        return(ui32Size);
     }
     else
     {
@@ -2517,9 +2399,9 @@ USBDHIDRxPacketAvailable(void *pvInstance)
 //
 //! Reports the device power status (bus- or self-powered) to the USB library.
 //!
-//! \param pvInstance is the pointer to the HID device instance structure.
-//! \param ucPower indicates the current power status, either \b
-//! USB_STATUS_SELF_PWR or \b USB_STATUS_BUS_PWR.
+//! \param pvHIDInstance is the pointer to the HID device instance structure.
+//! \param ui8Power indicates the current power status, either
+//! \b USB_STATUS_SELF_PWR or \b USB_STATUS_BUS_PWR.
 //!
 //! Applications which support switching between bus- or self-powered
 //! operation should call this function whenever the power source changes
@@ -2531,21 +2413,21 @@ USBDHIDRxPacketAvailable(void *pvInstance)
 //
 //*****************************************************************************
 void
-USBDHIDPowerStatusSet(void *pvInstance, unsigned char ucPower)
+USBDHIDPowerStatusSet(void *pvHIDInstance, uint8_t ui8Power)
 {
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Pass the request through to the lower layer.
     //
-    USBDCDPowerStatusSet(0, ucPower);
+    USBDCDPowerStatusSet(0, ui8Power);
 }
 
 //*****************************************************************************
 //
 //! Requests a remote wake up to resume communication when in suspended state.
 //!
-//! \param pvInstance is the pointer to the HID device instance structure.
+//! \param pvHIDInstance is the pointer to the HID device instance structure.
 //!
 //! When the bus is suspended, an application which supports remote wake up
 //! (advertised to the host via the configuration descriptor) may call this
@@ -2560,10 +2442,10 @@ USBDHIDPowerStatusSet(void *pvInstance, unsigned char ucPower)
 //! signaling is currently ongoing following a previous call to this function.
 //
 //*****************************************************************************
-tBoolean
-USBDHIDRemoteWakeupRequest(void *pvInstance)
+bool
+USBDHIDRemoteWakeupRequest(void *pvHIDInstance)
 {
-    ASSERT(pvInstance);
+    ASSERT(pvHIDInstance);
 
     //
     // Pass the request through to the lower layer.

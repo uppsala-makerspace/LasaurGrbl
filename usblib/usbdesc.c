@@ -2,7 +2,7 @@
 //
 // usbdesc.c - USB descriptor parsing functions.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "usblib/usblib.h"
 
@@ -64,10 +66,10 @@
 //!
 //! \param psDesc points to the first byte of a block of standard USB
 //! descriptors.
-//! \param ulSize is the number of bytes of descriptor data found at pointer
+//! \param ui32Size is the number of bytes of descriptor data found at pointer
 //! \e psDesc.
-//! \param ulType identifies the type of descriptor that is to be counted.  If
-//! the value is \b USB_DESC_ANY, the function returns the total number of
+//! \param ui32Type identifies the type of descriptor that is to be counted.
+//! If the value is \b USB_DESC_ANY, the function returns the total number of
 //! descriptors regardless of type.
 //!
 //! This function can be used to count the number of descriptors of a
@@ -80,47 +82,47 @@
 //! data.
 //
 //*****************************************************************************
-unsigned long
-USBDescGetNum(tDescriptorHeader *psDesc,  unsigned long ulSize,
-              unsigned long ulType)
+uint32_t
+USBDescGetNum(tDescriptorHeader *psDesc,  uint32_t ui32Size,
+              uint32_t ui32Type)
 {
     tDescriptorHeader *psDescCheck;
-    unsigned long ulTotLength;
-    unsigned long ulCount;
+    uint32_t ui32TotLength;
+    uint32_t ui32Count;
 
     //
     // Set up for our descriptor counting loop.
     //
     psDescCheck = psDesc;
-    ulTotLength = 0;
-    ulCount = 0;
+    ui32TotLength = 0;
+    ui32Count = 0;
 
     //
     // Keep looking through the supplied data until we reach the end.
     //
-    while(ulTotLength < ulSize)
+    while(ui32TotLength < ui32Size)
     {
         //
         // Does this descriptor match the type passed (if a specific type
         // has been specified)?
         //
-        if((ulType == USB_DESC_ANY) ||
-           (psDescCheck->bDescriptorType == (unsigned char)(ulType & 0xFF)))
+        if((ui32Type == USB_DESC_ANY) ||
+           (psDescCheck->bDescriptorType == (uint8_t)(ui32Type & 0xFF)))
         {
-            ulCount++;
+            ui32Count++;
         }
 
         //
         // Move on to the next descriptor.
         //
-        ulTotLength += (unsigned long)psDescCheck->bLength;
+        ui32TotLength += (uint32_t)psDescCheck->bLength;
         psDescCheck = NEXT_USB_DESCRIPTOR(psDescCheck);
     }
 
     //
     // Return the descriptor count to the caller.
     //
-    return(ulCount);
+    return(ui32Count);
 }
 
 //*****************************************************************************
@@ -130,54 +132,54 @@ USBDescGetNum(tDescriptorHeader *psDesc,  unsigned long ulSize,
 //!
 //! \param psDesc points to the first byte of a block of standard USB
 //! descriptors.
-//! \param ulSize is the number of bytes of descriptor data found at pointer
+//! \param ui32Size is the number of bytes of descriptor data found at pointer
 //! \e psDesc.
-//! \param ulType identifies the type of descriptor that is to be found.  If
+//! \param ui32Type identifies the type of descriptor that is to be found.  If
 //! the value is \b USB_DESC_ANY, the function returns a pointer to the n-th
 //! descriptor regardless of type.
-//! \param ulIndex is the zero based index of the descriptor whose pointer is
-//! to be returned.  For example, passing value 1 in \e ulIndex returns the
+//! \param ui32Index is the zero based index of the descriptor whose pointer is
+//! to be returned.  For example, passing value 1 in \e ui32Index returns the
 //! second matching descriptor.
 //!
 //! Return a pointer to the n-th descriptor of a particular type found in the
-//! block of \e ulSize bytes starting at \e psDesc.
+//! block of \e ui32Size bytes starting at \e psDesc.
 //!
 //! \return Returns a pointer to the header of the required descriptor if
 //! found or NULL otherwise.
 //
 //*****************************************************************************
 tDescriptorHeader *
-USBDescGet(tDescriptorHeader *psDesc,  unsigned long ulSize,
-           unsigned long ulType, unsigned long ulIndex)
+USBDescGet(tDescriptorHeader *psDesc,  uint32_t ui32Size,
+           uint32_t ui32Type, uint32_t ui32Index)
 {
     tDescriptorHeader *psDescCheck;
-    unsigned long ulTotLength;
-    unsigned long ulCount;
+    uint32_t ui32TotLength;
+    uint32_t ui32Count;
 
     //
     // Set up for our descriptor counting loop.
     //
     psDescCheck = psDesc;
-    ulTotLength = 0;
-    ulCount = 0;
+    ui32TotLength = 0;
+    ui32Count = 0;
 
     //
     // Keep looking through the supplied data until we reach the end.
     //
-    while(ulTotLength < ulSize)
+    while(ui32TotLength < ui32Size)
     {
         //
         // Does this descriptor match the type passed (if a specific type
         // has been specified)?
         //
-        if((ulType == USB_DESC_ANY) ||
-           (psDescCheck->bDescriptorType == (unsigned char)(ulType & 0xFF)))
+        if((ui32Type == USB_DESC_ANY) ||
+           (psDescCheck->bDescriptorType == (uint8_t)(ui32Type & 0xFF)))
         {
             //
             // We found a matching descriptor.  If our count matches the
             // supplied index, we are done so return the pointer.
             //
-            if(ulCount == ulIndex)
+            if(ui32Count == ui32Index)
             {
                 return(psDescCheck);
             }
@@ -186,13 +188,13 @@ USBDescGet(tDescriptorHeader *psDesc,  unsigned long ulSize,
             // We have not found enough descriptors yet to satisfy the supplied
             // index so increment our count and continue.
             //
-            ulCount++;
+            ui32Count++;
         }
 
         //
         // Move on to the next descriptor.
         //
-        ulTotLength += (unsigned long)psDescCheck->bLength;
+        ui32TotLength += (uint32_t)psDescCheck->bLength;
         psDescCheck = NEXT_USB_DESCRIPTOR(psDescCheck);
     }
 
@@ -210,7 +212,7 @@ USBDescGet(tDescriptorHeader *psDesc,  unsigned long ulSize,
 //!
 //! \param psConfig points to the first byte of a standard USB configuration
 //! descriptor.
-//! \param ucInterfaceNumber is the interface number for which the number of
+//! \param ui8InterfaceNumber is the interface number for which the number of
 //! alternate configurations is to be counted.
 //!
 //! This function can be used to count the number of alternate settings for a
@@ -221,50 +223,50 @@ USBDescGet(tDescriptorHeader *psDesc,  unsigned long ulSize,
 //! descriptor.
 //
 //*****************************************************************************
-unsigned long
+uint32_t
 USBDescGetNumAlternateInterfaces(tConfigDescriptor *psConfig,
-                                 unsigned char ucInterfaceNumber)
+                                 uint8_t ui8InterfaceNumber)
 {
     tDescriptorHeader *psDescCheck;
-    unsigned long ulTotLength;
-    unsigned long ulCount;
+    uint32_t ui32TotLength;
+    uint32_t ui32Count;
 
     //
     // Set up for our descriptor counting loop.
     //
     psDescCheck = (tDescriptorHeader *)psConfig;
-    ulTotLength = 0;
-    ulCount = 0;
+    ui32TotLength = 0;
+    ui32Count = 0;
 
     //
     // Keep looking through the supplied data until we reach the end.
     //
-    while(ulTotLength < (unsigned long)psConfig->wTotalLength)
+    while(ui32TotLength < (uint32_t)psConfig->wTotalLength)
     {
         //
         // Is this an interface descriptor with the required interface number?
         //
         if((psDescCheck->bDescriptorType == USB_DTYPE_INTERFACE) &&
             (((tInterfaceDescriptor *)psDescCheck)->bInterfaceNumber ==
-             ucInterfaceNumber))
+             ui8InterfaceNumber))
         {
             //
             // Yes - increment our count.
             //
-            ulCount++;
+            ui32Count++;
         }
 
         //
         // Move on to the next descriptor.
         //
-        ulTotLength += (unsigned long)psDescCheck->bLength;
+        ui32TotLength += (uint32_t)psDescCheck->bLength;
         psDescCheck = NEXT_USB_DESCRIPTOR(psDescCheck);
     }
 
     //
     // Return the descriptor count to the caller.
     //
-    return(ulCount);
+    return(ui32Count);
 }
 
 //*****************************************************************************
@@ -274,9 +276,9 @@ USBDescGetNumAlternateInterfaces(tConfigDescriptor *psConfig,
 //!
 //! \param psConfig points to the first byte of a standard USB configuration
 //! descriptor.
-//! \param ucInterfaceNumber is the interface number of the descriptor that is
+//! \param ui8InterfaceNumber is the interface number of the descriptor that is
 //! being queried.
-//! \param ulIndex is the zero based index of the descriptor to return.
+//! \param ui32Index is the zero based index of the descriptor to return.
 //!
 //! This function returns a pointer to the n-th interface descriptor in the
 //! supplied configuration which has the requested interface number.  It may be
@@ -289,24 +291,24 @@ USBDescGetNumAlternateInterfaces(tConfigDescriptor *psConfig,
 //*****************************************************************************
 static tInterfaceDescriptor *
 USBDescGetAlternateInterface(tConfigDescriptor *psConfig,
-                             unsigned char ucInterfaceNumber,
-                             unsigned long ulIndex)
+                             uint8_t ui8InterfaceNumber,
+                             uint32_t ui32Index)
 {
     tDescriptorHeader *psDescCheck;
-    unsigned long ulTotLength;
-    unsigned long ulCount;
+    uint32_t ui32TotLength;
+    uint32_t ui32Count;
 
     //
     // Set up for our descriptor counting loop.
     //
     psDescCheck = (tDescriptorHeader *)psConfig;
-    ulTotLength = 0;
-    ulCount = 0;
+    ui32TotLength = 0;
+    ui32Count = 0;
 
     //
     // Keep looking through the supplied data until we reach the end.
     //
-    while(ulTotLength < (unsigned long)psConfig->wTotalLength)
+    while(ui32TotLength < (uint32_t)psConfig->wTotalLength)
     {
         //
         // Does this descriptor match the type passed (if a specific type
@@ -314,14 +316,14 @@ USBDescGetAlternateInterface(tConfigDescriptor *psConfig,
         //
         if((psDescCheck->bDescriptorType == USB_DTYPE_INTERFACE) &&
             (((tInterfaceDescriptor *)psDescCheck)->bInterfaceNumber ==
-             ucInterfaceNumber))
+             ui8InterfaceNumber))
         {
             //
-            // This is an interface descriptor for interface ucInterfaceNumber.
-            // Determine if this is the n-th one we have found and, if so,
-            // return its pointer.
+            // This is an interface descriptor for interface
+            // ui8InterfaceNumber.  Determine if this is the n-th one we have
+            // found and, if so, return its pointer.
             //
-            if(ulCount == ulIndex)
+            if(ui32Count == ui32Index)
             {
                 //
                 // Found it - return the pointer.
@@ -334,13 +336,13 @@ USBDescGetAlternateInterface(tConfigDescriptor *psConfig,
             // to look for another since we have not yet reached the n-th
             // match.
             //
-            ulCount++;
+            ui32Count++;
         }
 
         //
         // Move on to the next descriptor.
         //
-        ulTotLength += (unsigned long)psDescCheck->bLength;
+        ui32TotLength += (uint32_t)psDescCheck->bLength;
         psDescCheck = NEXT_USB_DESCRIPTOR(psDescCheck);
     }
 
@@ -358,15 +360,15 @@ USBDescGetAlternateInterface(tConfigDescriptor *psConfig,
 //!
 //! \param psConfig points to the first byte of a standard USB configuration
 //! descriptor.
-//! \param ulIndex is the zero based index of the interface that is to be
-//! found.  If ulAlt is set to a value other than \b USB_DESC_ANY, this will be
-//! equivalent to the interface number being searched for.
-//! \param ulAlt is the alternate setting number which is to be
+//! \param ui32Index is the zero based index of the interface that is to be
+//! found.  If \e ui32Alt is set to a value other than \b USB_DESC_ANY, this
+//! will be equivalent to the interface number being searched for.
+//! \param ui32Alt is the alternate setting number which is to be
 //! searched for.  If this value is \b USB_DESC_ANY, the alternate setting
 //! is ignored and all interface descriptors are considered in the search.
 //!
 //! Return a pointer to the n-th interface descriptor found in the supplied
-//! configuration descriptor.  If \e ulAlt is not \b USB_DESC_ANY, only
+//! configuration descriptor.  If \e ui32Alt is not \b USB_DESC_ANY, only
 //! interface descriptors which are part of the supplied alternate setting are
 //! considered in the search otherwise all interface descriptors are
 //! considered.
@@ -374,43 +376,43 @@ USBDescGetAlternateInterface(tConfigDescriptor *psConfig,
 //! Note that, although alternate settings can be applied on an interface-by-
 //! interface basis, the number of interfaces offered is fixed for a given
 //! config descriptor.  Hence, this function will correctly find the unique
-//! interface descriptor for that interface's alternate setting number ulAlt
-//! if ulIndex is set to the required interface number and ulAlt is set to a
-//! valid alternate setting number for that interface.
+//! interface descriptor for that interface's alternate setting number
+//! \e ui32Alt if \e ui32Index is set to the required interface number and
+//! \e ui32Alt is set to a valid alternate setting number for that interface.
 //!
 //! \return Returns a pointer to the required interface descriptor if
 //! found or NULL otherwise.
 //
 //*****************************************************************************
 tInterfaceDescriptor *
-USBDescGetInterface(tConfigDescriptor *psConfig, unsigned long ulIndex,
-                    unsigned long ulAlt)
+USBDescGetInterface(tConfigDescriptor *psConfig, uint32_t ui32Index,
+                    uint32_t ui32Alt)
 {
     //
     // If we are being told to ignore the alternate configuration, this boils
     // down to a very simple query.
     //
-    if(ulAlt == USB_DESC_ANY)
+    if(ui32Alt == USB_DESC_ANY)
     {
         //
-        // Return the ulIndex-th interface descriptor we find in the
+        // Return the ui32Index-th interface descriptor we find in the
         // configuration descriptor.
         //
         return((tInterfaceDescriptor *)USBDescGet(
                           (tDescriptorHeader *)psConfig,
-                          (unsigned long)psConfig->wTotalLength,
-                          USB_DTYPE_INTERFACE, ulIndex));
+                          (uint32_t)psConfig->wTotalLength,
+                          USB_DTYPE_INTERFACE, ui32Index));
     }
     else
     {
         //
         // In this case, a specific alternate setting number is required.
         // Given that interface numbers are zero based indices, we can
-        // pass the supplied ulIndex parameter directly as the interface
+        // pass the supplied ui32Index parameter directly as the interface
         // number to USBDescGetAlternateInterface to retrieve the requested
         // interface descriptor pointer.
         //
-        return(USBDescGetAlternateInterface(psConfig, ulIndex, ulAlt));
+        return(USBDescGetAlternateInterface(psConfig, ui32Index, ui32Alt));
     }
 }
 
@@ -421,16 +423,16 @@ USBDescGetInterface(tConfigDescriptor *psConfig, unsigned long ulIndex,
 //!
 //! \param psInterface points to the first byte of a standard USB interface
 //! descriptor.
-//! \param ulIndex is the zero based index of the endpoint that is to be
+//! \param ui32Index is the zero based index of the endpoint that is to be
 //! found.
-//! \param ulSize contains the maximum number of bytes that the function may
+//! \param ui32Size contains the maximum number of bytes that the function may
 //! search beyond \e psInterface while looking for the requested endpoint
 //! descriptor.
 //!
 //! Return a pointer to the n-th endpoint descriptor found in the supplied
-//! interface descriptor.  If the \e ulIndex parameter is invalid (greater
+//! interface descriptor.  If the \e ui32Index parameter is invalid (greater
 //! than or equal to the bNumEndpoints field of the interface descriptor) or
-//! the endpoint cannot be found within \e ulSize bytes of the interface
+//! the endpoint cannot be found within \e ui32Size bytes of the interface
 //! descriptor pointer, the function will return NULL.
 //!
 //! Note that, although the USB 2.0 specification states that endpoint
@@ -438,8 +440,8 @@ USBDescGetInterface(tConfigDescriptor *psConfig, unsigned long ulIndex,
 //! also states that device specific descriptors should follow any standard
 //! descriptor that they relate to.  As a result, we cannot assume that each
 //! interface descriptor will be followed by nothing but an ordered list of
-//! its own endpoints and, hence, the function needs to be provided ulSize to
-//! limit the search range.
+//! its own endpoints and, hence, the function needs to be provided \e ui32Size
+//! to limit the search range.
 //!
 //! \return Returns a pointer to the requested endpoint descriptor if
 //! found or NULL otherwise.
@@ -447,12 +449,12 @@ USBDescGetInterface(tConfigDescriptor *psConfig, unsigned long ulIndex,
 //*****************************************************************************
 tEndpointDescriptor *
 USBDescGetInterfaceEndpoint(tInterfaceDescriptor *psInterface,
-                            unsigned long ulIndex, unsigned long ulSize)
+                            uint32_t ui32Index, uint32_t ui32Size)
 {
     //
     // Is the index passed valid?
     //
-    if(ulIndex >= psInterface->bNumEndpoints)
+    if(ui32Index >= psInterface->bNumEndpoints)
     {
         //
         // It's out of bounds so return a NULL.
@@ -466,7 +468,7 @@ USBDescGetInterfaceEndpoint(tInterfaceDescriptor *psInterface,
         //
         return((tEndpointDescriptor *)USBDescGet(
                          (tDescriptorHeader *)psInterface,
-                          ulSize, USB_DTYPE_ENDPOINT, ulIndex));
+                          ui32Size, USB_DTYPE_ENDPOINT, ui32Index));
     }
 }
 

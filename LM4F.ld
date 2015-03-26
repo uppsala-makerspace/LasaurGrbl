@@ -6,13 +6,12 @@ This is a minimal linkerscript that should be easy to port to new microcontrolle
 At this point it supports only C and will lead to weird behavior when used for C++.
 */
 
-ENTRY(rst_handler)
+ENTRY(ResetISR)
 
 MEMORY
 { 
   FLASH (rx) : ORIGIN = 0x0000000, LENGTH = 0x00040000
-  RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 0x00007C00
-  /*RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 0x00008000*/
+  RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 0x00008000
 }
 
 _estack = 0x20008000; /* Upper stack boundary */

@@ -2,7 +2,7 @@
 //
 // usbmode.c - Functions related to dual mode USB device/host operation.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,13 +18,16 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
+#include "inc/hw_sysctl.h"
 #include "inc/hw_usb.h"
 #include "driverlib/debug.h"
 #include "driverlib/interrupt.h"
@@ -34,8 +37,10 @@
 #include "driverlib/usb.h"
 #include "driverlib/rtos_bindings.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/host/usbhost.h"
+#include "usblib/host/usbhostpriv.h"
 #include "usblib/usblibpriv.h"
 
 //*****************************************************************************
@@ -60,14 +65,14 @@
 // requested.
 //
 //*****************************************************************************
-volatile tUSBMode g_eUSBMode = USB_MODE_NONE;
+volatile tUSBMode g_iUSBMode = eUSBModeNone;
 
 //*****************************************************************************
 //
 // The default and the current polling rate for the USB OTG library.
 //
 //*****************************************************************************
-volatile unsigned long g_ulPollRate;
+volatile uint32_t g_ui32PollRate;
 
 //*****************************************************************************
 //
@@ -75,7 +80,7 @@ volatile unsigned long g_ulPollRate;
 // connection.
 //
 //*****************************************************************************
-volatile unsigned long g_ulWaitTicks = 0;
+volatile uint32_t g_ui32WaitTicks = 0;
 
 //*****************************************************************************
 //
@@ -89,32 +94,32 @@ typedef enum
     //
     // No checking is currently pending.
     //
-    USB_OTG_MODE_IDLE,
+    eUSBOTGModeIdle,
 
     //
     // Waiting on ID mode detection.
     //
-    USB_OTG_MODE_WAITID,
+    eUSBOTGModeWaitID,
 
     //
     // Waiting for next poll interval.
     //
-    USB_OTG_MODE_WAIT,
+    eUSBOTGModeWait,
 
     //
     // Now in B-side wait for connect.
     //
-    USB_OTG_MODE_B_WAITCON,
+    eUSBOTGModeBWaitCon,
 
     //
     // Now in A-side device mode.
     //
-    USB_OTG_MODE_B_DEVICE,
+    eUSBOTGModeBDevice,
 
     //
     // Now in A-side host mode.
     //
-    USB_OTG_MODE_A_HOST,
+    eUSBOTGModeAHost,
 }
 tUSBOTGState;
 
@@ -126,9 +131,9 @@ volatile tUSBOTGState g_eOTGModeState;
 // device mode if the user has requested Dual mode operation.
 //
 //*****************************************************************************
-static volatile tUSBMode g_eDualMode = USB_MODE_NONE;
+static volatile tUSBMode g_iDualMode = eUSBModeNone;
 
-static void USBOTGRemovePower(unsigned long ulIndex);
+static void USBOTGRemovePower(uint32_t ui32Index);
 
 //*****************************************************************************
 //
@@ -143,24 +148,24 @@ static tUSBModeCallback g_pfnUSBModeCallback;
 // This function is used to handle switching between host, device and
 // unconfigured modes.
 //
-// /param eUSBMode is one of USB_MODE_HOST, USB_MODE_DEVICE, or USB_MODE_NONE.
+// \param iUSBMode is one of eUSBModeHost, eUSBModeDevice, or eUSBModeNone.
 //
-// Based on the current state held in g_eDualMode variable this function will
+// Based on the current state held in g_iDualMode variable this function will
 // handle the transition of the mode of operation in OTG mode and calling
 // the callback function if it is present.
 //
-// /return None.
+// \return None.
 //
 //*****************************************************************************
 static void
-USBOTGSetMode(tUSBMode eUSBMode)
+USBOTGSetMode(tUSBMode iUSBMode)
 {
-    if((g_eDualMode != eUSBMode) || (g_eDualMode == USB_MODE_NONE))
+    if((g_iDualMode != iUSBMode) || (g_iDualMode == eUSBModeNone))
     {
         //
         // If going from host mode to unconfigured mode then remove power.
         //
-        if((g_eDualMode == USB_MODE_HOST) && (eUSBMode == USB_MODE_NONE))
+        if((g_iDualMode == eUSBModeHost) && (iUSBMode == eUSBModeNone))
         {
             //
             // Take the steps to remove power in the of host mode OTG.
@@ -172,7 +177,7 @@ USBOTGSetMode(tUSBMode eUSBMode)
         // If going from device mode to unconfigured mode then end the current
         // session.
         //
-        if((g_eDualMode == USB_MODE_DEVICE) && (eUSBMode == USB_MODE_NONE))
+        if((g_iDualMode == eUSBModeDevice) && (iUSBMode == eUSBModeNone))
         {
             //
             // End the current session.
@@ -181,28 +186,28 @@ USBOTGSetMode(tUSBMode eUSBMode)
         }
 
         //
-        // Reset the delay whenever returning to USB_MODE_NONE.
+        // Reset the delay whenever returning to eUSBModeNone.
         //
-        if(eUSBMode == USB_MODE_NONE)
+        if(iUSBMode == eUSBModeNone)
         {
-            g_ulWaitTicks = g_ulPollRate;
+            g_ui32WaitTicks = g_ui32PollRate;
         }
 
         //
         // Do we have a mode change callback installed?
         //
-        if((g_pfnUSBModeCallback) && (g_eDualMode != eUSBMode))
+        if((g_pfnUSBModeCallback) && (g_iDualMode != iUSBMode))
         {
             //
             // Inform the callback of the new operating mode.
             //
-            g_pfnUSBModeCallback(0, eUSBMode);
+            g_pfnUSBModeCallback(0, iUSBMode);
         }
 
         //
         // Save the new mode.
         //
-        g_eDualMode = eUSBMode;
+        g_iDualMode = iUSBMode;
     }
 }
 
@@ -211,15 +216,15 @@ USBOTGSetMode(tUSBMode eUSBMode)
 //! Allows dual mode application to switch between USB device and host modes
 //! and provides a method to force the controller into the desired mode.
 //!
-//! \param ulIndex specifies the USB controller whose mode of operation is to
+//! \param ui32Index specifies the USB controller whose mode of operation is to
 //! be set.  This parameter must be set to 0.
-//! \param eUSBMode indicates the mode that the application wishes to operate
-//! in.  Valid values are \b USB_MODE_DEVICE to operate as a USB device and
-//! \b USB_MODE_HOST to operate as a USB host.
+//! \param iUSBMode indicates the mode that the application wishes to operate
+//! in.  Valid values are \b eUSBModeDevice to operate as a USB device and
+//! \b eUSBModeHost to operate as a USB host.
 //! \param pfnCallback is a pointer to a function which the USB library will
 //! call each time the mode is changed to indicate the new operating mode.  In
-//! cases where \e eUSBMode is set to either \b USB_MODE_DEVICE or
-//! \b USB_MODE_HOST, the callback will be made immediately to allow the
+//! cases where \e iUSBMode is set to either \b eUSBModeDevice or
+//! \b eUSBModeHost, the callback will be made immediately to allow the
 //! application to perform any host or device specific initialization.
 //!
 //! This function allows a USB application that can operate in host
@@ -245,26 +250,22 @@ USBOTGSetMode(tUSBMode eUSBMode)
 //! in the event that the application needs to reused the USBVBUS and/or USBID
 //! pins as GPIOs.
 //!
-//! \note Forcing of the USB controller mode feature is not available on all
-//! Stellaris microcontrollers.  Consult the data sheet for the microcontroller
-//! that the application is using to determine if this feature is available.
-//!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBStackModeSet(unsigned long ulIndex, tUSBMode eUSBMode,
+USBStackModeSet(uint32_t ui32Index, tUSBMode iUSBMode,
                 tUSBModeCallback pfnCallback)
 {
     //
     // Check the arguments.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
 
     //
     // Remember the mode so that we can steer the interrupts appropriately.
     //
-    g_eUSBMode = eUSBMode;
+    g_iUSBMode = iUSBMode;
 
     //
     // Remember the callback pointer.
@@ -275,81 +276,81 @@ USBStackModeSet(unsigned long ulIndex, tUSBMode eUSBMode,
     // If we are being asked to be either a host or device, we will not be
     // trying to auto-detect the mode so make the callback immediately.
     //
-    if((eUSBMode == USB_MODE_DEVICE) || (eUSBMode == USB_MODE_HOST))
+    if((iUSBMode == eUSBModeDevice) || (iUSBMode == eUSBModeHost))
     {
         //
         // Make sure that a callback was provided.
         //
         if(g_pfnUSBModeCallback)
         {
-            g_pfnUSBModeCallback(0, eUSBMode);
+            g_pfnUSBModeCallback(0, iUSBMode);
         }
     }
 }
 
 //*****************************************************************************
 //
-//! Steers USB interrupts from controller to the correct handler in the USB
-//! stack.
-//!
-//! This interrupt handler is used in applications which require to operate
-//! in both host and device mode.  It steers the USB hardware interrupt to the
-//! correct handler in the USB stack depending upon the current operating mode
-//! of the application, USB device or host.
-//!
-//! For successful dual mode operation, an application must register
-//! USB0DualModeIntHandler() in the CPU vector table as the interrupt handler
-//! for the USB0 interrupt.  This handler is responsible for steering
-//! interrupts to the device or host stack depending upon the chosen mode.
-//!
-//! \note Devices which do not require dual mode capability should register
-//! either USB0DeviceIntHandler() or USB0HostIntHandler() instead.  Registering
-//! USB0DualModeIntHandler() for a single mode application will result in an
-//! application binary larger than required since library functions for both
-//! USB operating modes will be included even though only one mode is actually
-//! required.
-//!
-//! \return None.
+// Steers USB interrupts from controller to the correct handler in the USB
+// stack.
+//
+// This interrupt handler is used in applications which require to operate
+// in both host and device mode.  It steers the USB hardware interrupt to the
+// correct handler in the USB stack depending upon the current operating mode
+// of the application, USB device or host.
+//
+// For successful dual mode operation, an application must register
+// USB0DualModeIntHandler() in the CPU vector table as the interrupt handler
+// for the USB0 interrupt.  This handler is responsible for steering
+// interrupts to the device or host stack depending upon the chosen mode.
+//
+// \note Devices which do not require dual mode capability should register
+// either USB0DeviceIntHandler() or USB0HostIntHandler() instead.  Registering
+// USB0DualModeIntHandler() for a single mode application will result in an
+// application binary larger than required since library functions for both
+// USB operating modes will be included even though only one mode is actually
+// required.
+//
+// \return None.
 //
 //*****************************************************************************
 void
 USB0DualModeIntHandler(void)
 {
-    unsigned long ulStatus;
+    uint32_t ui32Status;
 
     //
     // Read the USB interrupt status.
     //
-    ulStatus = USBIntStatusControl(USB0_BASE);
+    ui32Status = USBIntStatusControl(USB0_BASE);
 
     //
     // Pass through the subset of interrupts that we always want
     // the host stack to see regardless of whether or not we
     // are actually in host mode at this point.
     //
-    if(ulStatus & USB_HOST_INTS)
+    if(ui32Status & USB_HOST_INTS)
     {
         //
         // Call the host's interrupt handler.
         //
-        USBHostIntHandlerInternal(0, ulStatus & USB_HOST_INTS);
+        USBHostIntHandlerInternal(0, ui32Status & USB_HOST_INTS);
 
         //
         // We have already processed these interrupts so clear them
         // from the status.
         //
-        ulStatus &= ~USB_HOST_INTS;
+        ui32Status &= ~USB_HOST_INTS;
     }
 
     //
     // Steer the interrupt to the appropriate handler within the stack
     // depending upon our current operating mode.  Note that we need to pass
-    // the ulStatus parameter since the USB interrupt register is
+    // the ui32Status parameter since the USB interrupt register is
     // clear-on-read.
     //
-    switch(g_eUSBMode)
+    switch(g_iUSBMode)
     {
-        case USB_MODE_NONE:
+        case eUSBModeNone:
         {
             //
             // No mode is set yet so we have no idea what to do.  Just ignore
@@ -361,13 +362,13 @@ USB0DualModeIntHandler(void)
         //
         // Operating in pure host mode.
         //
-        case USB_MODE_HOST:
+        case eUSBModeHost:
         {
             //
             // Call the host interrupt handler if there is anything still to
             // process.
             //
-            USBHostIntHandlerInternal(0, ulStatus);
+            USBHostIntHandlerInternal(0, ui32Status);
 
             break;
         }
@@ -375,12 +376,12 @@ USB0DualModeIntHandler(void)
         //
         // Operating in pure device mode.
         //
-        case USB_MODE_DEVICE:
+        case eUSBModeDevice:
         {
             //
             // Call the device interrupt handler.
             //
-            USBDeviceIntHandlerInternal(0, ulStatus);
+            USBDeviceIntHandlerInternal(0, ui32Status);
 
             break;
         }
@@ -394,9 +395,23 @@ USB0DualModeIntHandler(void)
 
 //*****************************************************************************
 //
+// Close the Doxygen group general_usblib_api.
+//! @}
+//
+//*****************************************************************************
+
+//*****************************************************************************
+//
+//! \addtogroup dualmode_api
+//! @{
+//
+//*****************************************************************************
+
+//*****************************************************************************
+//
 //! Initializes the USB controller for dual mode operation.
 //!
-//! \param ulIndex specifies the USB controller that is to be initialized for
+//! \param ui32Index specifies the USB controller that is to be initialized for
 //! dual mode operation.  This parameter must be set to 0.
 //!
 //! This function initializes the USB controller hardware into a state
@@ -409,12 +424,12 @@ USB0DualModeIntHandler(void)
 //
 //*****************************************************************************
 void
-USBDualModeInit(unsigned long ulIndex)
+USBDualModeInit(uint32_t ui32Index)
 {
     //
     // We only support a single USB controller.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
 
     //
     // Configure the End point 0.
@@ -448,8 +463,7 @@ USBDualModeInit(unsigned long ulIndex)
     //
     // Enable the USB interrupt.
     //
-    OS_INT_ENABLE(INT_USB0);
-
+    OS_INT_ENABLE(g_psDCDInst[0].ui32IntNum);
     //
     // Turn on session request to enable ID pin checking.
     //
@@ -458,13 +472,13 @@ USBDualModeInit(unsigned long ulIndex)
     //
     // Initialize the power configuration.
     //
-    USBHostPwrConfig(USB0_BASE, USBHCDPowerConfigGet(ulIndex));
+    USBHostPwrConfig(USB0_BASE, USBHCDPowerConfigGet(ui32Index));
 
     //
     // If power enable is automatic then then USBHostPwrEnable() has to be
     // called to allow the USB controller to control the power enable pin.
     //
-    if(USBHCDPowerAutomatic(ulIndex))
+    if(USBHCDPowerAutomatic(ui32Index))
     {
         //
         // This will not turn on power but instead will allow the USB
@@ -478,8 +492,8 @@ USBDualModeInit(unsigned long ulIndex)
 //
 //! Returns the USB controller to the default mode when in dual mode operation.
 //!
-//! \param ulIndex specifies the USB controller whose dual mode operation is to
-//! be ended.  This parameter must be set to 0.
+//! \param ui32Index specifies the USB controller whose dual mode operation is
+//! to be ended.  This parameter must be set to 0.
 //!
 //! Applications using both host and device modes may call this function to
 //! disable interrupts in preparation for shutdown or a change of operating
@@ -489,17 +503,17 @@ USBDualModeInit(unsigned long ulIndex)
 //
 //*****************************************************************************
 void
-USBDualModeTerm(unsigned long ulIndex)
+USBDualModeTerm(uint32_t ui32Index)
 {
     //
     // We only support a single USB controller.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
 
     //
     // Disable the USB interrupt.
     //
-    OS_INT_DISABLE(INT_USB0);
+    OS_INT_DISABLE(g_psDCDInst[0].ui32IntNum);
 
     MAP_USBIntDisableControl(USB0_BASE, USB_INTCTRL_ALL);
 
@@ -508,10 +522,11 @@ USBDualModeTerm(unsigned long ulIndex)
 
 //*****************************************************************************
 //
-// Close the Doxygen group.
+// Close the Doxygen group dualmode_api.
 //! @}
 //
 //*****************************************************************************
+
 //*****************************************************************************
 //
 //! \addtogroup usblib_otg
@@ -519,12 +534,12 @@ USBDualModeTerm(unsigned long ulIndex)
 //
 //*****************************************************************************
 
-
 //*****************************************************************************
 //
-//! Returns the USB controller to and inactive state when in OTG mode operation.
+//! Returns the USB controller to and inactive state when in OTG mode
+//! operation.
 //!
-//! \param ulIndex specifies the USB controller to end OTG mode operations.
+//! \param ui32Index specifies the USB controller to end OTG mode operations.
 //!
 //! Applications using OTG mode may call this function to disable interrupts
 //! in preparation for shutdown or a change of operating mode.
@@ -533,17 +548,17 @@ USBDualModeTerm(unsigned long ulIndex)
 //
 //*****************************************************************************
 void
-USBOTGModeTerm(unsigned long ulIndex)
+USBOTGModeTerm(uint32_t ui32Index)
 {
     //
     // We only support a single USB controller.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
 
     //
     // Disable the USB interrupt.
     //
-    OS_INT_DISABLE(INT_USB0);
+    OS_INT_DISABLE(g_psDCDInst[0].ui32IntNum);
 
     //
     // Disable all control interrupts.
@@ -558,68 +573,69 @@ USBOTGModeTerm(unsigned long ulIndex)
     //
     // Set the mode to none if it is not already.
     //
-    USBOTGSetMode(USB_MODE_NONE);
+    USBOTGSetMode(eUSBModeNone);
 }
 
 //*****************************************************************************
 //
 //! Initializes the USB controller for OTG mode operation.
 //!
-//! \param ulIndex specifies the USB controller that is to be initialized for
+//! \param ui32Index specifies the USB controller that is to be initialized for
 //! OTG mode operation.
-//! \param ulPollingRate is the rate in milliseconds to poll the controller
+//! \param ui32PollingRate is the rate in milliseconds to poll the controller
 //! for changes in mode.
 //! \param pvPool is a pointer to the data to use as a memory pool for this
 //! controller.
-//! \param ulPoolSize is the size in bytes of the buffer passed in as pvPool.
+//! \param ui32PoolSize is the size in bytes of the buffer passed in as
+//! \e pvPool.
 //!
 //! This function initializes the USB controller hardware into a state
 //! suitable for OTG mode operation.  Applications must use this function to
 //! ensure that the controller is in a neutral state and able to receive
 //! appropriate interrupts before host or device mode is chosen by OTG
-//! negotiation.  The \e ulPollingRate parameter is used to set the rate at
+//! negotiation.  The \e ui32PollingRate parameter is used to set the rate at
 //! which the USB library will poll the controller to determine the mode.  This
 //! has the most effect on how quickly the USB library will detect changes when
-//! going to host mode.  The parameters \e pvPool and \e ulPoolSize are passed
-//! on to the USB host library functions to provide memory for the USB library
-//! when it is acting as a  host. Any device and host initialization should have
-//! been called before calling this function to prevent the USB library from
-//! attempting to run in device or host mode before the USB library is
-//! fully configured.
+//! going to host mode.  The parameters \e pvPool and \e ui32PoolSize are
+//! passed on to the USB host library functions to provide memory for the USB
+//! library when it is acting as a  host. Any device and host initialization
+//! should have been called before calling this function to prevent the USB
+//! library from attempting to run in device or host mode before the USB
+//! library is fully configured.
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBOTGModeInit(unsigned long ulIndex, unsigned long ulPollingRate,
-               void *pvPool, unsigned long ulPoolSize)
+USBOTGModeInit(uint32_t ui32Index, uint32_t ui32PollingRate,
+               void *pvPool, uint32_t ui32PoolSize)
 {
     //
     // We only support a single USB controller.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
 
     //
     // This should never be called if not in OTG mode.
     //
-    ASSERT(g_eUSBMode == USB_MODE_OTG);
+    ASSERT(g_iUSBMode == eUSBModeOTG);
 
     //
     // Force OTG mode in all cases since anything else is invalid, but a DEBUG
     // build will still ASSERT above if this value is incorrect.
     //
-    g_eUSBMode = USB_MODE_OTG;
+    g_iUSBMode = eUSBModeOTG;
 
     //
     // Remember that we have not yet determined whether we are device or
     // host.
     //
-    g_eDualMode = USB_MODE_NONE;
+    g_iDualMode = eUSBModeNone;
 
     //
     // Set the default polling rate.
     //
-    g_ulPollRate = ulPollingRate;
+    g_ui32PollRate = ui32PollingRate;
 
     //
     // Enable the USB controller.
@@ -634,7 +650,7 @@ USBOTGModeInit(unsigned long ulIndex, unsigned long ulPollingRate,
     //
     // Initialize the host controller stack.
     //
-    USBHCDInit(ulIndex, pvPool, ulPoolSize);
+    USBHCDInit(ui32Index, pvPool, ui32PoolSize);
 
     //
     // Configure the End point 0.
@@ -670,13 +686,13 @@ USBOTGModeInit(unsigned long ulIndex, unsigned long ulPollingRate,
     //
     // Initialize the power configuration.
     //
-    USBHCDPowerConfigSet(ulIndex, USBHCDPowerConfigGet(ulIndex));
+    USBHCDPowerConfigSet(ui32Index, USBHCDPowerConfigGet(ui32Index));
 
     //
     // If power enable is automatic then then USBHostPwrEnable() has to be
     // called to allow the USB controller to control the power enable pin.
     //
-    if(USBHCDPowerAutomatic(ulIndex))
+    if(USBHCDPowerAutomatic(ui32Index))
     {
         //
         // This will not turn on power but instead will allow the USB
@@ -688,24 +704,25 @@ USBOTGModeInit(unsigned long ulIndex, unsigned long ulPollingRate,
     //
     // Enable the USB interrupt.
     //
-    OS_INT_ENABLE(INT_USB0);
+    OS_INT_ENABLE(INT_USB0_BLIZZARD);
 }
 
 //*****************************************************************************
 //
 // This function handles the steps required to remove power in OTG mode.
 //
-// \param ulIndex specifies which USB controller should remove power.
+// \param ui32Index specifies which USB controller should remove power.
 //
 // This function will perform the steps required to remove power from the USB
 // bus as required by the OTG specification.  This call will first issue a
-// bus suspend followed by clearing the current session and then removing power.
+// bus suspend followed by clearing the current session and then removing
+// power.
 //
-// /return None.
+// \return None.
 //
 //*****************************************************************************
 static void
-USBOTGRemovePower(unsigned long ulIndex)
+USBOTGRemovePower(uint32_t ui32Index)
 {
     tEventInfo sEvent;
 
@@ -722,13 +739,13 @@ USBOTGRemovePower(unsigned long ulIndex)
     //
     // Check if the controller is automatically applying power or not.
     //
-    if(USBHCDPowerAutomatic(ulIndex) == 0)
+    if(USBHCDPowerAutomatic(ui32Index) == 0)
     {
         //
         // Call the registered event driver to allow it to disable power.
         //
-        sEvent.ulEvent = USB_EVENT_POWER_DISABLE;
-        sEvent.ulInstance = 0;
+        sEvent.ui32Event = USB_EVENT_POWER_DISABLE;
+        sEvent.ui32Instance = 0;
         InternalUSBHCDSendEvent(0, &sEvent, USBHCD_EVFLAG_PWRDIS);
     }
 }
@@ -738,16 +755,16 @@ USBOTGRemovePower(unsigned long ulIndex)
 //! This call sets the USB OTG controllers poll rate when checking for the mode
 //! of the controller.
 //!
-//! \param ulIndex specifies which USB controller to set the polling rate.
-//! \param ulPollRate is the rate in milliseconds to poll for changes in the
+//! \param ui32Index specifies which USB controller to set the polling rate.
+//! \param ui32PollRate is the rate in milliseconds to poll for changes in the
 //! controller mode.
 //!
 //! This function is called to set the USB OTG libraries polling rate when
-//! checking the status of the cable.  The \e ulPollRate value used sets the
+//! checking the status of the cable.  The \e ui32PollRate value used sets the
 //! rate in milliseconds that the USB OTG library will poll the cable to see
 //! if the controller should enter host mode.  This value has no effect on
 //! device detection rate as the controller will detect being connected to a
-//! host controller automatically.  The \e ulPollRate can be set to 0 to
+//! host controller automatically.  The \e ui32PollRate can be set to 0 to
 //! disable polling.  The USB OTG library can still function with the polling
 //! rate set to zero, however it will fail to detect host mode properly when no
 //! device is present at the end of the USB OTG B side of the cable.
@@ -759,12 +776,12 @@ USBOTGRemovePower(unsigned long ulIndex)
 //
 //*****************************************************************************
 void
-USBOTGPollRate(unsigned long ulIndex, unsigned long ulPollRate)
+USBOTGPollRate(uint32_t ui32Index, uint32_t ui32PollRate)
 {
     //
     // Save the timeout.
     //
-    g_ulPollRate = ulPollRate;
+    g_ui32PollRate = ui32PollRate;
 }
 
 //*****************************************************************************
@@ -782,8 +799,8 @@ USBOTGPollRate(unsigned long ulIndex, unsigned long ulPollRate)
 //! USB0OTGModeIntHandler() in the CPU vector table as the interrupt handler
 //! for the USB0 interrupt.
 //!
-//! \note This interrupt handler should only be used on controllers that support
-//! OTG functionality.
+//! \note This interrupt handler should only be used on controllers that
+//! support OTG functionality.
 //!
 //! \return None.
 //
@@ -791,26 +808,26 @@ USBOTGPollRate(unsigned long ulIndex, unsigned long ulPollRate)
 void
 USB0OTGModeIntHandler(void)
 {
-    unsigned long ulStatus;
+    uint32_t ui32Status;
     tEventInfo sEvent;
 
     //
     // Read the USB interrupt status.
     //
-    ulStatus = USBIntStatusControl(USB0_BASE);
+    ui32Status = USBIntStatusControl(USB0_BASE);
 
     //
     // Check if this was an mode detect interrupt and under manual power
     // control.
     //
-    if((ulStatus & USB_INTCTRL_MODE_DETECT) &&
+    if((ui32Status & USB_INTCTRL_MODE_DETECT) &&
        (USBHCDPowerAutomatic(0) == 0))
     {
-        unsigned long ulMode;
+        uint32_t ui32Mode;
 
-        ulMode = USBModeGet(USB0_BASE);
+        ui32Mode = USBModeGet(USB0_BASE);
 
-        switch(ulMode)
+        switch(ui32Mode)
         {
             //
             // Device is on the A side of the cable and power needs to be
@@ -825,8 +842,8 @@ USB0OTGModeIntHandler(void)
                 // registered event handler to allow the application to turn
                 // on power.
                 //
-                sEvent.ulEvent = USB_EVENT_POWER_ENABLE;
-                sEvent.ulInstance = 0;
+                sEvent.ui32Event = USB_EVENT_POWER_ENABLE;
+                sEvent.ui32Instance = 0;
                 InternalUSBHCDSendEvent(0, &sEvent, USBHCD_EVFLAG_PWREN);
 
                 break;
@@ -841,13 +858,13 @@ USB0OTGModeIntHandler(void)
                 // Now in device mode on the B side of the cable and will wait
                 // for a connect before becoming a device.
                 //
-                g_eOTGModeState = USB_OTG_MODE_B_WAITCON;
+                g_eOTGModeState = eUSBOTGModeBWaitCon;
 
                 break;
             }
 
             //
-            // Any other mode detect indicates USB_MODE_NONE.
+            // Any other mode detect indicates eUSBModeNone.
             //
             default:
             {
@@ -855,7 +872,7 @@ USB0OTGModeIntHandler(void)
                 // Just inform the application that the mode was not device
                 // or host.
                 //
-                USBOTGSetMode(USB_MODE_NONE);
+                USBOTGSetMode(eUSBModeNone);
 
                 break;
             }
@@ -863,39 +880,39 @@ USB0OTGModeIntHandler(void)
     }
 
     //
-    // If there was a VBUS error then the power should be shut off and the system
-    // is reset to waiting for detection again.
+    // If there was a VBUS error then the power should be shut off and the
+    // system is reset to waiting for detection again.
     //
-    if(ulStatus & USB_INTCTRL_VBUS_ERR)
+    if(ui32Status & USB_INTCTRL_VBUS_ERR)
     {
         //
         // Just inform the application that the mode was not device
         // or host.
         //
-        USBOTGSetMode(USB_MODE_NONE);
+        USBOTGSetMode(eUSBModeNone);
 
         //
         // Return to idle mode.
         //
-        g_eOTGModeState = USB_OTG_MODE_WAIT;
+        g_eOTGModeState = eUSBOTGModeWait;
     }
 
     //
     // If there is a disconnect interrupt and the controller was on the B side
     // cable as a device then go back to the IDLE state.
     //
-    if((ulStatus & USB_INTCTRL_DISCONNECT) &&
-       (g_eOTGModeState == USB_OTG_MODE_B_DEVICE))
+    if((ui32Status & USB_INTCTRL_DISCONNECT) &&
+       (g_eOTGModeState == eUSBOTGModeBDevice))
     {
         //
         // No longer a device so switch to unconfigured mode.
         //
-        USBOTGSetMode(USB_MODE_NONE);
+        USBOTGSetMode(eUSBModeNone);
 
         //
         // Return to idle mode.
         //
-        g_eOTGModeState = USB_OTG_MODE_WAIT;
+        g_eOTGModeState = eUSBOTGModeWait;
 
         return;
     }
@@ -903,37 +920,37 @@ USB0OTGModeIntHandler(void)
     //
     // Handle receiving a reset.
     //
-    if((ulStatus & USB_INTCTRL_RESET)&&
-       (g_eOTGModeState != USB_OTG_MODE_B_DEVICE))
+    if((ui32Status & USB_INTCTRL_RESET)&&
+       (g_eOTGModeState != eUSBOTGModeBDevice))
     {
         //
         // Getting a reset interrupt when not already a b side device indicates
         // that a host is resetting the device and the controller should
         // move to device mode.
         //
-        g_eOTGModeState = USB_OTG_MODE_B_DEVICE;
+        g_eOTGModeState = eUSBOTGModeBDevice;
 
         //
         // Save the new mode.
         //
-        USBOTGSetMode(USB_MODE_DEVICE);
+        USBOTGSetMode(eUSBModeDevice);
     }
 
     //
     // If there is a connect interrupt while the library is waiting for
     // one then move to full host mode state.
     //
-    if(ulStatus & USB_INTCTRL_CONNECT)
+    if(ui32Status & USB_INTCTRL_CONNECT)
     {
         //
         // Move to A side host state.
         //
-        g_eOTGModeState = USB_OTG_MODE_A_HOST;
+        g_eOTGModeState = eUSBOTGModeAHost;
 
         //
         // Inform the application that controller is in host mode.
         //
-        USBOTGSetMode(USB_MODE_HOST);
+        USBOTGSetMode(eUSBModeHost);
     }
 
     //
@@ -942,13 +959,13 @@ USB0OTGModeIntHandler(void)
     //
     switch(g_eOTGModeState)
     {
-        case USB_OTG_MODE_A_HOST:
+        case eUSBOTGModeAHost:
         {
             //
             // Call the host interrupt handler if there is anything still to
             // process.
             //
-            USBHostIntHandlerInternal(0, ulStatus);
+            USBHostIntHandlerInternal(0, ui32Status);
 
             break;
         }
@@ -956,12 +973,12 @@ USB0OTGModeIntHandler(void)
         //
         // Operating in pure device mode.
         //
-        case USB_OTG_MODE_B_DEVICE:
+        case eUSBOTGModeBDevice:
         {
             //
             // Call the device interrupt handler.
             //
-            USBDeviceIntHandlerInternal(0, ulStatus);
+            USBDeviceIntHandlerInternal(0, ui32Status);
 
             break;
         }
@@ -975,32 +992,32 @@ USB0OTGModeIntHandler(void)
 //*****************************************************************************
 //
 // This function is called by the USB host stack code to indicated that it
-// has compeleted handing the device disconnection.
+// has completed handing the device disconnection.
 //
-// \param ulIndex specifies the USB controller that has completed disconnect.
+// \param ui32Index specifies the USB controller that has completed disconnect.
 //
-// This internal library function is used when the hsot controller has completed
-// any deferred handling when it has detected a device has been disconnected.
-// The functions main purpose is to return the OTG controller to a state that
-// allows for resuming normal OTG cable detection and negotiation.
+// This internal library function is used when the hsot controller has
+// completed any deferred handling when it has detected a device has been
+// disconnected.  The functions main purpose is to return the OTG controller to
+// a state that allows for resuming normal OTG cable detection and negotiation.
 //
 // \note This function should not be called outside the library.
 //
 //*****************************************************************************
 void
-OTGDeviceDisconnect(unsigned long ulIndex)
+OTGDeviceDisconnect(uint32_t ui32Index)
 {
     //
     // This function is only valid when called in host mode.
     //
-    if(g_eOTGModeState == USB_OTG_MODE_A_HOST)
+    if(g_eOTGModeState == eUSBOTGModeAHost)
     {
         //
         // No longer a host so switch to unconfigured mode.
         //
-        USBOTGSetMode(USB_MODE_NONE);
+        USBOTGSetMode(eUSBModeNone);
 
-        g_eOTGModeState = USB_OTG_MODE_WAIT;
+        g_eOTGModeState = eUSBOTGModeWait;
     }
 }
 
@@ -1008,41 +1025,41 @@ OTGDeviceDisconnect(unsigned long ulIndex)
 //
 //! This function is the main routine for the OTG Controller Driver.
 //!
-//! \param ulMsTicks is the number of milliseconds that have passed since the
+//! \param ui32MsTicks is the number of milliseconds that have passed since the
 //! last time this function was called.
 //!
 //! This function is the main routine for the USB controller when using the
 //! library in OTG mode.  This routine must be called periodically by the main
-//! application outside of a callback context.  The \e ulMsTicks value is used
-//! for basic timing needed by the USB library when operating in OTG mode.  This
-//! allows for a simple cooperative system to access the the OTG controller
-//! driver interface without the need for an RTOS.  All time critical operations
-//! are handled in interrupt context but all longer operations are run from
-//! the this function to allow them to block and wait for completion without
-//! holding off other interrupts.
+//! application outside of a callback context.  The \e ui32MsTicks value is
+//! used for basic timing needed by the USB library when operating in OTG mode.
+//! This allows for a simple cooperative system to access the the OTG
+//! controller driver interface without the need for an RTOS.  All time
+//! critical operations are handled in interrupt context but all longer
+//! operations are run from the this function to allow them to block and wait
+//! for completion without holding off other interrupts.
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBOTGMain(unsigned long ulMsTicks)
+USBOTGMain(uint32_t ui32MsTicks)
 {
     tEventInfo sEvent;
 
-    if(ulMsTicks > g_ulWaitTicks)
+    if(ui32MsTicks > g_ui32WaitTicks)
     {
-        g_ulWaitTicks = 0;
+        g_ui32WaitTicks = 0;
     }
     else
     {
-        g_ulWaitTicks -= ulMsTicks;
+        g_ui32WaitTicks -= ui32MsTicks;
     }
 
     switch(g_eOTGModeState)
     {
-        case USB_OTG_MODE_IDLE:
+        case eUSBOTGModeIdle:
         {
-            g_eOTGModeState = USB_OTG_MODE_WAITID;
+            g_eOTGModeState = eUSBOTGModeWaitID;
 
             //
             // Initiate a session request and check the ID pin.
@@ -1050,13 +1067,13 @@ USBOTGMain(unsigned long ulMsTicks)
             USBOTGSessionRequest(USB0_BASE, true);
             break;
         }
-        case USB_OTG_MODE_WAIT:
-        case USB_OTG_MODE_WAITID:
+        case eUSBOTGModeWait:
+        case eUSBOTGModeWaitID:
         {
             //
             // If reached the timeout and polling is enabled then look again.
             //
-            if((g_ulWaitTicks == 0) && (g_ulPollRate != 0))
+            if((g_ui32WaitTicks == 0) && (g_ui32PollRate != 0))
             {
                 //
                 // Remove the session request.
@@ -1066,7 +1083,7 @@ USBOTGMain(unsigned long ulMsTicks)
                 //
                 // Return to idle mode.
                 //
-                USBOTGSetMode(USB_MODE_NONE);
+                USBOTGSetMode(eUSBModeNone);
 
                 //
                 // Check if the controller is automatically applying power or
@@ -1078,19 +1095,19 @@ USBOTGMain(unsigned long ulMsTicks)
                     // Call the registered event driver to allow it to disable
                     // power.
                     //
-                    sEvent.ulEvent = USB_EVENT_POWER_DISABLE;
-                    sEvent.ulInstance = 0;
+                    sEvent.ui32Event = USB_EVENT_POWER_DISABLE;
+                    sEvent.ui32Instance = 0;
                     InternalUSBHCDSendEvent(0, &sEvent, USBHCD_EVFLAG_PWRDIS);
                 }
 
                 //
                 // Go back to the idle state.
                 //
-                g_eOTGModeState = USB_OTG_MODE_IDLE;
+                g_eOTGModeState = eUSBOTGModeIdle;
             }
             break;
         }
-        case USB_OTG_MODE_A_HOST:
+        case eUSBOTGModeAHost:
         {
             //
             // Call the host main routine when acting as a host.
@@ -1098,8 +1115,8 @@ USBOTGMain(unsigned long ulMsTicks)
             USBHCDMain();
             break;
         }
-        case USB_OTG_MODE_B_WAITCON:
-        case USB_OTG_MODE_B_DEVICE:
+        case eUSBOTGModeBWaitCon:
+        case eUSBOTGModeBDevice:
         default:
         {
             break;

@@ -2,7 +2,7 @@
 //
 // usbdhid.h - Definitions used by HID class devices.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -45,17 +45,42 @@ extern "C"
 
 //*****************************************************************************
 //
+// This is the size of the g_pui8HIDInterface array in bytes.
+//
+//*****************************************************************************
+#define HIDINTERFACE_SIZE       (9)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8HIDInEndpoint array in bytes.
+//
+//*****************************************************************************
+#define HIDINENDPOINT_SIZE      (7)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8HIDOutEndpoint array in bytes.
+//
+//*****************************************************************************
+#define HIDOUTENDPOINT_SIZE     (7)
+
+//*****************************************************************************
+//
+// This is the size of the tHIDDescriptor in bytes.
+//
+//*****************************************************************************
+#define HIDDESCRIPTOR_SIZE      (9)
+
+//*****************************************************************************
+//
 //! The size of the memory that should be allocated to create a configuration
 //! descriptor for a single instance of the USB HID Device.
 //! This does not include the configuration descriptor which is automatically
 //! ignored by the composite device class.
 //
-// For reference this is
-// sizeof(g_sHIDInterfaceSection) +  sizeof(g_sHIDDescriptorSection) +
-// sizeof(g_sHIDInEndpointSection) + sizeof(g_sHIDOutEndpointSection)
-//
 //*****************************************************************************
-#define COMPOSITE_DHID_SIZE     (32)
+#define COMPOSITE_DHID_SIZE     (HIDINTERFACE_SIZE + HIDINENDPOINT_SIZE +     \
+                                 HIDOUTENDPOINT_SIZE + HIDDESCRIPTOR_SIZE)
 
 //*****************************************************************************
 //
@@ -68,7 +93,7 @@ extern "C"
 //! This is a macro to assist adding Usage Page entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the Usage Page value.
+//! \param ui8Value is the Usage Page value.
 //!
 //! This macro takes a value and prepares it to be placed as a Usage Page entry
 //! into a HID report structure.  These are defined by the USB HID
@@ -77,13 +102,31 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define UsagePage(ucValue)      0x05, ((ucValue) & 0xff)
+#define UsagePage(ui8Value)      0x05, ((ui8Value) & 0xff)
+
+//*****************************************************************************
+//
+//! This is a macro to assist adding Usage Page entries in HID report
+//! descriptors when a vendor-specific value is to be used.
+//!
+//! \param ui8Value is the Usage Page value.
+//!
+//! This macro takes a value and prepares it to be placed as a Usage Page entry
+//! into a HID report structure.  These are defined by the USB HID
+//! specification.  Vendor-specific values must lie in the range 0xFF00 to
+//! 0xFFFF inclusive.
+//!
+//! \return Not a function.
+//
+//*****************************************************************************
+#define UsagePageVendor(ui16Value)     0x06, ((ui16Value) & 0xFF),            \
+                                       (((ui16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Usage entries in HID report descriptors.
 //!
-//! \param ucValue is the Usage value.
+//! \param ui8Value is the Usage value.
 //!
 //! This macro takes a value and prepares it to be placed as a Usage entry into
 //! a HID report structure.  These are defined by the USB HID specification.
@@ -91,14 +134,31 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Usage(ucValue)          0x09, ((ucValue) & 0xff)
+#define Usage(ui8Value)          0x09, ((ui8Value) & 0xff)
+
+//*****************************************************************************
+//
+//! This is a macro to assist adding vendor-specific Usage entries in HID
+//! report descriptors.
+//!
+//! \param ui16Value is the vendor-specific Usage value in the range 0xFF00 to
+//! 0xFFFF.
+//!
+//! This macro takes a value and prepares it to be placed as a Usage entry into
+//! a HID report structure.  These are defined by the USB HID specification.
+//!
+//! \return Not a function.
+//
+//*****************************************************************************
+#define UsageVendor(ui16Value)   0x0A, ((ui16Value) & 0xFF),            \
+                                 (((ui16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Usage Minimum entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the Usage Minimum value.
+//! \param ui8Value is the Usage Minimum value.
 //!
 //! This macro takes a value and prepares it to be placed as a Usage Minimum
 //! entry into a HID report structure.  This is the first or minimum value
@@ -107,14 +167,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define UsageMinimum(ucValue)   0x19, ((ucValue) & 0xff)
+#define UsageMinimum(ui8Value)   0x19, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Usage Maximum entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the Usage Maximum value.
+//! \param ui8Value is the Usage Maximum value.
 //!
 //! This macro takes a value and prepares it to be placed as a Usage Maximum
 //! entry into a HID report structure.  This is the last or maximum value
@@ -123,14 +183,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define UsageMaximum(ucValue)   0x29, ((ucValue) & 0xff)
+#define UsageMaximum(ui8Value)   0x29, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Logical Minimum entries in HID report
 //! descriptors.
 //!
-//! \param cValue is the Logical Minimum value.
+//! \param i8Value is the Logical Minimum value.
 //!
 //! This macro takes a value and prepares it to be placed as a Logical Minimum
 //! entry into a HID report structure.  This is the actual minimum value for a
@@ -139,14 +199,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define LogicalMinimum(cValue)  0x15, ((cValue) & 0xff)
+#define LogicalMinimum(i8Value)  0x15, ((i8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Logical Maximum entries in HID report
 //! descriptors.
 //!
-//! \param cValue is the Logical Maximum value.
+//! \param i8Value is the Logical Maximum value.
 //!
 //! This macro takes a value and prepares it to be placed as a Logical Maximum
 //! entry into a HID report structure.  This is the actual maximum value for a
@@ -155,14 +215,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define LogicalMaximum(cValue)  0x25, ((cValue) & 0xff)
+#define LogicalMaximum(i8Value)  0x25, ((i8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Physical Minimum entries in HID report
 //! descriptors.
 //!
-//! \param sValue is the Physical Minimum value.  It is a signed, 16 bit
+//! \param i16Value is the Physical Minimum value.  It is a signed, 16 bit
 //! number.
 //!
 //! This macro takes a value and prepares it to be placed as a Physical Minimum
@@ -173,15 +233,16 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define PhysicalMinimum(sValue) 0x36, ((sValue) & 0xFF),                      \
-                                (((sValue) >> 8) & 0xFF)
+#define PhysicalMinimum(i16Value)                                           \
+                                0x36, ((i16Value) & 0xFF),                    \
+                                (((i16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Physical Maximum entries in HID report
 //! descriptors.
 //!
-//! \param sValue is the Physical Maximum value.  It is a signed, 16 bit
+//! \param i16Value is the Physical Maximum value.  It is a signed, 16 bit
 //! number.
 //!
 //! This macro takes a value and prepares it to be placed as a Physical Maximum
@@ -192,15 +253,16 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define PhysicalMaximum(sValue) 0x46, ((sValue) & 0xFF),                      \
-                                (((sValue) >> 8) & 0xFF)
+#define PhysicalMaximum(i16Value)                                           \
+                                0x46, ((i16Value) & 0xFF),                    \
+                                (((i16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Collection entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the type of Collection.
+//! \param ui8Value is the type of Collection.
 //!
 //! This macro takes a value and prepares it to be placed as a Collection
 //! entry into a HID report structure.  This is the type of values that are
@@ -210,7 +272,7 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Collection(ucValue)     0xa1, ((ucValue) & 0xff)
+#define Collection(ui8Value)     0xa1, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
@@ -232,7 +294,7 @@ extern "C"
 //! This is a macro to assist adding Report Count entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the number of items in a report item.
+//! \param ui8Value is the number of items in a report item.
 //!
 //! This macro takes a value and prepares it to be placed as a Report Count
 //! entry into a HID report structure.  This is number of entries of Report
@@ -241,14 +303,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define ReportCount(ucValue)    0x95, ((ucValue) & 0xff)
+#define ReportCount(ui8Value)    0x95, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Report ID entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the identifier prefix for the current report.
+//! \param ui8Value is the identifier prefix for the current report.
 //!
 //! This macro takes a value and prepares it to be placed as a Report ID
 //! entry into a HID report structure.  This value is used as a 1 byte prefix
@@ -257,14 +319,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define ReportID(ucValue)       0x85, ((ucValue) & 0xff)
+#define ReportID(ui8Value)       0x85, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Report Size entries in HID report
 //! descriptors.
 //!
-//! \param ucValue is the size, in bits, of items in a report item.
+//! \param ui8Value is the size, in bits, of items in a report item.
 //!
 //! This macro takes a value and prepares it to be placed as a Report Size
 //! entry into a HID report structure.  This is size in bits of the entries of
@@ -274,13 +336,13 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define ReportSize(ucValue)     0x75, ((ucValue) & 0xff)
+#define ReportSize(ui8Value)     0x75, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Input entries in HID report descriptors.
 //!
-//! \param ucValue is bit mask to specify the type of a set of input report
+//! \param ui8Value is bit mask to specify the type of a set of input report
 //! items.  Note that if the USB_HID_INPUT_BITF flag is required, the Input2
 //! macro (which uses a 2 byte version of the Input item tag) must be used
 //! instead of this macro.
@@ -293,13 +355,13 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Input(ucValue)          0x81, ((ucValue) & 0xff)
+#define Input(ui8Value)          0x81, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Input entries in HID report descriptors.
 //!
-//! \param usValue is bit mask to specify the type of a set of input report
+//! \param ui16Value is bit mask to specify the type of a set of input report
 //! items.  Note that this macro uses a version of the Input item tag with a
 //! two byte payload and allows any of the 8 possible data bits for the tag to
 //! be used.  If USB_HID_INPUT_BITF (bit 8) is not required, the Input macro
@@ -313,14 +375,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Input2(usValue)         0x82, ((usValue) & 0xff),                     \
-                                (((usValue) >> 8) & 0xFF)
+#define Input2(ui16Value)       0x82, ((ui16Value) & 0xff),                   \
+                                (((ui16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Feature entries in HID report descriptors.
 //!
-//! \param ucValue is bit mask to specify the type of a set of feature report
+//! \param ui8Value is bit mask to specify the type of a set of feature report
 //! items.  Note that if the USB_HID_FEATURE_BITF flag is required, the
 //! Feature2 macro (which uses a 2 byte version of the Feature item tag) must
 //! be used instead of this macro.
@@ -333,13 +395,13 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Feature(ucValue)        0xB1, ((ucValue) & 0xff)
+#define Feature(ui8Value)        0xB1, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Feature entries in HID report descriptors.
 //!
-//! \param usValue is bit mask to specify the type of a set of feature report
+//! \param ui16Value is bit mask to specify the type of a set of feature report
 //! items.  Note that this macro uses a version of the Feature item tag with a
 //! two byte payload and allows any of the 8 possible data bits for the tag to
 //! be used.  If USB_HID_FEATURE_BITF (bit 8) is not required, the Feature
@@ -353,14 +415,14 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Feature2(usValue)       0xB2, ((usValue) & 0xff),                     \
-                                (((usValue) >> 8) & 0xFF)
+#define Feature2(ui16Value)     0xB2, ((ui16Value) & 0xff),                   \
+                                (((ui16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Output entries in HID report descriptors.
 //!
-//! \param ucValue is bit mask to specify the type of a set of output report
+//! \param ui8Value is bit mask to specify the type of a set of output report
 //! items.  Note that if the USB_HID_OUTPUT_BITF flag is required, the Output2
 //! macro (which uses a 2 byte version of the Output item tag) must be used
 //! instead of this macro.
@@ -373,13 +435,13 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Output(ucValue)         0x91, ((ucValue) & 0xff)
+#define Output(ui8Value)        0x91, ((ui8Value) & 0xff)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Output entries in HID report descriptors.
 //!
-//! \param usValue is bit mask to specify the type of a set of output report
+//! \param ui16Value is bit mask to specify the type of a set of output report
 //! items.  Note that this macro uses a version of the Output item tag with a
 //! two byte payload and allows any of the 8 possible data bits for the tag to
 //! be used.  If USB_HID_OUTPUT_BITF (bit 8) is not required, the Output macro
@@ -393,15 +455,15 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Output2(usValue)        0x92, ((usValue) & 0xff),                     \
-                                (((usValue) >> 8) & 0xFF)
+#define Output2(ui16Value)      0x92, ((ui16Value) & 0xff),                   \
+                                (((ui16Value) >> 8) & 0xFF)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Unit Exponent entries in HID report
 //! descriptors.
 //!
-//! \param cValue is the required exponent in the range [-8, 7].
+//! \param i8Value is the required exponent in the range [-8, 7].
 //!
 //! This macro takes a value and prepares it to be placed as a Unit Exponent
 //! entry into a HID report structure.  This is the exponent applied to
@@ -411,15 +473,15 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define UnitExponent(cValue)    0x55, ((cValue) & 0x0f)
+#define UnitExponent(i8Value)   0x55, ((i8Value) & 0x0f)
 
 //*****************************************************************************
 //
 //! This is a macro to assist adding Unit entries for uncommon units in HID
 //! report descriptors.
 //!
-//! \param ulValue is the definition of the unit required as defined in section
-//! 6.2.2.7 of the USB HID device class definition document.
+//! \param ui32Value is the definition of the unit required as defined in
+//! section 6.2.2.7 of the USB HID device class definition document.
 //!
 //! This macro takes a value and prepares it to be placed as a Unit entry into
 //! a HID report structure.  Note that individual macros are defined for common
@@ -430,10 +492,10 @@ extern "C"
 //! \return Not a function.
 //
 //*****************************************************************************
-#define Unit(ulValue)           0x67, (ulValue) & 0x0f),                      \
-                                (((ulValue) >> 8) & 0xFF),                    \
-                                (((ulValue) >> 16) & 0xFF),                   \
-                                (((ulValue) >> 24) & 0xFF)
+#define Unit(ui32Value)         0x67, (ui32Value) & 0x0f),                    \
+                                (((ui32Value) >> 8) & 0xFF),                  \
+                                (((ui32Value) >> 16) & 0xFF),                 \
+                                (((ui32Value) >> 24) & 0xFF)
 
 //*****************************************************************************
 //
@@ -564,6 +626,7 @@ extern "C"
 // allocating the correct amount of memory for the HID device code.
 //
 //*****************************************************************************
+#define USBDHID_MAX_PACKET      64
 
 //*****************************************************************************
 //
@@ -578,17 +641,17 @@ typedef enum
     //
     // Unconfigured.
     //
-    HID_STATE_UNCONFIGURED,
+    eHIDStateUnconfigured,
 
     //
     // No outstanding transaction remains to be completed.
     //
-    HID_STATE_IDLE,
+    eHIDStateIdle,
 
     //
     // Waiting on completion of a send or receive transaction.
     //
-    HID_STATE_WAIT_DATA
+    eHIDStateWaitData
 }
 tHIDState;
 
@@ -597,43 +660,95 @@ tHIDState;
 // PRIVATE
 //
 // This structure defines the private instance data and state variables for
-// HID devices.  The memory for this structure is pointed to by the
-// psPrivateHIDData field in the tUSBDHIDDevice structure passed in the
+// HID devices.  The memory for this structure is included in the
+// sPrivateData field in the tUSBDHIDDevice structure passed in the
 // USBDHIDInit() function.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulUSBBase;
-    tDeviceInfo *psDevInfo;
-    tConfigDescriptor *psConfDescriptor;
-    volatile tHIDState eHIDRxState;
-    volatile tHIDState eHIDTxState;
-    volatile unsigned short usDeferredOpFlags;
-    unsigned short usInReportSize;
-    unsigned short usInReportIndex;
-    unsigned short usOutReportSize;
-    unsigned char *pucInReportData;
-    unsigned char *pucOutReportData;
-    volatile tBoolean bConnected;
-    volatile tBoolean bSendInProgress;
-    tBoolean bGetRequestPending;
-    unsigned char ucINEndpoint;
-    unsigned char ucOUTEndpoint;
-    unsigned char ucInterface;
+    //
+    // Base address for the USB controller.
+    //
+    uint32_t ui32USBBase;
+
+    //
+    // The device info to interact with the lower level DCD code.
+    //
+    tDeviceInfo sDevInfo;
+
+    //
+    // The state of the HID receive channel.
+    //
+    volatile tHIDState iHIDRxState;
+
+    //
+    // The state of the HID transmit channel.
+    //
+    volatile tHIDState iHIDTxState;
+
+    //
+    // State of any pending operations that could not be handled immediately
+    // upon receipt.
+    //
+    volatile uint16_t ui16DeferredOpFlags;
+
+    //
+    // Size of the HID IN report.
+    //
+    uint16_t ui16InReportSize;
+
+    //
+    // .
+    //
+    uint16_t ui16InReportIndex;
+
+    //
+    // Size of the HID OUT report.
+    //
+    uint16_t ui16OutReportSize;
+
+    //
+    // Pointer to the current HID IN report data.
+    //
+    uint8_t *pui8InReportData;
+
+    //
+    // Pointer to the current HID OUT report data.
+    //
+    uint8_t *pui8OutReportData;
+
+    //
+    // The connection status of the device.
+    //
+    volatile bool bConnected;
+
+    //
+    // Whether an IN transaction is in process.
+    //
+    volatile bool bSendInProgress;
+
+    //
+    // An HID request transaction is in process(Endpoint 0).
+    //
+    bool bGetRequestPending;
+
+    //
+    // The IN endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8INEndpoint;
+
+    //
+    // The OUT endpoint number, this is modified in composite devices.
+    //
+    uint8_t ui8OUTEndpoint;
+
+    //
+    // The bulk class interface number, this is modified in composite devices.
+    //
+    uint8_t ui8Interface;
 }
 tHIDInstance;
-
-#ifndef DEPRECATED
-//*****************************************************************************
-//
-// The number of bytes of workspace required by the HID device class driver.
-// The client must provide a block of RAM of at least this size in the
-// pvWorkspace field of the tUSBDHIDDevice structure passed on USBDHIDInit.
-//
-//*****************************************************************************
-#define USB_HID_WORKSPACE_SIZE  sizeof(tHIDInstance)
-#endif
 
 //*****************************************************************************
 //
@@ -650,7 +765,7 @@ typedef struct
     //! indicates infinite and informs the class driver not to send the report
     //! unless a state change occurs.
     //
-    unsigned char ucDuration4mS;
+    uint8_t ui8Duration4mS;
 
     //
     //! The ID of the report which this structure applies to.  This is the
@@ -659,14 +774,14 @@ typedef struct
     //! If only a single Input report is supported and, thus, no ReportID tag
     //! is present, this field should be set to 0.
     //
-    unsigned char ucReportID;
+    uint8_t ui8ReportID;
 
     //
     //! The number of milliseconds before we need to send a copy of a given
     //! report back to the host.  This field is updated by the HID driver and
     //! used to time sending of USBD_HID_EVENT_IDLE_TIMEOUT.
     //
-    unsigned short usTimeTillNextmS;
+    uint16_t ui16TimeTillNextmS;
 
     //
     //! The number of milliseconds that have passed since the last time this
@@ -674,7 +789,7 @@ typedef struct
     //! Set_Idle requests are required to take effect as if issued immediately
     //! after the last transmission of the report to which they refer.
     //
-    unsigned long ulTimeSinceReportmS;
+    uint32_t ui32TimeSinceReportmS;
 }
 tHIDReportIdle;
 
@@ -689,52 +804,52 @@ typedef struct
     //
     //! The vendor ID that this device is to present in the device descriptor.
     //
-    unsigned short usVID;
+    uint16_t ui16VID;
 
     //
     //! The product ID that this device is to present in the device descriptor.
     //
-    unsigned short usPID;
+    uint16_t ui16PID;
 
     //
     //! The maximum power consumption of the device, expressed in milliamps.
     //
-    unsigned short usMaxPowermA;
+    uint16_t ui16MaxPowermA;
 
     //
     //! Indicates whether the device is self- or bus-powered and whether or not
     //! it supports remote wakeup.  Valid values are USB_CONF_ATTR_SELF_PWR or
     //! USB_CONF_ATTR_BUS_PWR, optionally ORed with USB_CONF_ATTR_RWAKE.
     //
-    unsigned char ucPwrAttributes;
+    uint8_t ui8PwrAttributes;
 
     //
     //! The interface subclass to publish to the server for this HID device.
     //
-    unsigned char ucSubclass;
+    uint8_t ui8Subclass;
 
     //
     //! The interface protocol to publish to the server for this HID device.
     //
-    unsigned char ucProtocol;
+    uint8_t ui8Protocol;
 
     //
     //! The number of Input reports that this device supports.  This field
     //! must equal the number of reports published in the HID class descriptors
     //! for the device and also the number of entries in the array whose first
-    //! element is pointed to by field psReportIdle below.
+    //! element is pointed to by field pi16ReportIdle below.
     //
-    unsigned char ucNumInputReports;
+    uint8_t ui8NumInputReports;
 
     //
     //! A pointer to the first element in an array of structures used to track
     //! idle time for each Input report.  When USBDHIDInit is called, the
-    //! ucDuration4mS and ucReportID fields of each of these array members
+    //! ui8Duration4mS and ui8ReportID fields of each of these array members
     //! should be initialized to indicate the default idle timeout for each
     //! input report.  This array must be in RAM since the HID device class
     //! driver will update values in it in response to requests from the host
     //! and to track elapsed time.  The number of elements in the array must
-    //! match the number supplied in the ucNumInputReports field above.
+    //! match the number supplied in the ui8NumInputReports field above.
     //
     tHIDReportIdle *psReportIdle;
 
@@ -774,7 +889,7 @@ typedef struct
     //! reports from the host are received via endpoint zero and passed to the
     //! application via USBD_HID_EVENT_REPORT_SENT events.
     //
-    tBoolean bUseOutEndpoint;
+    bool bUseOutEndpoint;
 
     //
     //! The HID descriptor that the device is to publish (following the
@@ -787,9 +902,10 @@ typedef struct
     //! The HID class descriptors offered by the device are defined in an
     //! array of byte pointers and this field points to that array.  The
     //! order and number of elements in the array must match the associated
-    //! information provided in the HID descriptor in field by psHIDDescriptor.
+    //! information provided in the HID descriptor in field by
+    //! pi16HIDDescriptor.
     //
-    const unsigned char * const *ppClassDescriptors;
+    const uint8_t * const *ppui8ClassDescriptors;
 
     //
     //! A pointer to the string descriptor array for this device.  This array
@@ -809,20 +925,25 @@ typedef struct
     //! of the report descriptor passed to the interface and is, thus,
     //! application controlled.
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The number of descriptors provided in the ppStringDescriptors
     //! array.  This must be 1 + ((5 + (num HID strings)) * (num languages)).
     //
-    unsigned long ulNumStringDescriptors;
+    uint32_t ui32NumStringDescriptors;
 
     //
-    //! A pointer to private instance data for this device instance.  This
-    //! memory must remain accessible for as long as the HID device is in use
-    //! and must not be modified by any code outside the HID class driver.
+    // ! The configuration descriptor for this HID device.
     //
-    tHIDInstance *psPrivateHIDData;
+    const tConfigHeader * const *ppsConfigDescriptor;
+
+    //
+    //! The private instance data for this device instance.  This
+    //! memory must remain accessible for as long as the HID device is in
+    //! use and must not be modified by any code outside the HID class driver.
+    //
+    tHIDInstance sPrivateData;
 }
 tUSBDHIDDevice;
 
@@ -835,7 +956,7 @@ tUSBDHIDDevice;
 //*****************************************************************************
 //
 //! This event indicates that the host is requesting a particular report be
-//! returned via endpoint 0, the control endpoint.  The ulMsgValue parameter
+//! returned via endpoint 0, the control endpoint.  The ui32MsgValue parameter
 //! contains the requested report type in the high byte and report ID in the
 //! low byte (as passed in the wValue field of the USB request structure).
 //! The pvMsgData parameter contains a pointer which must be written with the
@@ -867,13 +988,13 @@ tUSBDHIDDevice;
 //
 //! This event indicates that the host has sent a Set_Report request to
 //! the device and requests that the device provide a buffer into which the
-//! report can be written.  The ulMsgValue parameter contains the received
+//! report can be written.  The ui32MsgValue parameter contains the received
 //! report type in the high byte and report ID in the low byte (as passed in
 //! the wValue field of the USB request structure).  The pvMsgData parameter
 //! contains the length of buffer requested.  Note that this is the actual
 //! length value cast to a "void *" type and not a pointer in this case.
 //! The callback must return a pointer to a suitable buffer (cast to the
-//! standard "unsigned long" return type for the callback).
+//! standard "uint32_t" return type for the callback).
 //
 //*****************************************************************************
 #define USBD_HID_EVENT_GET_REPORT_BUFFER                                      \
@@ -882,7 +1003,7 @@ tUSBDHIDDevice;
 //*****************************************************************************
 //
 //! This event indicates that the host has sent the device a report via
-//! endpoint 0, the control endpoint.  The ulMsgValue field indicates the
+//! endpoint 0, the control endpoint.  The ui32MsgValue field indicates the
 //! size of the report and pvMsgData points to the first byte of the report.
 //! The report buffer will previously have been returned in response to an
 //! earlier USBD_HID_EVENT_GET_REPORT_BUFFER callback.  The HID device class
@@ -907,7 +1028,7 @@ tUSBDHIDDevice;
 //*****************************************************************************
 //
 //! This event is sent in response to a Set_Protocol request from the host.
-//! The ulMsgData value will contain the requested protocol,
+//! The ui32MsgData value will contain the requested protocol,
 //! USB_HID_PROTOCOL_BOOT or USB_HID_PROTOCOL_REPORT.
 //
 //*****************************************************************************
@@ -918,7 +1039,7 @@ tUSBDHIDDevice;
 //
 //! This event indicates to an application that a report idle timeout has
 //! occurred and requests a pointer to the report that must be sent back to
-//! the host.  The ulMsgData value will contain the requested report ID and
+//! the host.  The ui32MsgData value will contain the requested report ID and
 //! pvMsgData contains a pointer that must be written with a pointer to the
 //! report data that is to be sent.  The callback must return the number of
 //! bytes in the report pointed to by *pvMsgData.
@@ -927,33 +1048,26 @@ tUSBDHIDDevice;
 #define USBD_HID_EVENT_IDLE_TIMEOUT                                           \
                                 (USBD_HID_EVENT_BASE + 6)
 
-extern tDeviceInfo g_sHIDDeviceInfo;
-
 //*****************************************************************************
 //
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void *USBDHIDInit(unsigned long ulIndex,
-                         const tUSBDHIDDevice *psHIDDevice);
-extern void *USBDHIDCompositeInit(unsigned long ulIndex,
-                                  const tUSBDHIDDevice *psDevice);
-
-extern void USBDHIDTerm(void *pvInstance);
-extern void *USBDHIDSetRxCBData(void *pvInstance, void *pvCBData);
-extern void *USBDHIDSetTxCBData(void *pvInstance, void *pvCBData);
-extern unsigned long USBDHIDReportWrite(void *pvInstance,
-                                        unsigned char *pcData,
-                                        unsigned long ulLength,
-                                        tBoolean bLast);
-extern unsigned long USBDHIDPacketRead(void *pvInstance,
-                                       unsigned char *pcData,
-                                       unsigned long ulLength,
-                                       tBoolean bLast);
-extern unsigned long USBDHIDTxPacketAvailable(void *pvInstance);
-extern unsigned long USBDHIDRxPacketAvailable(void *pvInstance);
-extern void USBDHIDPowerStatusSet(void *pvInstance, unsigned char ucPower);
-extern tBoolean USBDHIDRemoteWakeupRequest(void *pvInstance);
+extern void *USBDHIDInit(uint32_t ui32Index, tUSBDHIDDevice *psHIDDevice);
+extern void *USBDHIDCompositeInit(uint32_t ui32Index,
+                                  tUSBDHIDDevice *psDevice,
+                                  tCompositeEntry *psCompEntry);
+extern void USBDHIDTerm(void *pvHIDInstance);
+extern void *USBDHIDSetRxCBData(void *pvHIDInstance, void *pvCBData);
+extern void *USBDHIDSetTxCBData(void *pvHIDInstance, void *pvCBData);
+extern uint32_t USBDHIDReportWrite(void *pvHIDInstance, uint8_t *pi8Data,
+                                   uint32_t ui32Length, bool bLast);
+extern uint32_t USBDHIDPacketRead(void *pvHIDInstance, uint8_t *pi8Data,
+                                  uint32_t ui32Length, bool bLast);
+extern uint32_t USBDHIDTxPacketAvailable(void *pvHIDInstance);
+extern uint32_t USBDHIDRxPacketAvailable(void *pvHIDInstance);
+extern void USBDHIDPowerStatusSet(void *pvHIDInstance, uint8_t ui8Power);
+extern bool USBDHIDRemoteWakeupRequest(void *pvHIDInstance);
 
 //*****************************************************************************
 //

@@ -2,7 +2,7 @@
 //
 // usbtick.c - Functions related to USB stack tick timer handling.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
 #include "usblib/usblib.h"
@@ -37,11 +39,11 @@
 //*****************************************************************************
 //
 // These are the internal timer tick handlers used by the USB stack.  Handlers
-// in g_pfTickHandlers are called in the context of the USB SOF interrupt
+// in g_pfnTickHandlers are called in the context of the USB SOF interrupt
 // every USB_SOF_TICK_DIVIDE milliseconds.
 //
 //*****************************************************************************
-tUSBTickHandler g_pfTickHandlers[MAX_USB_TICK_HANDLERS];
+tUSBTickHandler g_pfnTickHandlers[MAX_USB_TICK_HANDLERS];
 void *g_pvTickInstance[MAX_USB_TICK_HANDLERS];
 
 //*****************************************************************************
@@ -49,7 +51,7 @@ void *g_pvTickInstance[MAX_USB_TICK_HANDLERS];
 // Flag to indicate whether or not we have been initialized.
 //
 //*****************************************************************************
-tBoolean g_bUSBTimerInitialized = false;
+bool g_bUSBTimerInitialized = false;
 
 //*****************************************************************************
 //
@@ -57,7 +59,7 @@ tBoolean g_bUSBTimerInitialized = false;
 // instances of USB controllers and for all timer tick handlers.
 //
 //*****************************************************************************
-unsigned long g_ulCurrentUSBTick = 0;
+uint32_t g_ui32CurrentUSBTick = 0;
 
 //*****************************************************************************
 //
@@ -66,7 +68,7 @@ unsigned long g_ulCurrentUSBTick = 0;
 // handler functions.
 //
 //*****************************************************************************
-unsigned long g_ulUSBSOFCount = 0;
+uint32_t g_ui32USBSOFCount = 0;
 
 //*****************************************************************************
 //
@@ -83,14 +85,14 @@ unsigned long g_ulUSBSOFCount = 0;
 void
 InternalUSBTickInit(void)
 {
-    unsigned long ulLoop;
+    uint32_t ui32Loop;
 
     if(!g_bUSBTimerInitialized)
     {
-        for(ulLoop = 0; ulLoop < MAX_USB_TICK_HANDLERS; ulLoop++)
+        for(ui32Loop = 0; ui32Loop < MAX_USB_TICK_HANDLERS; ui32Loop++)
         {
-            g_pfTickHandlers[ulLoop] = (tUSBTickHandler)0;
-            g_pvTickInstance[ulLoop] = 0;
+            g_pfnTickHandlers[ui32Loop] = (tUSBTickHandler)0;
+            g_pvTickInstance[ui32Loop] = 0;
         }
 
         g_bUSBTimerInitialized = true;
@@ -138,29 +140,28 @@ InternalUSBTickReset(void)
 // other value indicates an error.
 //
 //*****************************************************************************
-long
-InternalUSBRegisterTickHandler(tUSBTickHandler pfHandler,
-                               void *pvInstance)
+int32_t
+InternalUSBRegisterTickHandler(tUSBTickHandler pfHandler, void *pvInstance)
 {
-    long lIdx;
+    int32_t i32Idx;
 
-    for(lIdx = 0; lIdx < MAX_USB_TICK_HANDLERS; lIdx++)
+    for(i32Idx = 0; i32Idx < MAX_USB_TICK_HANDLERS; i32Idx++)
     {
-        if(g_pfTickHandlers[lIdx] == 0)
+        if(g_pfnTickHandlers[i32Idx] == 0)
         {
             //
             // Save the handler.
             //
-            g_pfTickHandlers[lIdx] = pfHandler;
+            g_pfnTickHandlers[i32Idx] = pfHandler;
 
             //
             // Save the instance data.
             //
-            g_pvTickInstance[lIdx] = pvInstance;
+            g_pvTickInstance[i32Idx] = pvInstance;
         }
     }
 
-    if(lIdx == MAX_USB_TICK_HANDLERS)
+    if(i32Idx == MAX_USB_TICK_HANDLERS)
     {
         return(-1);
     }
@@ -174,8 +175,8 @@ InternalUSBRegisterTickHandler(tUSBTickHandler pfHandler,
 //! Calls internal handlers in response to a tick based on the start of frame
 //! interrupt.
 //!
-//! \param ulTicksmS specifies how many milliseconds have passed since the last
-//! call to this function.
+//! \param ui32TicksmS specifies how many milliseconds have passed since the
+//! last call to this function.
 //!
 //! This function is called every 5mS in the context of the Start of Frame
 //! (SOF) interrupt.  It is used to call any registered internal tick
@@ -187,23 +188,23 @@ InternalUSBRegisterTickHandler(tUSBTickHandler pfHandler,
 //
 //*****************************************************************************
 void
-InternalUSBStartOfFrameTick(unsigned long ulTicksmS)
+InternalUSBStartOfFrameTick(uint32_t ui32TicksmS)
 {
-    long lIdx;
+    int32_t i32Idx;
 
     //
     // Advance time.
     //
-    g_ulCurrentUSBTick += ulTicksmS;
+    g_ui32CurrentUSBTick += ui32TicksmS;
 
     //
     // Call any registered SOF tick handlers.
     //
-    for(lIdx = 0; lIdx < MAX_USB_TICK_HANDLERS; lIdx++)
+    for(i32Idx = 0; i32Idx < MAX_USB_TICK_HANDLERS; i32Idx++)
     {
-        if(g_pfTickHandlers[lIdx])
+        if(g_pfnTickHandlers[i32Idx])
         {
-            g_pfTickHandlers[lIdx](g_pvTickInstance[lIdx], ulTicksmS);
+            g_pfnTickHandlers[i32Idx](g_pvTickInstance[i32Idx], ui32TicksmS);
         }
     }
 }

@@ -45,6 +45,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>

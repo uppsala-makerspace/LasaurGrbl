@@ -2,7 +2,7 @@
 //
 // usbdcomp.c - USB composite device class driver.
 //
-// Copyright (c) 2010-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2010-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
@@ -30,6 +32,7 @@
 #include "driverlib/rom_map.h"
 #include "driverlib/usb.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/usb-ids.h"
 #include "usblib/usbcdc.h"
 #include "usblib/device/usbdevice.h"
@@ -49,7 +52,7 @@
 // changed at runtime based on the client's requirements.
 //
 //****************************************************************************
-static unsigned char g_pCompDeviceDescriptor[] =
+static uint8_t g_pui8CompDeviceDescriptor[] =
 {
     18,                     // Size of this structure.
     USB_DTYPE_DEVICE,       // Type of this structure.
@@ -82,7 +85,7 @@ static unsigned char g_pCompDeviceDescriptor[] =
 // be able to patch some values in it based on client requirements.
 //
 //****************************************************************************
-static const unsigned char g_pCompConfigDescriptor[] =
+static const uint8_t g_pui8CompConfigDescriptor[] =
 {
     //
     // Configuration descriptor header.
@@ -104,13 +107,13 @@ static const unsigned char g_pCompConfigDescriptor[] =
 //****************************************************************************
 //
 // Byte offsets used to access various fields in our index/interface/endpoint
-// lookup table (tUSBDCompositeDevice.pulDeviceWorkspace).  This workspace
+// lookup table (tUSBDCompositeDevice.pui32DeviceWorkspace).  This workspace
 // contains one 4 byte entry per device. The LSB is the device index, next byte
-// is the number of the first interface not within this device, next byte is the
-// number of the first IN endpoint not within this device and the final byte is
-// the number of the first OUT endpoint not within this device.  Using this
-// simple table we can reasonably quickly cross-reference index with interface
-// and endpoint numbers.
+// is the number of the first interface not within this device, next byte is
+// the number of the first IN endpoint not within this device and the final
+// byte is the number of the first OUT endpoint not within this device.  Using
+// this simple table we can reasonably quickly cross-reference index with
+// interface and endpoint numbers.
 //
 //****************************************************************************
 #define LOOKUP_INDEX_BYTE       0
@@ -123,168 +126,106 @@ static const unsigned char g_pCompConfigDescriptor[] =
 // A marker used to indicate an invalid index into the device table.
 //
 //****************************************************************************
-#define INVALID_DEVICE_INDEX 0xFFFFFFFF
-
-//*****************************************************************************
-//
-// Macros to convert between USB controller base address and an index.  These
-// are currently trivial but are included to allow for the possibility of
-// supporting more than one controller in the future.
-//
-//*****************************************************************************
-#define USB_BASE_TO_INDEX(BaseAddr) (0)
-#define USB_INDEX_TO_BASE(Index)    (USB0_BASE)
+#define INVALID_DEVICE_INDEX    0xFFFFFFFF
 
 //****************************************************************************
 //
 // Various internal handlers needed by this class.
 //
 //****************************************************************************
-static void HandleDisconnect(void *pvInstance);
-static void InterfaceChange(void *pvInstance, unsigned char ucInterfaceNum,
-                            unsigned char ucAlternateSetting);
-static void ConfigChangeHandler(void *pvInstance, unsigned long ulValue);
-static void DataSent(void *pvInstance, unsigned long ulInfo);
-static void DataReceived(void *pvInstance, unsigned long ulInfo);
-static void HandleEndpoints(void *pvInstance, unsigned long ulStatus);
-static void HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest);
-static void SuspendHandler(void *pvInstance);
-static void ResumeHandler(void *pvInstance);
-static void ResetHandler(void *pvInstance);
-static void GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest);
+static void HandleDisconnect(void *pvCompositeInstance);
+static void InterfaceChange(void *pvCompositeInstance, uint8_t ui8InterfaceNum,
+                            uint8_t ui8AlternateSetting);
+static void ConfigChangeHandler(void *pvCompositeInstance, uint32_t ui32Value);
+static void DataSent(void *pvCompositeInstance, uint32_t ui32Info);
+static void DataReceived(void *pvCompositeInstance, uint32_t ui32Info);
+static void HandleEndpoints(void *pvCompositeInstance, uint32_t ui32Status);
+static void HandleRequests(void *pvCompositeInstance, tUSBRequest *psUSBRequest);
+static void SuspendHandler(void *pvCompositeInstance);
+static void ResumeHandler(void *pvCompositeInstance);
+static void ResetHandler(void *pvCompositeInstance);
+static void HandleDevice(void *pvCompositeInstance, uint32_t ui32Request,
+                         void *pvRequestData);
+static void GetDescriptor(void *pvCompositeInstance, tUSBRequest *psUSBRequest);
 
 //****************************************************************************
 //
 // Configuration Descriptor.
 //
 //****************************************************************************
-tConfigHeader *g_pCompConfigDescriptors[1];
-
-//****************************************************************************
-//
-// The FIFO configuration for USB mass storage class device.
-//
-//****************************************************************************
-tFIFOConfig g_sUSBCompositeFIFOConfig =
-{
-    //
-    // IN endpoints.
-    //
-    {
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN },
-        { false, USB_EP_DEV_IN }
-    },
-    //
-    // OUT endpoints.
-    //
-    {
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT },
-        { false, USB_EP_DEV_OUT }
-    },
-};
+tConfigHeader *g_ppCompConfigDescriptors[1];
 
 //****************************************************************************
 //
 // The device information structure for the USB Composite device.
 //
 //****************************************************************************
-tDeviceInfo g_sCompositeDeviceInfo =
+const tCustomHandlers g_sCompHandlers =
 {
     //
-    // Device event handler callbacks.
+    // GetDescriptor
     //
-    {
-        //
-        // GetDescriptor
-        //
-        GetDescriptor,
+    GetDescriptor,
 
-        //
-        // RequestHandler
-        //
-        HandleRequests,
+    //
+    // RequestHandler
+    //
+    HandleRequests,
 
-        //
-        // InterfaceChange
-        //
-        InterfaceChange,
+    //
+    // InterfaceChange
+    //
+    InterfaceChange,
 
-        //
-        // ConfigChange
-        //
-        ConfigChangeHandler,
+    //
+    // ConfigChange
+    //
+    ConfigChangeHandler,
 
-        //
-        // DataReceived
-        //
-        DataReceived,
+    //
+    // DataReceived
+    //
+    DataReceived,
 
-        //
-        // DataSentCallback
-        //
-        DataSent,
+    //
+    // DataSentCallback
+    //
+    DataSent,
 
-        //
-        // ResetHandler
-        //
-        ResetHandler,
+    //
+    // ResetHandler
+    //
+    ResetHandler,
 
-        //
-        // SuspendHandler
-        //
-        SuspendHandler,
+    //
+    // SuspendHandler
+    //
+    SuspendHandler,
 
-        //
-        // ResumeHandler
-        //
-        ResumeHandler,
+    //
+    // ResumeHandler
+    //
+    ResumeHandler,
 
-        //
-        // DisconnectHandler
-        //
-        HandleDisconnect,
+    //
+    // DisconnectHandler
+    //
+    HandleDisconnect,
 
-        //
-        // EndpointHandler
-        //
-        HandleEndpoints
-    },
-    g_pCompDeviceDescriptor,
-    (const tConfigHeader **)g_pCompConfigDescriptors,
-    0,
-    0,
-    &g_sUSBCompositeFIFOConfig
+    //
+    // EndpointHandler
+    //
+    HandleEndpoints,
+
+    //
+    // DeviceHandler
+    //
+    HandleDevice,
 };
 
 //****************************************************************************
 //
-// Use the lookup table from the field pulDeviceWorkspace in the
+// Use the lookup table from the field pui32DeviceWorkspace in the
 // tUSBDCompositeDevice structure to determine which device to call given a
 // particular composite device interface number.
 //
@@ -293,36 +234,32 @@ tDeviceInfo g_sCompositeDeviceInfo =
 // device contains the passed interface number.
 //
 //****************************************************************************
-static unsigned long
-InterfaceToIndex(tUSBDCompositeDevice *psDevice, unsigned long ulInterface)
+static uint32_t
+InterfaceToIndex(tUSBDCompositeDevice *psDevice, uint32_t ui32Interface)
 {
-    unsigned long ulLoop;
-    unsigned char *pucLookupEntry;
-
-    //
-    // Get a pointer to the lookup table.
-    //
-    pucLookupEntry = (unsigned char *)psDevice->pulDeviceWorkspace;
+    uint32_t ui32Loop;
+    uint32_t ui32Lookup;
 
     //
     // Check each lookup entry in turn.
     //
-    for(ulLoop = 0; ulLoop < psDevice->ulNumDevices; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psDevice->ui32NumDevices; ui32Loop++)
     {
+        //
+        // Get the look up value from the device.
+        //
+        ui32Lookup = psDevice->psDevices[ui32Loop].ui32DeviceWorkspace;
+        ui32Lookup = (ui32Lookup >> (8 * LOOKUP_INTERFACE_BYTE)) & 0xff;
+
         //
         // If the desired interface number is lower than the value in the
         // current lookup table entry, we have found the desired device so
         // return its index.
         //
-        if(ulInterface < (unsigned long)pucLookupEntry[LOOKUP_INTERFACE_BYTE])
+        if(ui32Interface < ui32Lookup)
         {
-            return(ulLoop);
+            return(ui32Loop);
         }
-
-        //
-        // Move to the next lookup table entry.
-        //
-        pucLookupEntry += sizeof(unsigned long);
     }
 
     //
@@ -334,7 +271,7 @@ InterfaceToIndex(tUSBDCompositeDevice *psDevice, unsigned long ulInterface)
 
 //****************************************************************************
 //
-// Use the lookup table from the field pulDeviceWorkspace in the
+// Use the lookup table from the field pui32DeviceWorkspace in the
 // tUSBDCompositeDevice structure to determine which device to call given a
 // particular composite device endpoint number.
 //
@@ -343,42 +280,37 @@ InterfaceToIndex(tUSBDCompositeDevice *psDevice, unsigned long ulInterface)
 // device contains the passed endpoint number.
 //
 //****************************************************************************
-static unsigned long
-EndpointToIndex(tUSBDCompositeDevice *psDevice, unsigned long ulEndpoint,
-                tBoolean bInEndpoint)
+static uint32_t
+EndpointToIndex(tUSBDCompositeDevice *psDevice, uint32_t ui32Endpoint,
+                bool bInEndpoint)
 {
-    unsigned long ulLoop, ulEndpointByte;
-    unsigned char *pucLookupEntry;
-
-    //
-    // Get a pointer to the lookup table.
-    //
-    pucLookupEntry = (unsigned char *)psDevice->pulDeviceWorkspace;
+    uint32_t ui32Loop, ui32EndpointByte, ui32Lookup;
 
     //
     // Are we considering an IN or OUT endpoint?
     //
-    ulEndpointByte = bInEndpoint ? LOOKUP_IN_END_BYTE : LOOKUP_OUT_END_BYTE;
+    ui32EndpointByte = bInEndpoint ? LOOKUP_IN_END_BYTE : LOOKUP_OUT_END_BYTE;
 
     //
     // Check each lookup entry in turn.
     //
-    for(ulLoop = 0; ulLoop < psDevice->ulNumDevices; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < psDevice->ui32NumDevices; ui32Loop++)
     {
+        //
+        // Get the look up byte from the device.
+        //
+        ui32Lookup = psDevice->psDevices[ui32Loop].ui32DeviceWorkspace;
+        ui32Lookup = (ui32Lookup >> (ui32EndpointByte * 8)) & 0xff;
+
         //
         // If the desired endpoint number is lower than the value in the
         // current lookup table entry, we have found the desired device so
         // return its index.
         //
-        if(ulEndpoint < (unsigned long)pucLookupEntry[ulEndpointByte])
+        if(ui32Endpoint < ui32Lookup)
         {
-            return(ulLoop);
+            return(ui32Loop);
         }
-
-        //
-        // Move to the next lookup table entry.
-        //
-        pucLookupEntry += sizeof(unsigned long);
     }
 
     //
@@ -396,16 +328,16 @@ EndpointToIndex(tUSBDCompositeDevice *psDevice, unsigned long ulEndpoint,
 //
 //****************************************************************************
 static void
-GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
+GetDescriptor(void *pvCompositeInstance, tUSBRequest *psUSBRequest)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
     //
-    // Create the device instance pointer.
+    // Create the composite device pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Determine which device this request is intended for.  We have to be
@@ -413,18 +345,20 @@ GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
     // depending upon whether it is a request sent to the device, the interface
     // or the endpoint.
     //
-    switch(pUSBRequest->bmRequestType & USB_RTYPE_RECIPIENT_M)
+    switch(psUSBRequest->bmRequestType & USB_RTYPE_RECIPIENT_M)
     {
         case USB_RTYPE_INTERFACE:
         {
-            ulIdx = InterfaceToIndex(psDevice, (pUSBRequest->wIndex & 0xFF));
+            ui32Idx = InterfaceToIndex(psCompDevice,
+                                       (psUSBRequest->wIndex & 0xFF));
             break;
         }
 
         case USB_RTYPE_ENDPOINT:
         {
-            ulIdx = EndpointToIndex(psDevice, (pUSBRequest->wIndex & 0x0F),
-                             (pUSBRequest->wIndex & 0x80) ? true : false);
+            ui32Idx = EndpointToIndex(psCompDevice,
+                            (psUSBRequest->wIndex & 0x0F),
+                            (psUSBRequest->wIndex & 0x80) ? true : false);
             break;
         }
 
@@ -440,7 +374,7 @@ GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
         case USB_RTYPE_OTHER:
         default:
         {
-            ulIdx = INVALID_DEVICE_INDEX;
+            ui32Idx = INVALID_DEVICE_INDEX;
             break;
         }
     }
@@ -448,29 +382,29 @@ GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
     //
     // Did we find a device class to pass the request to?
     //
-    if(ulIdx != INVALID_DEVICE_INDEX)
+    if(ui32Idx != INVALID_DEVICE_INDEX)
     {
         //
         // Get a pointer to the individual device instance.
         //
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
         //
         // Does this device have a GetDescriptor callback?
         //
-        if(pDeviceInfo->sCallbacks.pfnGetDescriptor)
+        if(psDeviceInfo->psCallbacks->pfnGetDescriptor)
         {
             //
             // Remember this device index so that we can correctly route any
             // data notification callbacks to it.
             //
-            psDevice->psPrivateData->ulEP0Owner = ulIdx;
+            psCompDevice->sPrivateData.ui32EP0Owner = ui32Idx;
 
             //
             // Call the device to retrieve the descriptor.
             //
-            pDeviceInfo->sCallbacks.pfnGetDescriptor(
-                    psDevice->psDevices[ulIdx].pvInstance, pUSBRequest);
+            psDeviceInfo->psCallbacks->pfnGetDescriptor(
+               psCompDevice->psDevices[ui32Idx].pvInstance, psUSBRequest);
         }
         else
         {
@@ -478,8 +412,8 @@ GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
             // Oops - we can't satisfy the request so stall EP0 to indicate
             // an error.
             //
-            USBDCDStallEP0(
-                       USB_BASE_TO_INDEX(psDevice->psPrivateData->ulUSBBase));
+            USBDCDStallEP0(USBBaseToIndex(
+                              psCompDevice->sPrivateData.ui32USBBase));
         }
     }
     else
@@ -488,7 +422,8 @@ GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
         // We are unable to satisfy the descriptor request so stall EP0 to
         // indicate an error.
         //
-        USBDCDStallEP0(USB_BASE_TO_INDEX(psDevice->psPrivateData->ulUSBBase));
+        USBDCDStallEP0(USBBaseToIndex(
+                              psCompDevice->sPrivateData.ui32USBBase));
     }
 }
 
@@ -499,36 +434,37 @@ GetDescriptor(void *pvInstance, tUSBRequest *pUSBRequest)
 //
 //****************************************************************************
 static void
-SuspendHandler(void *pvInstance)
+SuspendHandler(void *pvCompositeInstance)
 {
-    unsigned long ulIdx;
-    tUSBDCompositeDevice *psDevice;
-    const tDeviceInfo *pDeviceInfo;
+    uint32_t ui32Idx;
+    tUSBDCompositeDevice *psCompDevice;
+    const tDeviceInfo *psDeviceInfo;
     void *pvDeviceInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Inform the application that the device has resumed.
     //
-    if(psDevice->pfnCallback)
+    if(psCompDevice->pfnCallback)
     {
-        psDevice->pfnCallback(pvInstance, USB_EVENT_SUSPEND, 0, 0);
+        psCompDevice->pfnCallback(pvCompositeInstance, USB_EVENT_SUSPEND,
+                                       0, 0);
     }
 
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
-        pvDeviceInst = psDevice->psDevices[ulIdx].pvInstance;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
+        pvDeviceInst = psCompDevice->psDevices[ui32Idx].pvInstance;
 
-        if(pDeviceInfo->sCallbacks.pfnSuspendHandler)
+        if(psDeviceInfo->psCallbacks->pfnSuspendHandler)
         {
-            pDeviceInfo->sCallbacks.pfnSuspendHandler(pvDeviceInst);
+            psDeviceInfo->psCallbacks->pfnSuspendHandler(pvDeviceInst);
         }
     }
 }
@@ -540,36 +476,37 @@ SuspendHandler(void *pvInstance)
 //
 //****************************************************************************
 static void
-ResumeHandler(void *pvInstance)
+ResumeHandler(void *pvCompositeInstance)
 {
-    unsigned long ulIdx;
-    tUSBDCompositeDevice *psDevice;
-    const tDeviceInfo *pDeviceInfo;
+    uint32_t ui32Idx;
+    tUSBDCompositeDevice *psCompDevice;
+    const tDeviceInfo *psDeviceInfo;
     void *pvDeviceInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Inform the application that the device has resumed.
     //
-    if(psDevice->pfnCallback)
+    if(psCompDevice->pfnCallback)
     {
-        psDevice->pfnCallback(pvInstance, USB_EVENT_RESUME, 0, 0);
+        psCompDevice->pfnCallback(pvCompositeInstance, USB_EVENT_RESUME,
+                                       0, 0);
     }
 
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
-        pvDeviceInst = psDevice->psDevices[ulIdx].pvInstance;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
+        pvDeviceInst = psCompDevice->psDevices[ui32Idx].pvInstance;
 
-        if(pDeviceInfo->sCallbacks.pfnResumeHandler)
+        if(psDeviceInfo->psCallbacks->pfnResumeHandler)
         {
-            pDeviceInfo->sCallbacks.pfnResumeHandler(pvDeviceInst);
+            psDeviceInfo->psCallbacks->pfnResumeHandler(pvDeviceInst);
         }
     }
 }
@@ -581,36 +518,37 @@ ResumeHandler(void *pvInstance)
 //
 //****************************************************************************
 static void
-ResetHandler(void *pvInstance)
+ResetHandler(void *pvCompositeInstance)
 {
-    unsigned long ulIdx;
-    tUSBDCompositeDevice *psDevice;
-    const tDeviceInfo *pDeviceInfo;
+    uint32_t ui32Idx;
+    tUSBDCompositeDevice *psCompDevice;
+    const tDeviceInfo *psDeviceInfo;
     void *pvDeviceInst;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Inform the application that the device has been connected.
     //
-    if(psDevice->pfnCallback)
+    if(psCompDevice->pfnCallback)
     {
-        psDevice->pfnCallback(pvInstance, USB_EVENT_CONNECTED, 0, 0);
+        psCompDevice->pfnCallback(pvCompositeInstance,
+                                       USB_EVENT_CONNECTED, 0, 0);
     }
 
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
-        pvDeviceInst = psDevice->psDevices[ulIdx].pvInstance;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
+        pvDeviceInst = psCompDevice->psDevices[ui32Idx].pvInstance;
 
-        if(pDeviceInfo->sCallbacks.pfnResetHandler)
+        if(psDeviceInfo->psCallbacks->pfnResetHandler)
         {
-            pDeviceInfo->sCallbacks.pfnResetHandler(pvDeviceInst);
+            psDeviceInfo->psCallbacks->pfnResetHandler(pvDeviceInst);
         }
     }
 }
@@ -622,31 +560,31 @@ ResetHandler(void *pvInstance)
 //
 //****************************************************************************
 static void
-DataSent(void *pvInstance, unsigned long ulInfo)
+DataSent(void *pvCompositeInstance, uint32_t ui32Info)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Pass this notification on to the device which last handled a
     // transaction on endpoint 0 (assuming we know who that was).
     //
-    ulIdx = psDevice->psPrivateData->ulEP0Owner;
+    ui32Idx = psCompDevice->sPrivateData.ui32EP0Owner;
 
-    if(ulIdx != INVALID_DEVICE_INDEX)
+    if(ui32Idx != INVALID_DEVICE_INDEX)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
-        if(pDeviceInfo->sCallbacks.pfnDataSent)
+        if(psDeviceInfo->psCallbacks->pfnDataSent)
         {
-            pDeviceInfo->sCallbacks.pfnDataSent(
-                psDevice->psDevices[ulIdx].pvInstance, ulInfo);
+            psDeviceInfo->psCallbacks->pfnDataSent(
+                psCompDevice->psDevices[ui32Idx].pvInstance, ui32Info);
         }
     }
 }
@@ -658,31 +596,31 @@ DataSent(void *pvInstance, unsigned long ulInfo)
 //
 //****************************************************************************
 static void
-DataReceived(void *pvInstance, unsigned long ulInfo)
+DataReceived(void *pvCompositeInstance, uint32_t ui32Info)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Pass this notification on to the device which last handled a
     // transaction on endpoint 0 (assuming we know who that was).
     //
-    ulIdx = psDevice->psPrivateData->ulEP0Owner;
+    ui32Idx = psCompDevice->sPrivateData.ui32EP0Owner;
 
-    if(ulIdx != INVALID_DEVICE_INDEX)
+    if(ui32Idx != INVALID_DEVICE_INDEX)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
-        if(pDeviceInfo->sCallbacks.pfnDataReceived)
+        if(psDeviceInfo->psCallbacks->pfnDataReceived)
         {
-            pDeviceInfo->sCallbacks.pfnDataReceived(
-                psDevice->psDevices[ulIdx].pvInstance, ulInfo);
+            psDeviceInfo->psCallbacks->pfnDataReceived(
+                psCompDevice->psDevices[ui32Idx].pvInstance, ui32Info);
         }
     }
 }
@@ -694,34 +632,67 @@ DataReceived(void *pvInstance, unsigned long ulInfo)
 //
 //****************************************************************************
 static void
-HandleEndpoints(void *pvInstance, unsigned long ulStatus)
+HandleEndpoints(void *pvCompositeInstance, uint32_t ui32Status)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Call each of the endpoint handlers.  This may seem odd since we should
     // only call the handler whose endpoint needs service.  Unfortunately, if
     // the device class driver is using uDMA, we have no way of knowing which
-    // handler to call (since ulStatus will be 0).  Since the handlers are
-    // set up to ignore any callback that isn't for them, this is safe.
+    // handler to call (since ui32Status will be 0).  Since the handlers are
+    // set up to ignore any callback that is not for them, this is safe.
     //
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
-        if(pDeviceInfo->sCallbacks.pfnEndpointHandler)
+        if(psDeviceInfo->psCallbacks->pfnEndpointHandler)
         {
-            pDeviceInfo->sCallbacks.pfnEndpointHandler(
-                psDevice->psDevices[ulIdx].pvInstance, ulStatus);
+            psDeviceInfo->psCallbacks->pfnEndpointHandler(
+                psCompDevice->psDevices[ui32Idx].pvInstance, ui32Status);
+        }
+    }
+}
+
+//*****************************************************************************
+//
+// Device instance specific handler.
+//
+//*****************************************************************************
+static void
+HandleDevice(void *pvCompositeInstance, uint32_t ui32Request,
+             void *pvRequestData)
+{
+    uint32_t ui32Idx;
+    tUSBDCompositeDevice *psCompDevice;
+    const tDeviceInfo *psDeviceInfo;
+
+    ASSERT(pvCompositeInstance != 0);
+
+    //
+    // Create the device instance pointer.
+    //
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
+
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
+    {
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
+
+        if(psDeviceInfo->psCallbacks->pfnDeviceHandler)
+        {
+            psDeviceInfo->psCallbacks->pfnDeviceHandler(
+                psCompDevice->psDevices[ui32Idx].pvInstance, ui32Request,
+                pvRequestData);
         }
     }
 }
@@ -733,35 +704,36 @@ HandleEndpoints(void *pvInstance, unsigned long ulStatus)
 //
 //****************************************************************************
 static void
-HandleDisconnect(void *pvInstance)
+HandleDisconnect(void *pvCompositeInstance)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Inform the application that the device has been disconnected.
     //
-    if(psDevice->pfnCallback)
+    if(psCompDevice->pfnCallback)
     {
-        psDevice->pfnCallback(pvInstance, USB_EVENT_DISCONNECTED, 0, 0);
+        psCompDevice->pfnCallback(pvCompositeInstance,
+                                       USB_EVENT_DISCONNECTED, 0, 0);
     }
 
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
-        if(pDeviceInfo->sCallbacks.pfnDisconnectHandler)
+        if(psDeviceInfo->psCallbacks->pfnDisconnectHandler)
         {
-            pDeviceInfo->sCallbacks.pfnDisconnectHandler(
-                psDevice->psDevices[ulIdx].pvInstance);
+            psDeviceInfo->psCallbacks->pfnDisconnectHandler(
+                psCompDevice->psDevices[ui32Idx].pvInstance);
         }
     }
 }
@@ -774,29 +746,28 @@ HandleDisconnect(void *pvInstance)
 //
 //****************************************************************************
 static void
-InterfaceChange(void *pvInstance, unsigned char ucInterfaceNum,
-                unsigned char ucAlternateSetting)
+InterfaceChange(void *pvCompositeInstance, uint8_t ui8InterfaceNum,
+                uint8_t ui8AlternateSetting)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
-
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
-        if(pDeviceInfo->sCallbacks.pfnInterfaceChange)
+        if(psDeviceInfo->psCallbacks->pfnInterfaceChange)
         {
-            pDeviceInfo->sCallbacks.pfnInterfaceChange(
-                psDevice->psDevices[ulIdx].pvInstance, ucInterfaceNum,
-                ucAlternateSetting);
+            psDeviceInfo->psCallbacks->pfnInterfaceChange(
+                psCompDevice->psDevices[ui32Idx].pvInstance,
+                ui8InterfaceNum, ui8AlternateSetting);
         }
     }
 }
@@ -809,27 +780,27 @@ InterfaceChange(void *pvInstance, unsigned char ucInterfaceNum,
 //
 //****************************************************************************
 static void
-ConfigChangeHandler(void *pvInstance, unsigned long ulValue)
+ConfigChangeHandler(void *pvCompositeInstance, uint32_t ui32Value)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
-    for(ulIdx = 0; ulIdx < psDevice->ulNumDevices; ulIdx++)
+    for(ui32Idx = 0; ui32Idx < psCompDevice->ui32NumDevices; ui32Idx++)
     {
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
-        if(pDeviceInfo->sCallbacks.pfnConfigChange)
+        if(psDeviceInfo->psCallbacks->pfnConfigChange)
         {
-            pDeviceInfo->sCallbacks.pfnConfigChange(
-                    psDevice->psDevices[ulIdx].pvInstance, ulValue);
+            psDeviceInfo->psCallbacks->pfnConfigChange(
+                psCompDevice->psDevices[ui32Idx].pvInstance, ui32Value);
         }
     }
 }
@@ -839,8 +810,8 @@ ConfigChangeHandler(void *pvInstance, unsigned long ulValue)
 // This function is called by the USB device stack whenever a non-standard
 // request is received.
 //
-// \param pvInstance
-// \param pUSBRequest points to the request received.
+// \param pvCompositeInstance
+// \param psUSBRequest points to the request received.
 //
 // This call  will be passed on to the device classes if they have a handler
 // for this function.
@@ -849,16 +820,16 @@ ConfigChangeHandler(void *pvInstance, unsigned long ulValue)
 //
 //****************************************************************************
 static void
-HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
+HandleRequests(void *pvCompositeInstance, tUSBRequest *psUSBRequest)
 {
-    unsigned long ulIdx;
-    const tDeviceInfo *pDeviceInfo;
-    tUSBDCompositeDevice *psDevice;
+    uint32_t ui32Idx;
+    const tDeviceInfo *psDeviceInfo;
+    tUSBDCompositeDevice *psCompDevice;
 
     //
     // Create the device instance pointer.
     //
-    psDevice = (tUSBDCompositeDevice *)pvInstance;
+    psCompDevice = (tUSBDCompositeDevice *)pvCompositeInstance;
 
     //
     // Determine which device this request is intended for.  We have to be
@@ -866,18 +837,20 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
     // depending upon whether it is a request sent to the device, the interface
     // or the endpoint.
     //
-    switch(pUSBRequest->bmRequestType & USB_RTYPE_RECIPIENT_M)
+    switch(psUSBRequest->bmRequestType & USB_RTYPE_RECIPIENT_M)
     {
         case USB_RTYPE_INTERFACE:
         {
-            ulIdx = InterfaceToIndex(psDevice, (pUSBRequest->wIndex & 0xFF));
+            ui32Idx = InterfaceToIndex(psCompDevice,
+                                       (psUSBRequest->wIndex & 0xFF));
             break;
         }
 
         case USB_RTYPE_ENDPOINT:
         {
-            ulIdx = EndpointToIndex(psDevice, (pUSBRequest->wIndex & 0x0F),
-                             (pUSBRequest->wIndex & 0x80) ? true : false);
+            ui32Idx = EndpointToIndex(psCompDevice,
+                             (psUSBRequest->wIndex & 0x0F),
+                             (psUSBRequest->wIndex & 0x80) ? true : false);
             break;
         }
 
@@ -894,7 +867,7 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
         case USB_RTYPE_OTHER:
         default:
         {
-            ulIdx = INVALID_DEVICE_INDEX;
+            ui32Idx = INVALID_DEVICE_INDEX;
             break;
         }
     }
@@ -902,29 +875,30 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
     //
     // Did we find a device class to pass the request to?
     //
-    if(ulIdx != INVALID_DEVICE_INDEX)
+    if(ui32Idx != INVALID_DEVICE_INDEX)
     {
         //
         // Get a pointer to the individual device instance.
         //
-        pDeviceInfo = psDevice->psDevices[ulIdx].psDevice;
+        psDeviceInfo = psCompDevice->psDevices[ui32Idx].psDevInfo;
 
         //
         // Does this device have a RequestHandler callback?
         //
-        if(pDeviceInfo->sCallbacks.pfnRequestHandler)
+        if(psDeviceInfo->psCallbacks->pfnRequestHandler)
         {
             //
             // Remember this device index so that we can correctly route any
             // data notification callbacks to it.
             //
-            psDevice->psPrivateData->ulEP0Owner = ulIdx;
+            psCompDevice->sPrivateData.ui32EP0Owner = ui32Idx;
 
             //
             // Yes - call the device to retrieve the descriptor.
             //
-            pDeviceInfo->sCallbacks.pfnRequestHandler(
-                    psDevice->psDevices[ulIdx].pvInstance, pUSBRequest);
+            psDeviceInfo->psCallbacks->pfnRequestHandler(
+                    psCompDevice->psDevices[ui32Idx].pvInstance,
+                    psUSBRequest);
         }
         else
         {
@@ -932,8 +906,8 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
             // Oops - we can't satisfy the request so stall EP0 to indicate
             // an error.
             //
-            USBDCDStallEP0(
-                       USB_BASE_TO_INDEX(psDevice->psPrivateData->ulUSBBase));
+            USBDCDStallEP0(USBBaseToIndex(
+                              psCompDevice->sPrivateData.ui32USBBase));
         }
     }
     else
@@ -942,9 +916,9 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
         // We are unable to satisfy the descriptor request so stall EP0 to
         // indicate an error.
         //
-        USBDCDStallEP0(USB_BASE_TO_INDEX(psDevice->psPrivateData->ulUSBBase));
+        USBDCDStallEP0(USBBaseToIndex(
+                              psCompDevice->sPrivateData.ui32USBBase));
     }
-
 }
 
 //****************************************************************************
@@ -953,26 +927,26 @@ HandleRequests(void *pvInstance, tUSBRequest *pUSBRequest)
 //
 //****************************************************************************
 static void
-CompositeIfaceChange(tCompositeEntry *pCompDevice, unsigned char ucOld,
-                     unsigned char ucNew)
+CompositeIfaceChange(tCompositeEntry *psCompDevice, uint8_t ui8Old,
+                     uint8_t ui8New)
 {
-    unsigned char pucInterfaces[2];
+    uint8_t pui8Interfaces[2];
 
-    if(pCompDevice->psDevice->sCallbacks.pfnDeviceHandler)
+    if(psCompDevice->psDevInfo->psCallbacks->pfnDeviceHandler)
     {
         //
         // Create the data to pass to the device handler.
         //
-        pucInterfaces[0] = ucOld;
-        pucInterfaces[1] = ucNew;
+        pui8Interfaces[0] = ui8Old;
+        pui8Interfaces[1] = ui8New;
 
         //
         // Call the device handler to inform the class of the interface number
         // change.
         //
-        pCompDevice->psDevice->sCallbacks.pfnDeviceHandler(
-            pCompDevice->pvInstance, USB_EVENT_COMP_IFACE_CHANGE,
-            (void *)pucInterfaces);
+        psCompDevice->psDevInfo->psCallbacks->pfnDeviceHandler(
+            psCompDevice->pvInstance, USB_EVENT_COMP_IFACE_CHANGE,
+            (void *)pui8Interfaces);
     }
 }
 
@@ -982,49 +956,28 @@ CompositeIfaceChange(tCompositeEntry *pCompDevice, unsigned char ucOld,
 //
 //****************************************************************************
 static void
-CompositeEPChange(tCompositeEntry *pCompDevice, unsigned char ucOld,
-                     unsigned char ucNew)
+CompositeEPChange(tCompositeEntry *psCompDevice, uint8_t ui8Old,
+                     uint8_t ui8New)
 {
-    unsigned char pucInterfaces[2];
-    unsigned char ucIndex;
+    uint8_t pui8Interfaces[2];
 
-    if(pCompDevice->psDevice->sCallbacks.pfnDeviceHandler)
+    if(psCompDevice->psDevInfo->psCallbacks->pfnDeviceHandler)
     {
         //
         // Create the data to pass to the device handler.
         //
-        pucInterfaces[0] = ucOld;
-        pucInterfaces[1] = ucNew;
+        pui8Interfaces[0] = ui8Old;
+        pui8Interfaces[1] = ui8New;
 
-        ucNew--;
+        ui8New--;
 
-        if(ucOld & USB_RTYPE_DIR_IN)
-        {
-            ucIndex = (ucOld & ~USB_RTYPE_DIR_IN) - 1;
-
-            g_sUSBCompositeFIFOConfig.sIn[ucNew].bDoubleBuffer =
-                pCompDevice->psDevice->psFIFOConfig->sIn[ucIndex].bDoubleBuffer;
-
-            g_sUSBCompositeFIFOConfig.sIn[ucNew].usEPFlags =
-                pCompDevice->psDevice->psFIFOConfig->sIn[ucIndex].usEPFlags;
-        }
-        else
-        {
-            ucIndex = ucOld - 1;
-
-            g_sUSBCompositeFIFOConfig.sOut[ucNew].bDoubleBuffer =
-               pCompDevice->psDevice->psFIFOConfig->sOut[ucIndex].bDoubleBuffer;
-
-            g_sUSBCompositeFIFOConfig.sOut[ucNew].usEPFlags =
-                pCompDevice->psDevice->psFIFOConfig->sOut[ucIndex].usEPFlags;
-        }
         //
         // Call the device handler to inform the class of the interface number
         // change.
         //
-        pCompDevice->psDevice->sCallbacks.pfnDeviceHandler(
-            pCompDevice->pvInstance, USB_EVENT_COMP_EP_CHANGE,
-            (void *)pucInterfaces);
+        psCompDevice->psDevInfo->psCallbacks->pfnDeviceHandler(
+            psCompDevice->pvInstance, USB_EVENT_COMP_EP_CHANGE,
+            (void *)pui8Interfaces);
     }
 }
 
@@ -1034,16 +987,16 @@ CompositeEPChange(tCompositeEntry *pCompDevice, unsigned char ucOld,
 // instance device.
 //
 //****************************************************************************
-unsigned long
+uint32_t
 BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
 {
-    unsigned long ulIdx, ulOffset, ulCPIdx, ulFixINT, ulDev;
-    unsigned short usTotalLength, usBytes;
-    unsigned char ucInterface, ucINEndpoint, ucOUTEndpoint;
-    unsigned char *pucData, *pucConfig;
-    const tConfigHeader *pConfigHeader;
+    uint32_t ui32Idx, ui32Offset, ui32CPIdx, ui32FixINT, ui32Dev;
+    uint16_t ui16TotalLength, ui16Bytes;
+    uint8_t ui8Interface, ui8INEndpoint, ui8OUTEndpoint;
+    uint8_t *pui8Data, *pui8Config;
+    const tConfigHeader *psConfigHeader;
     tDescriptorHeader *psHeader;
-    const unsigned char *pucDescriptor;
+    const uint8_t *pui8Descriptor;
     tInterfaceDescriptor *psInterface;
     tEndpointDescriptor *psEndpoint;
     const tDeviceInfo *psDevice;
@@ -1051,107 +1004,108 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
     //
     // Save the number of devices to look through.
     //
-    ulDev = 0;
-    ulIdx = 0;
-    ucInterface = 0;
-    ucINEndpoint = 1;
-    ucOUTEndpoint = 1;
-    ulOffset = 0;
-    ulFixINT = 0;
+    ui32Dev = 0;
+    ui32Idx = 0;
+    ui8Interface = 0;
+    ui8INEndpoint = 1;
+    ui8OUTEndpoint = 1;
+    ui32Offset = 0;
+    ui32FixINT = 0;
 
     //
     // This puts the first section pointer in the first entry in the list
     // of sections.
     //
-    psCompDevice->psPrivateData->ppsCompSections[0] =
-        &psCompDevice->psPrivateData->psCompSections[0];
+    psCompDevice->sPrivateData.ppsCompSections[0] =
+        &psCompDevice->sPrivateData.psCompSections[0];
 
     //
     // Put the pointer to this instances configuration descriptor into the
     // front of the list.
     //
-    psCompDevice->psPrivateData->ppsCompSections[0]->pucData =
-        (unsigned char *)&psCompDevice->psPrivateData->sConfigDescriptor;
+    psCompDevice->sPrivateData.ppsCompSections[0]->pui8Data =
+        (uint8_t *)&psCompDevice->sPrivateData.sConfigDescriptor;
 
-    psCompDevice->psPrivateData->ppsCompSections[0]->usSize =
-        psCompDevice->psPrivateData->sConfigDescriptor.bLength;
+    psCompDevice->sPrivateData.ppsCompSections[0]->ui16Size =
+        psCompDevice->sPrivateData.sConfigDescriptor.bLength;
 
     //
     // The configuration descriptor is 9 bytes so initialize the total length
     // to 9 bytes.
     //
-    usTotalLength = 9;
+    ui16TotalLength = 9;
 
     //
     // Copy the section pointer into the section array for the composite
     // device.  This is awkward but is required given the definition
     // of the structures.
     //
-    psCompDevice->psPrivateData->ppsCompSections[1] =
-        &psCompDevice->psPrivateData->psCompSections[1];
+    psCompDevice->sPrivateData.ppsCompSections[1] =
+        &psCompDevice->sPrivateData.psCompSections[1];
 
     //
     // Copy the pointer to the application supplied space into the section
     // list.
     //
-    psCompDevice->psPrivateData->ppsCompSections[1]->usSize = 0;
-    psCompDevice->psPrivateData->ppsCompSections[1]->pucData =
-        psCompDevice->psPrivateData->pucData;
+    psCompDevice->sPrivateData.ppsCompSections[1]->ui16Size = 0;
+    psCompDevice->sPrivateData.ppsCompSections[1]->pui8Data =
+        psCompDevice->sPrivateData.pui8Data;
 
     //
     // Create a local pointer to the data that is used to copy data from
     // the other devices into the composite descriptor.
     //
-    pucData = psCompDevice->psPrivateData->pucData;
+    pui8Data = psCompDevice->sPrivateData.pui8Data;
 
     //
     // Consider each device in turn.
     //
-    while(ulDev < psCompDevice->ulNumDevices)
+    while(ui32Dev < psCompDevice->ui32NumDevices)
     {
         //
         // Save the current starting address of this descriptor.
         //
-        pucConfig = pucData + ulOffset;
+        pui8Config = pui8Data + ui32Offset;
 
         //
         // Create a local pointer to the configuration header.
         //
-        psDevice = psCompDevice->psDevices[ulDev].psDevice;
-        pConfigHeader = psDevice->ppConfigDescriptors[0];
+        psDevice = psCompDevice->psDevices[ui32Dev].psDevInfo;
+        psConfigHeader = psDevice->ppsConfigDescriptors[0];
 
         //
         // Loop through each of the sections in this device's configuration
         // descriptor.
         //
-        for(ulIdx = 0; ulIdx < pConfigHeader->ucNumSections; ulIdx++)
+        for(ui32Idx = 0; ui32Idx < psConfigHeader->ui8NumSections; ui32Idx++)
         {
             //
             // Initialize the local offset in this descriptor.  We include
-            // a special case here to ignore the initial 9 byte config
+            // a special case here to ignore the initial 9 byte configuration
             // descriptor since this has already been handled.
             //
-            if(ulIdx)
+            if(ui32Idx)
             {
                 //
                 // This is not the first section so we handle everything in
                 // it.
                 //
-                usBytes = 0;
+                ui16Bytes = 0;
             }
             else
             {
                 //
                 // This is the first section for this device so skip the 9
-                // byte config descriptor since we've already handled this.
+                // byte configuration descriptor since we've already handled
+                // this.
                 //
-                usBytes = 9;
+                ui16Bytes = 9;
 
                 //
-                // If this section includes only the config descriptor, skip
-                // it entirely.
+                // If this section includes only the configuration descriptor,
+                // skip it entirely.
                 //
-                if(pConfigHeader->psSections[ulIdx]->usSize <= usBytes)
+                if(psConfigHeader->psSections[ui32Idx]->ui16Size <= ui16Bytes)
                 {
                     continue;
                 }
@@ -1160,13 +1114,13 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
             //
             // Get a pointer to the configuration descriptor.
             //
-            pucDescriptor = pConfigHeader->psSections[ulIdx]->pucData;
+            pui8Descriptor = psConfigHeader->psSections[ui32Idx]->pui8Data;
 
             //
             // Bounds check the allocated space and return if there is not
             // enough space.
             //
-            if(ulOffset > psCompDevice->psPrivateData->ulDataSize)
+            if(ui32Offset > psCompDevice->sPrivateData.ui32DataSize)
             {
                 return(1);
             }
@@ -1174,22 +1128,23 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
             //
             // Copy the descriptor from the device into the descriptor list.
             //
-            for(ulCPIdx = 0;
-                ulCPIdx < pConfigHeader->psSections[ulIdx]->usSize;
-                ulCPIdx++)
+            for(ui32CPIdx = 0;
+                ui32CPIdx < psConfigHeader->psSections[ui32Idx]->ui16Size;
+                ui32CPIdx++)
             {
-                pucData[ulCPIdx + ulOffset] = pucDescriptor[ulCPIdx];
+                pui8Data[ui32CPIdx + ui32Offset] = pui8Descriptor[ui32CPIdx];
             }
 
             //
             // Read out the descriptors in this section.
             //
-            while(usBytes < pConfigHeader->psSections[ulIdx]->usSize)
+            while(ui16Bytes < psConfigHeader->psSections[ui32Idx]->ui16Size)
             {
                 //
                 // Create a descriptor header pointer.
                 //
-                psHeader = (tDescriptorHeader *)&pucData[ulOffset + usBytes];
+                psHeader = (tDescriptorHeader *)&pui8Data[ui32Offset +
+                                                          ui16Bytes];
 
                 //
                 // Check for interface descriptors and modify the numbering to
@@ -1210,7 +1165,7 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
                         // previous interface number because the current one
                         // has already been incremented.
                         //
-                        psInterface->bInterfaceNumber = ucInterface - 1;
+                        psInterface->bInterfaceNumber = ui8Interface - 1;
                     }
                     else
                     {
@@ -1218,14 +1173,15 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
                         // Notify the class that it's interface number has
                         // changed.
                         //
-                        CompositeIfaceChange(&psCompDevice->psDevices[ulDev],
-                                             psInterface->bInterfaceNumber,
-                                             ucInterface);
+                        CompositeIfaceChange(
+                                         &psCompDevice->psDevices[ui32Dev],
+                                         psInterface->bInterfaceNumber,
+                                         ui8Interface);
                         //
                         // This was the non-alternate setting so save the
                         // value and move to the next interface number.
                         //
-                        psInterface->bInterfaceNumber = ucInterface;
+                        psInterface->bInterfaceNumber = ui8Interface;
 
                         //
                         // No strings allowed on interface descriptors for
@@ -1233,7 +1189,7 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
                         //
                         psInterface->iInterface = 0;
 
-                        ucInterface++;
+                        ui8Interface++;
                     }
                 }
                 //
@@ -1254,27 +1210,28 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
                         // and this is the interrupt endpoint.
                         //
                         if(((psEndpoint->bmAttributes & USB_EP_ATTR_TYPE_M) ==
-                                USB_EP_ATTR_INT) &&
-                           (psCompDevice->usPID == USB_PID_COMP_SERIAL))
+                            USB_EP_ATTR_INT) &&
+                           (psCompDevice->ui16PID == USB_PID_COMP_SERIAL))
                         {
                             //
                             // Check if the Fixed Interrupt endpoint has been
                             // set yet.
                             //
-                            if(ulFixINT == 0)
+                            if(ui32FixINT == 0)
                             {
                                 //
                                 // Allocate the fixed interrupt endpoint and
                                 // save its number.
                                 //
-                                ulFixINT = ucINEndpoint++;
+                                ui32FixINT = ui8INEndpoint++;
                             }
 
-                            CompositeEPChange(&psCompDevice->psDevices[ulDev],
-                                              psEndpoint->bEndpointAddress,
-                                              ulFixINT);
+                            CompositeEPChange(
+                                        &psCompDevice->psDevices[ui32Dev],
+                                        psEndpoint->bEndpointAddress,
+                                        ui32FixINT);
 
-                            psEndpoint->bEndpointAddress = ulFixINT |
+                            psEndpoint->bEndpointAddress = ui32FixINT |
                                                            USB_RTYPE_DIR_IN;
                         }
                         else
@@ -1283,11 +1240,12 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
                             // Notify the class that it's interface number has
                             // changed.
                             //
-                            CompositeEPChange(&psCompDevice->psDevices[ulDev],
-                                              psEndpoint->bEndpointAddress,
-                                              ucINEndpoint);
+                            CompositeEPChange(
+                                        &psCompDevice->psDevices[ui32Dev],
+                                        psEndpoint->bEndpointAddress,
+                                        ui8INEndpoint);
 
-                            psEndpoint->bEndpointAddress = ucINEndpoint++ |
+                            psEndpoint->bEndpointAddress = ui8INEndpoint++ |
                                                            USB_RTYPE_DIR_IN;
                         }
                     }
@@ -1297,58 +1255,58 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
                         // Notify the class that it's interface number has
                         // changed.
                         //
-                        CompositeEPChange(&psCompDevice->psDevices[ulDev],
+                        CompositeEPChange(&psCompDevice->psDevices[ui32Dev],
                                           psEndpoint->bEndpointAddress,
-                                          ucOUTEndpoint);
-                        psEndpoint->bEndpointAddress = ucOUTEndpoint++;
+                                          ui8OUTEndpoint);
+                        psEndpoint->bEndpointAddress = ui8OUTEndpoint++;
                     }
                 }
 
                 //
                 // Move on to the next descriptor.
                 //
-                usBytes += psHeader->bLength;
+                ui16Bytes += psHeader->bLength;
             }
 
-            ulOffset += pConfigHeader->psSections[ulIdx]->usSize;
+            ui32Offset += psConfigHeader->psSections[ui32Idx]->ui16Size;
 
-            usTotalLength += usBytes;
+            ui16TotalLength += ui16Bytes;
         }
 
         //
         // Allow the device class to make adjustments to the configuration
         // descriptor.
         //
-        psCompDevice->psDevices[ulDev].psDevice->sCallbacks.pfnDeviceHandler(
-                psCompDevice->psDevices[ulDev].pvInstance,
-                USB_EVENT_COMP_CONFIG, (void *)pucConfig);
+        psCompDevice->psDevices[ui32Dev].psDevInfo->psCallbacks->pfnDeviceHandler(
+                psCompDevice->psDevices[ui32Dev].pvInstance,
+                USB_EVENT_COMP_CONFIG, (void *)pui8Config);
 
         //
         // Add an entry into the device workspace array to allow us to quickly
         // map interface and endpoint numbers to device instances later.
         //
-        psCompDevice->pulDeviceWorkspace[ulDev] =
-            (ulDev << (LOOKUP_INDEX_BYTE * 8)) |
-            (ucInterface << (LOOKUP_INTERFACE_BYTE * 8)) |
-            (ucOUTEndpoint << (LOOKUP_OUT_END_BYTE * 8)) |
-            (ucINEndpoint << (LOOKUP_IN_END_BYTE * 8));
+        psCompDevice->psDevices[ui32Dev].ui32DeviceWorkspace =
+            (ui32Dev << (LOOKUP_INDEX_BYTE * 8)) |
+            (ui8Interface << (LOOKUP_INTERFACE_BYTE * 8)) |
+            (ui8OUTEndpoint << (LOOKUP_OUT_END_BYTE * 8)) |
+            (ui8INEndpoint << (LOOKUP_IN_END_BYTE * 8));
 
         //
         // Move on to the next device.
         //
-        ulDev++;
+        ui32Dev++;
     }
 
     //
     // Modify the configuration descriptor to match the number of interfaces
     // and the new total size.
     //
-    psCompDevice->psPrivateData->sCompConfigHeader.ucNumSections = 2;
-    psCompDevice->psPrivateData->ppsCompSections[1]->usSize = ulOffset;
-    psCompDevice->psPrivateData->sConfigDescriptor.bNumInterfaces =
-       ucInterface;
-    psCompDevice->psPrivateData->sConfigDescriptor.wTotalLength =
-       usTotalLength;
+    psCompDevice->sPrivateData.sCompConfigHeader.ui8NumSections = 2;
+    psCompDevice->sPrivateData.ppsCompSections[1]->ui16Size = ui32Offset;
+    psCompDevice->sPrivateData.sConfigDescriptor.bNumInterfaces =
+       ui8Interface;
+    psCompDevice->sPrivateData.sConfigDescriptor.wTotalLength =
+       ui16TotalLength;
 
 
     return(0);
@@ -1359,23 +1317,23 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
 //! This function should be called once for the composite class device to
 //! initialize basic operation and prepare for enumeration.
 //!
-//! \param ulIndex is the index of the USB controller to initialize for
+//! \param ui32Index is the index of the USB controller to initialize for
 //! composite device operation.
 //! \param psDevice points to a structure containing parameters customizing
 //! the operation of the composite device.
-//! \param ulSize is the size in bytes of the data pointed to by the
-//! \e pucData parameter.
-//! \param pucData is the data area that the composite class can use to build
+//! \param ui32Size is the size in bytes of the data pointed to by the
+//! \e pui8Data parameter.
+//! \param pui8Data is the data area that the composite class can use to build
 //! up descriptors.
 //!
 //! In order for an application to initialize the USB composite device class,
 //! it must first call this function with the a valid composite device class
 //! structure in the \e psDevice parameter.  This allows this function to
 //! initialize the USB controller and device code to be prepared to enumerate
-//! and function as a USB composite device.  The \e ulSize and \e pucData
+//! and function as a USB composite device.  The \e ui32Size and \e pui8Data
 //! parameters should be large enough to hold all of the class instances
-//! passed in via the psDevice structure.  This is typically the full size of
-//! the configuration descriptor for a device minus its configuration
+//! passed in via the \e psDevice structure.  This is typically the full size
+//! of the configuration descriptor for a device minus its configuration
 //! header(9 bytes).
 //!
 //! This function returns a void pointer that must be passed in to all other
@@ -1389,97 +1347,107 @@ BuildCompositeDescriptor(tUSBDCompositeDevice *psCompDevice)
 //
 //****************************************************************************
 void *
-USBDCompositeInit(unsigned long ulIndex, tUSBDCompositeDevice *psDevice,
-        unsigned long ulSize, unsigned char *pucData)
+USBDCompositeInit(uint32_t ui32Index, tUSBDCompositeDevice *psDevice,
+                  uint32_t ui32Size, uint8_t *pui8Data)
 {
     tCompositeInstance *psInst;
-    long lIdx;
-    unsigned char *pucTemp;
+    int32_t i32Idx;
+    uint8_t *pui8Temp;
 
     //
     // Check parameter validity.
     //
-    ASSERT(ulIndex == 0);
+    ASSERT(ui32Index == 0);
     ASSERT(psDevice);
-    ASSERT(psDevice->ppStringDescriptors);
-    ASSERT(psDevice->psPrivateData);
+    ASSERT(psDevice->ppui8StringDescriptors);
 
     //
     // Initialize the work space in the passed instance structure.
     //
-    psInst = psDevice->psPrivateData;
-    psInst->ulDataSize = ulSize;
-    psInst->pucData = pucData;
+    psInst = &psDevice->sPrivateData;
+    psInst->ui32DataSize = ui32Size;
+    psInst->pui8Data = pui8Data;
 
     //
     // Save the base address of the USB controller.
     //
-    psInst->ulUSBBase = USB_INDEX_TO_BASE(ulIndex);
+    psInst->ui32USBBase = USBIndexToBase(ui32Index);
 
     //
-    // No device is currently transfering data on EP0.
+    // No device is currently transferring data on EP0.
     //
-    psInst->ulEP0Owner = INVALID_DEVICE_INDEX;
+    psInst->ui32EP0Owner = INVALID_DEVICE_INDEX;
 
     //
-    // Set the device information for the composite device.
+    // Initialize the device information structure.
     //
-    psInst->psDevInfo = &g_sCompositeDeviceInfo;
+    psInst->sDevInfo.psCallbacks = &g_sCompHandlers;
+    psInst->sDevInfo.pui8DeviceDescriptor = g_pui8CompDeviceDescriptor;
+    psInst->sDevInfo.ppsConfigDescriptors =
+                    (const tConfigHeader * const *)g_ppCompConfigDescriptors;
+    psInst->sDevInfo.ppui8StringDescriptors = 0;
+    psInst->sDevInfo.ui32NumStringDescriptors = 0;
 
-    g_pCompConfigDescriptors[0] = &psInst->sCompConfigHeader;
-    g_pCompConfigDescriptors[0]->ucNumSections = 0;
-    g_pCompConfigDescriptors[0]->psSections =
-      (const tConfigSection * const *)psDevice->psPrivateData->ppsCompSections;
+    //
+    // Initialize the device info structure for the composite device.
+    //
+    USBDCDDeviceInfoInit(0, &psInst->sDevInfo);
+
+    g_ppCompConfigDescriptors[0] = &psInst->sCompConfigHeader;
+    g_ppCompConfigDescriptors[0]->ui8NumSections = 0;
+    g_ppCompConfigDescriptors[0]->psSections =
+      (const tConfigSection * const *)psDevice->sPrivateData.ppsCompSections;
 
     //
     // Create a byte pointer to use with the copy.
     //
-    pucTemp = (unsigned char *)&psInst->sConfigDescriptor;
+    pui8Temp = (uint8_t *)&psInst->sConfigDescriptor;
 
     //
     // Copy the default configuration descriptor into the instance data.
     //
-    for(lIdx = 0; lIdx < g_pCompConfigDescriptor[0]; lIdx++)
+    for(i32Idx = 0; i32Idx < g_pui8CompConfigDescriptor[0]; i32Idx++)
     {
-        pucTemp[lIdx] = g_pCompConfigDescriptor[lIdx];
+        pui8Temp[i32Idx] = g_pui8CompConfigDescriptor[i32Idx];
     }
 
     //
     // Create a byte pointer to use with the copy.
     //
-    pucTemp = (unsigned char *)&psInst->sDeviceDescriptor;
+    pui8Temp = (uint8_t *)&psInst->sDeviceDescriptor;
 
     //
     // Copy the default configuration descriptor into the instance data.
     //
-    for(lIdx = 0; lIdx < g_pCompDeviceDescriptor[0]; lIdx++)
+    for(i32Idx = 0; i32Idx < g_pui8CompDeviceDescriptor[0]; i32Idx++)
     {
-        pucTemp[lIdx] = g_pCompDeviceDescriptor[lIdx];
+        pui8Temp[i32Idx] = g_pui8CompDeviceDescriptor[i32Idx];
     }
 
     //
     // Fix up the device descriptor with the client-supplied values.
     //
-    psInst->sDeviceDescriptor.idVendor = psDevice->usVID;
-    psInst->sDeviceDescriptor.idProduct = psDevice->usPID;
+    psInst->sDeviceDescriptor.idVendor = psDevice->ui16VID;
+    psInst->sDeviceDescriptor.idProduct = psDevice->ui16PID;
 
     //
     // Fix up the configuration descriptor with client-supplied values.
     //
-    psInst->sConfigDescriptor.bmAttributes = psDevice->ucPwrAttributes;
+    psInst->sConfigDescriptor.bmAttributes = psDevice->ui8PwrAttributes;
     psInst->sConfigDescriptor.bMaxPower =
-        (unsigned char)(psDevice->usMaxPowermA>>1);
+        (uint8_t)(psDevice->ui16MaxPowermA>>1);
 
-    g_sCompositeDeviceInfo.pDeviceDescriptor =
-        (const unsigned char *)&psInst->sDeviceDescriptor;
+    psInst->sDevInfo.pui8DeviceDescriptor =
+                                (const uint8_t *)&psInst->sDeviceDescriptor;
 
     //
     // Plug in the client's string table to the device information
     // structure.
     //
-    psInst->psDevInfo->ppStringDescriptors = psDevice->ppStringDescriptors;
-    psInst->psDevInfo->ulNumStringDescriptors =
-        psDevice->ulNumStringDescriptors;
+    psInst->sDevInfo.ppui8StringDescriptors =
+                                            psDevice->ppui8StringDescriptors;
+    psInst->sDevInfo.ui32NumStringDescriptors =
+                                            psDevice->ui32NumStringDescriptors;
 
     //
     // Enable Clocking to the USB controller so that changes to the USB
@@ -1496,15 +1464,10 @@ USBDCompositeInit(unsigned long ulIndex, tUSBDCompositeDevice *psDevice,
     }
 
     //
-    // Set the instance data for this device.
-    //
-    psInst->psDevInfo->pvInstance = (void *)psDevice;
-
-    //
     // All is well so now pass the descriptors to the lower layer and put
     // the bulk device on the bus.
     //
-    USBDCDInit(ulIndex, psInst->psDevInfo);
+    USBDCDInit(ui32Index, &psInst->sDevInfo, (void *)psDevice);
 
     //
     // Return the pointer to the instance indicating that everything went
@@ -1517,20 +1480,20 @@ USBDCompositeInit(unsigned long ulIndex, tUSBDCompositeDevice *psDevice,
 //
 //! Shuts down the composite device.
 //!
-//! \param pvInstance is the pointer to the device instance structure as
-//! returned by USBDCompositeInit().
+//! \param pvCompositeInstance is the pointer to the device instance structure
+//! as returned by USBDCompositeInit().
 //!
 //! This function terminates composite device interface for the instance
-//! supplied. Following this call, the \e pvInstance instance should not me
-//! used in any other calls.
+//! not me supplied. Following this call, the \e pvCompositeInstance instance
+//! should not be used in any other calls.
 //!
 //! \return None.
 //
 //****************************************************************************
 void
-USBDCompositeTerm(void *pvInstance)
+USBDCompositeTerm(void *pvCompositeInstance)
 {
-    ASSERT(pvInstance != 0);
+    ASSERT(pvCompositeInstance != 0);
 
 }
 

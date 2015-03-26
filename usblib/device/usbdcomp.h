@@ -2,7 +2,7 @@
 //
 // usbdcomp.h - USB composite device class driver.
 //
-// Copyright (c) 2010-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2010-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -62,7 +62,7 @@ typedef struct
     // This is set internally by the composite class so it can be left
     // uninitialized by the application.
     //
-    const tDeviceInfo *pDeviceInfo;
+    const tDeviceInfo *psDeviceInfo;
 
     //
     // This should be the header to the configuration header for a class.
@@ -72,17 +72,17 @@ typedef struct
     //
     // The offset to this devices interface, filled in by the composite class.
     //
-    unsigned char ucIfaceOffset;
-
-} tUSBDCompositeEntry;
+    uint8_t ui8IfaceOffset;
+}
+tUSBDCompositeEntry;
 
 //*****************************************************************************
 //
 // PRIVATE
 //
 // This structure defines the private instance data and state variables for the
-// composite device class.  The memory for this structure is pointed to by
-// the psPrivateData field in the tUSBDCompositeDevice structure passed on
+// composite device class.  The memory for this structure is included in
+// the sPrivateData field in the tUSBDCompositeDevice structure passed on
 // USBDCompositeInit() and should not be modified by any code outside of the
 // composite device code.
 //
@@ -92,12 +92,12 @@ typedef struct
     //
     // Saves which USB controller is in use.
     //
-    unsigned long ulUSBBase;
+    uint32_t ui32USBBase;
 
     //
     // The device information pointer.
     //
-    tDeviceInfo *psDevInfo;
+    tDeviceInfo sDevInfo;
 
     //
     // This is the configuration descriptor for this instance.
@@ -125,40 +125,16 @@ typedef struct
     //
     // The size and pointer to the data used by the instance.
     //
-    unsigned long ulDataSize;
-    unsigned char *pucData;
+    uint32_t ui32DataSize;
+    uint8_t *pui8Data;
 
     //
     // The current "owner" of endpoint 0.  This is used to track the device
     // class which is currently transferring data on EP0.
     //
-    unsigned long ulEP0Owner;
+    uint32_t ui32EP0Owner;
 }
 tCompositeInstance;
-
-//*****************************************************************************
-//
-//! This type is used by an application to describe and instance of a device
-//! and an instance data pointer for that class.  The psDevice pointer should
-//! be a pointer to a valid device class to include in the composite device.
-//! The pvInstance pointer should be a pointer to an instance pointer for the
-//! device in the psDevice pointer.
-//!
-//
-//*****************************************************************************
-typedef struct
-{
-    //
-    //! This is the top level device information structure.
-    //
-    const tDeviceInfo *psDevice;
-
-    //
-    //! This is the instance data for the device structure.
-    //
-    void *pvInstance;
-}
-tCompositeEntry;
 
 //*****************************************************************************
 //
@@ -171,31 +147,31 @@ typedef struct
     //
     //! The vendor ID that this device is to present in the device descriptor.
     //
-    unsigned short usVID;
+    const uint16_t ui16VID;
 
     //
     //! The product ID that this device is to present in the device descriptor.
     //
-    unsigned short usPID;
+    const uint16_t ui16PID;
 
     //
     //! The maximum power consumption of the device, expressed in mA.
     //
-    unsigned short usMaxPowermA;
+    const uint16_t ui16MaxPowermA;
 
     //
     //! Indicates whether the device is self or bus-powered and whether or not
     //! it supports remote wake up.  Valid values are USB_CONF_ATTR_SELF_PWR or
     //! USB_CONF_ATTR_BUS_PWR, optionally ORed with USB_CONF_ATTR_RWAKE.
     //
-    unsigned char ucPwrAttributes;
+    const uint8_t ui8PwrAttributes;
 
     //
     //! A pointer to the callback function which will be called to notify
     //! the application of events relating to the operation of the composite
     //! device.
     //
-    tUSBCallback pfnCallback;
+    const tUSBCallback pfnCallback;
 
     //
     //! A pointer to the string descriptor array for this device.  This array
@@ -210,44 +186,32 @@ typedef struct
     //! language descriptor.
     //!
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The number of descriptors provided in the ppStringDescriptors
     //! array.  This must be 1 + ((5 + (number of strings)) *
     //!                           (number of languages)).
     //
-    unsigned long ulNumStringDescriptors;
+    const uint32_t ui32NumStringDescriptors;
 
     //
     //! The number of devices in the psDevices array.
     //
-    unsigned long ulNumDevices;
+   const  uint32_t ui32NumDevices;
 
     //
     //! This application supplied array holds the the top level device class
     //! information as well as the Instance data for that class.
     //
-    tCompositeEntry *psDevices;
+    tCompositeEntry * const psDevices;
 
     //
-    //! A pointer to per-device workspace used by the composite device.  This
-    //! buffer must be sized to contain at least ulNumDevices long integers
-    //! (or 4 * ulNumDevices bytes).  It must remain accessible for as long as
-    //! the composite device is in use and must not be modified by any code
-    //! outside the composite class driver.
+    //! The private data for this device instance.  This memory must remain
+    //! accessible for as long as the composite device is in use and must
+    //! not be modified by any code outside the composite class driver.
     //
-    unsigned long *pulDeviceWorkspace;
-
-    //
-    //! A pointer to RAM work space for this device instance.  The client
-    //! must fill in this field with a pointer to at least
-    //! sizeof(tCompositeInstance) bytes of read/write storage that the
-    //! library can use for driver work space.  This memory must remain
-    //! accessible for as long as the composite device is in use and must not
-    //! be modified by any code outside the composite class driver.
-    //
-    tCompositeInstance *psPrivateData;
+    tCompositeInstance sPrivateData;
 }
 tUSBDCompositeDevice;
 
@@ -271,10 +235,9 @@ tUSBDCompositeDevice;
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void *USBDCompositeInit(unsigned long ulIndex,
+extern void *USBDCompositeInit(uint32_t ui32Index,
                                tUSBDCompositeDevice *psCompDevice,
-                               unsigned long ulSize,
-                               unsigned char *pucData);
+                               uint32_t ui32Size, uint8_t *pui8Data);
 extern void USBDCompositeTerm(void *pvInstance);
 
 //*****************************************************************************

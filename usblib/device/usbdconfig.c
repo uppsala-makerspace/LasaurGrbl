@@ -2,7 +2,7 @@
 //
 // usbdconfig.c - High level USB device configuration function.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,15 +18,18 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
 #include "driverlib/usb.h"
 #include "usblib/usblib.h"
+#include "usblib/usblibpriv.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdevicepriv.h"
 
@@ -39,21 +42,13 @@
 
 //*****************************************************************************
 //
-// Mask used to preserve various endpoint configuration flags.
-//
-//*****************************************************************************
-#define EP_FLAGS_MASK           (USB_EP_MODE_MASK | USB_EP_DEV_IN |           \
-                                 USB_EP_DEV_OUT)
-
-//*****************************************************************************
-//
 // Structure used in compiling FIFO size and endpoint properties from a
 // configuration descriptor.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulSize[2];
+    uint32_t pui32Size[2];
 }
 tUSBEndpointInfo;
 
@@ -72,58 +67,34 @@ tUSBEndpointInfo;
 // of bytes of FIFO space occupied.
 //
 //*****************************************************************************
-static unsigned long
-GetEndpointFIFOSize(unsigned long ulMaxPktSize, const tFIFOEntry *psFIFOParams,
-                    unsigned long *pupBytesUsed)
+static uint32_t
+GetEndpointFIFOSize(uint32_t ui32MaxPktSize, uint32_t *pupBytesUsed)
 {
-    unsigned long ulBytes;
-    unsigned long ulLoop;
-    unsigned long ulFIFOSize;
-
-    //
-    // What is the basic size required for a single buffered FIFO entry
-    // containing the required number of packets?
-    //
-    ulBytes = ulMaxPktSize;
+    uint32_t ui32Loop, ui32FIFOSize;
 
     //
     // Now we need to find the nearest supported size that accommodates the
     // requested size.  Step through each of the supported sizes until we
     // find one that will do.
     //
-    for(ulLoop = USB_FIFO_SZ_8; ulLoop <= USB_FIFO_SZ_4096; ulLoop++)
+    for(ui32Loop = USB_FIFO_SZ_8; ui32Loop <= USB_FIFO_SZ_2048; ui32Loop++)
     {
         //
         // How many bytes does this FIFO value represent?
         //
-        ulFIFOSize = USB_FIFO_SZ_TO_BYTES(ulLoop);
+        ui32FIFOSize = USBFIFOSizeToBytes(ui32Loop);
 
         //
-        // Is this large enough to satisfy the request?
+        // Is this large enough to hold one packet.
         //
-        if(ulFIFOSize >= ulBytes)
+        if(ui32FIFOSize >= ui32MaxPktSize)
         {
             //
-            // Yes - are we being asked to double-buffer the FIFO for this
-            // endpoint?
+            // Return the FIFO size setting and the USB_FIFO_SZ_ value.
             //
-            if(psFIFOParams->bDoubleBuffer)
-            {
-                //
-                // Yes - FIFO requirement is double in this case.
-                //
-                *pupBytesUsed = ulFIFOSize * 2;
-                return(ulLoop | USB_FIFO_SIZE_DB_FLAG);
-            }
-            else
-            {
-                //
-                // No double buffering so just return the size and associated
-                // flag.
-                //
-                *pupBytesUsed = ulFIFOSize;
-                return(ulLoop);
-            }
+            *pupBytesUsed = ui32FIFOSize;
+
+            return(ui32Loop);
         }
     }
 
@@ -143,24 +114,24 @@ GetEndpointFIFOSize(unsigned long ulMaxPktSize, const tFIFOEntry *psFIFOParams,
 //
 //*****************************************************************************
 static void
-GetEPDescriptorType(tEndpointDescriptor *psEndpoint, unsigned long *pulEPIndex,
-                    unsigned long *pulMaxPktSize, unsigned long *pulFlags)
+GetEPDescriptorType(tEndpointDescriptor *psEndpoint, uint32_t *pui32EPIndex,
+                    uint32_t *pui32MaxPktSize, uint32_t *pui32Flags)
 {
     //
     // Get the endpoint index.
     //
-    *pulEPIndex = psEndpoint->bEndpointAddress & USB_EP_DESC_NUM_M;
+    *pui32EPIndex = psEndpoint->bEndpointAddress & USB_EP_DESC_NUM_M;
 
     //
     // Extract the maximum packet size.
     //
-    *pulMaxPktSize = psEndpoint->wMaxPacketSize & USB_EP_MAX_PACKET_COUNT_M;
+    *pui32MaxPktSize = psEndpoint->wMaxPacketSize & USB_EP_MAX_PACKET_COUNT_M;
 
     //
     // Is this an IN or an OUT endpoint?
     //
-    *pulFlags = (psEndpoint->bEndpointAddress & USB_EP_DESC_IN) ?
-                 USB_EP_DEV_IN : USB_EP_DEV_OUT;
+    *pui32Flags = (psEndpoint->bEndpointAddress & USB_EP_DESC_IN) ?
+                  USB_EP_DEV_IN : USB_EP_DEV_OUT;
 
     //
     // Set the endpoint mode.
@@ -168,27 +139,32 @@ GetEPDescriptorType(tEndpointDescriptor *psEndpoint, unsigned long *pulEPIndex,
     switch(psEndpoint->bmAttributes & USB_EP_ATTR_TYPE_M)
     {
         case USB_EP_ATTR_CONTROL:
-            *pulFlags |= USB_EP_MODE_CTRL;
+        {
+            *pui32Flags |= USB_EP_MODE_CTRL;
             break;
-
+        }
         case USB_EP_ATTR_BULK:
-            *pulFlags |= USB_EP_MODE_BULK;
+        {
+            *pui32Flags |= USB_EP_MODE_BULK;
             break;
-
+        }
         case USB_EP_ATTR_INT:
-            *pulFlags |= USB_EP_MODE_INT;
+        {
+            *pui32Flags |= USB_EP_MODE_INT;
             break;
-
+        }
         case USB_EP_ATTR_ISOC:
-            *pulFlags |= USB_EP_MODE_ISOC;
+        {
+            *pui32Flags |= USB_EP_MODE_ISOC;
             break;
+        }
     }
 }
 
 //*****************************************************************************
 //
-//! Configure the USB controller appropriately for the device whose config
-//! descriptor is passed.
+//! Configure the USB controller appropriately for the device whose
+//! configuration descriptor is passed.
 //!
 //! \param psDevInst is a pointer to the device instance being configured.
 //! \param psConfig is a pointer to the configuration descriptor that the
@@ -215,22 +191,14 @@ GetEPDescriptorType(tEndpointDescriptor *psEndpoint, unsigned long *pulEPIndex,
 //! \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-tBoolean
-USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
+bool
+USBDeviceConfig(tDCDInstance *psDevInst, const tConfigHeader *psConfig)
 {
-    unsigned long ulLoop;
-    unsigned long ulCount;
-    unsigned long ulNumInterfaces;
-    unsigned long ulEpIndex;
-    unsigned long ulEpType;
-    unsigned long ulMaxPkt;
-    unsigned long ulNumEndpoints;
-    unsigned long ulFlags;
-    unsigned long ulBytesUsed;
-    unsigned long ulSection;
+    uint32_t ui32Loop, ui32Count, ui32NumInterfaces, ui32EpIndex, ui32EpType,
+             ui32MaxPkt, ui32NumEndpoints, ui32Flags, ui32BytesUsed,
+             ui32Section;
     tInterfaceDescriptor *psInterface;
     tEndpointDescriptor *psEndpoint;
-    tFIFOConfig const *psFIFOConfig;
     tUSBEndpointInfo psEPInfo[NUM_USB_EP - 1];
 
     //
@@ -243,49 +211,47 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
     //
     ASSERT(psConfig);
 
-    psFIFOConfig = psDevInst->psInfo->psFIFOConfig;
-
     //
     // Clear out our endpoint info.
     //
-    for(ulLoop = 0; ulLoop < (NUM_USB_EP - 1); ulLoop++)
+    for(ui32Loop = 0; ui32Loop < (NUM_USB_EP - 1); ui32Loop++)
     {
-        psEPInfo[ulLoop].ulSize[EP_INFO_IN] = 0;
-        psEPInfo[ulLoop].ulSize[EP_INFO_OUT] = 0;
+        psEPInfo[ui32Loop].pui32Size[EP_INFO_IN] = 0;
+        psEPInfo[ui32Loop].pui32Size[EP_INFO_OUT] = 0;
     }
 
     //
     // How many (total) endpoints does this configuration describe?
     //
-    ulNumEndpoints = USBDCDConfigDescGetNum(psConfig,
-                                            USB_DTYPE_ENDPOINT);
+    ui32NumEndpoints = USBDCDConfigDescGetNum(psConfig,
+                                              USB_DTYPE_ENDPOINT);
 
     //
     // How many interfaces are included?
     //
-    ulNumInterfaces = USBDCDConfigDescGetNum(psConfig,
-                                             USB_DTYPE_INTERFACE);
+    ui32NumInterfaces = USBDCDConfigDescGetNum(psConfig,
+                                               USB_DTYPE_INTERFACE);
 
     //
     // Look at each endpoint and determine the largest max packet size for
     // each endpoint.  This will determine how we partition the USB FIFO.
     //
-    for(ulLoop = 0; ulLoop < ulNumEndpoints; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < ui32NumEndpoints; ui32Loop++)
     {
         //
         // Get a pointer to the endpoint descriptor.
         //
         psEndpoint = (tEndpointDescriptor *)USBDCDConfigDescGet(
-                                psConfig, USB_DTYPE_ENDPOINT, ulLoop,
-                                &ulSection);
+                                psConfig, USB_DTYPE_ENDPOINT, ui32Loop,
+                                &ui32Section);
 
         //
         // Extract the endpoint number and whether it is an IN or OUT
         // endpoint.
         //
-        ulEpIndex = (unsigned long)
+        ui32EpIndex = (uint32_t)
                         psEndpoint->bEndpointAddress & USB_EP_DESC_NUM_M;
-        ulEpType =  (psEndpoint->bEndpointAddress & USB_EP_DESC_IN) ?
+        ui32EpType = (psEndpoint->bEndpointAddress & USB_EP_DESC_IN) ?
                      EP_INFO_IN : EP_INFO_OUT;
 
         //
@@ -293,7 +259,7 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
         // return false to indicate an error.  Note that 0 is invalid since
         // you shouldn't reference endpoint 0 in the config descriptor.
         //
-        if((ulEpIndex >= NUM_USB_EP) || (ulEpIndex == 0))
+        if((ui32EpIndex >= NUM_USB_EP) || (ui32EpIndex == 0))
         {
             return(false);
         }
@@ -303,12 +269,12 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
         // any previous use we have seen?
         //
         if(psEndpoint->wMaxPacketSize >
-           psEPInfo[ulEpIndex - 1].ulSize[ulEpType])
+           psEPInfo[ui32EpIndex - 1].pui32Size[ui32EpType])
         {
             //
             // Yes - remember the new maximum packet size.
             //
-            psEPInfo[ulEpIndex - 1].ulSize[ulEpType] =
+            psEPInfo[ui32EpIndex - 1].pui32Size[ui32EpType] =
                 psEndpoint->wMaxPacketSize;
         }
     }
@@ -319,15 +285,13 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
     // in this configuration.  Now determine the endpoint settings required
     // for the interface setting we are actually going to use.
     //
-    for(ulLoop = 0; ulLoop < ulNumInterfaces; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < ui32NumInterfaces; ui32Loop++)
     {
         //
-        // Get the next interface descriptor in the config descriptor.
+        // Get the next interface descriptor in the configuration descriptor.
         //
-        psInterface = USBDCDConfigGetInterface(psConfig,
-                                               ulLoop,
-                                               USB_DESC_ANY,
-                                               &ulSection);
+        psInterface = USBDCDConfigGetInterface(psConfig, ui32Loop,
+                                               USB_DESC_ANY, &ui32Section);
 
         //
         // Is this the default interface (bAlternateSetting set to 0)?
@@ -338,13 +302,13 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
             // This is an interface we are interested in so gather the
             // information on its endpoints.
             //
-            ulNumEndpoints = (unsigned long)psInterface->bNumEndpoints;
+            ui32NumEndpoints = (uint32_t)psInterface->bNumEndpoints;
 
             //
             // Walk through each endpoint in this interface and configure
             // it appropriately.
             //
-            for(ulCount = 0; ulCount < ulNumEndpoints; ulCount++)
+            for(ui32Count = 0; ui32Count < ui32NumEndpoints; ui32Count++)
             {
                 //
                 // Get a pointer to the endpoint descriptor.
@@ -352,7 +316,7 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
                 psEndpoint = USBDCDConfigGetInterfaceEndpoint(psConfig,
                                             psInterface->bInterfaceNumber,
                                             psInterface->bAlternateSetting,
-                                            ulCount);
+                                            ui32Count);
 
                 //
                 // Make sure we got a good pointer.
@@ -363,44 +327,23 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
                     // Determine maximum packet size and flags from the
                     // endpoint descriptor.
                     //
-                    GetEPDescriptorType(psEndpoint, &ulEpIndex, &ulMaxPkt,
-                                        &ulFlags);
+                    GetEPDescriptorType(psEndpoint, &ui32EpIndex, &ui32MaxPkt,
+                                        &ui32Flags);
 
                     //
                     // Make sure no-one is trying to configure endpoint 0.
                     //
-                    if(!ulEpIndex)
+                    if(!ui32EpIndex)
                     {
                         return(false);
-                    }
-
-                    //
-                    // Include any additional flags that the user wants.
-                    //
-                    if((ulFlags & (USB_EP_DEV_IN | USB_EP_DEV_OUT)) ==
-                        USB_EP_DEV_IN)
-                    {
-                        //
-                        // This is an IN endpoint.
-                        //
-                        ulFlags |= (unsigned long)(
-                                  psFIFOConfig->sIn[ulEpIndex - 1].usEPFlags);
-                    }
-                    else
-                    {
-                        //
-                        // This is an OUT endpoint.
-                        //
-                        ulFlags |= (unsigned long)(
-                                psFIFOConfig->sOut[ulEpIndex - 1].usEPFlags);
                     }
 
                     //
                     // Set the endpoint configuration.
                     //
                     USBDevEndpointConfigSet(USB0_BASE,
-                                            INDEX_TO_USB_EP(ulEpIndex),
-                                            ulMaxPkt, ulFlags);
+                                            IndexToUSBEP(ui32EpIndex),
+                                            ui32MaxPkt, ui32Flags);
                 }
             }
         }
@@ -413,29 +356,26 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
     // extracted earlier.  Endpoint 0 is automatically configured to use the
     // first MAX_PACKET_SIZE_EP0 bytes of the FIFO so we start from there.
     //
-    ulCount = MAX_PACKET_SIZE_EP0;
-    for(ulLoop = 1; ulLoop < NUM_USB_EP; ulLoop++)
+    ui32Count = MAX_PACKET_SIZE_EP0;
+    for(ui32Loop = 1; ui32Loop < NUM_USB_EP; ui32Loop++)
     {
         //
         // Configure the IN endpoint at this index if it is referred to
         // anywhere.
         //
-        if(psEPInfo[ulLoop - 1].ulSize[EP_INFO_IN])
+        if(psEPInfo[ui32Loop - 1].pui32Size[EP_INFO_IN])
         {
             //
             // What FIFO size flag do we use for this endpoint?
             //
-            ulMaxPkt = GetEndpointFIFOSize(
-                                     psEPInfo[ulLoop - 1].ulSize[EP_INFO_IN],
-                                     &(psFIFOConfig->sIn[ulLoop - 1]),
-                                     &ulBytesUsed);
+            ui32MaxPkt = GetEndpointFIFOSize(
+                                psEPInfo[ui32Loop - 1].pui32Size[EP_INFO_IN],
+                                &ui32BytesUsed);
 
             //
-            // If we are told that 0 bytes of FIFO will be used, this implies
-            // that there is an error in psFIFOConfig or the descriptor
-            // somewhere so return an error indicator to the caller.
+            // The FIFO space could not be allocated.
             //
-            if(!ulBytesUsed)
+            if(ui32BytesUsed == 0)
             {
                 return(false);
             }
@@ -443,30 +383,27 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
             //
             // Now actually configure the FIFO for this endpoint.
             //
-            USBFIFOConfigSet(USB0_BASE, INDEX_TO_USB_EP(ulLoop), ulCount,
-                             ulMaxPkt, USB_EP_DEV_IN);
-            ulCount += ulBytesUsed;
+            USBFIFOConfigSet(USB0_BASE, IndexToUSBEP(ui32Loop), ui32Count,
+                             ui32MaxPkt, USB_EP_DEV_IN);
+            ui32Count += ui32BytesUsed;
         }
 
         //
         // Configure the OUT endpoint at this index.
         //
-        if(psEPInfo[ulLoop - 1].ulSize[EP_INFO_OUT])
+        if(psEPInfo[ui32Loop - 1].pui32Size[EP_INFO_OUT])
         {
             //
             // What FIFO size flag do we use for this endpoint?
             //
-            ulMaxPkt = GetEndpointFIFOSize(
-                                     psEPInfo[ulLoop - 1].ulSize[EP_INFO_OUT],
-                                     &(psFIFOConfig->sOut[ulLoop - 1]),
-                                     &ulBytesUsed);
+            ui32MaxPkt = GetEndpointFIFOSize(
+                                psEPInfo[ui32Loop - 1].pui32Size[EP_INFO_OUT],
+                                &ui32BytesUsed);
 
             //
-            // If we are told that 0 bytes of FIFO will be used, this implies
-            // that there is an error in psFIFOConfig or the descriptor
-            // somewhere so return an error indicator to the caller.
+            // The FIFO space could not be allocated.
             //
-            if(!ulBytesUsed)
+            if(ui32BytesUsed == 0)
             {
                 return(false);
             }
@@ -474,9 +411,9 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
             //
             // Now actually configure the FIFO for this endpoint.
             //
-            USBFIFOConfigSet(USB0_BASE, INDEX_TO_USB_EP(ulLoop), ulCount,
-                             ulMaxPkt, USB_EP_DEV_OUT);
-            ulCount += ulBytesUsed;
+            USBFIFOConfigSet(USB0_BASE, IndexToUSBEP(ui32Loop), ui32Count,
+                             ui32MaxPkt, USB_EP_DEV_OUT);
+            ui32Count += ui32BytesUsed;
         }
 
     }
@@ -495,10 +432,10 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
 //! \param psDevInst is a pointer to the device instance being configured.
 //! \param psConfig is a pointer to the configuration descriptor that contains
 //! the interface whose alternate settings is to be configured.
-//! \param ucInterfaceNum is the number of the interface whose alternate
+//! \param ui8InterfaceNum is the number of the interface whose alternate
 //! setting is to be configured.  This number corresponds to the
 //! bInterfaceNumber field in the desired interface descriptor.
-//! \param ucAlternateSetting is the alternate setting number for the desired
+//! \param ui8AlternateSetting is the alternate setting number for the desired
 //! interface.  This number corresponds to the bAlternateSetting field in the
 //! desired interface descriptor.
 //!
@@ -516,50 +453,42 @@ USBDeviceConfig(tDeviceInstance *psDevInst, const tConfigHeader *psConfig)
 //! \return Returns \b true on success or \b false on failure.
 //
 //*****************************************************************************
-tBoolean
-USBDeviceConfigAlternate(tDeviceInstance *psDevInst, const tConfigHeader *psConfig,
-                         unsigned char ucInterfaceNum,
-                         unsigned char ucAlternateSetting)
+bool
+USBDeviceConfigAlternate(tDCDInstance *psDevInst,
+                         const tConfigHeader *psConfig,
+                         uint8_t ui8InterfaceNum,
+                         uint8_t ui8AlternateSetting)
 {
-    unsigned long ulNumInterfaces;
-    unsigned long ulNumEndpoints;
-    unsigned long ulLoop;
-    unsigned long ulCount;
-    unsigned long ulMaxPkt;
-    unsigned long ulFlags;
-    unsigned long ulSection;
-    unsigned long ulEpIndex;
+    uint32_t ui32NumInterfaces, ui32NumEndpoints, ui32Loop, ui32Count,
+             ui32MaxPkt, ui32Flags, ui32Section, ui32EpIndex;
     tInterfaceDescriptor *psInterface;
     tEndpointDescriptor *psEndpoint;
-    tFIFOConfig const *psFIFOConfig;
 
     //
     // How many interfaces are included in the descriptor?
     //
-    ulNumInterfaces = USBDCDConfigDescGetNum(psConfig,
-                                             USB_DTYPE_INTERFACE);
-
-    psFIFOConfig = psDevInst->psInfo->psFIFOConfig;
+    ui32NumInterfaces = USBDCDConfigDescGetNum(psConfig,
+                                               USB_DTYPE_INTERFACE);
 
     //
     // Find the interface descriptor for the supplied interface and alternate
     // setting numbers.
     //
 
-    for(ulLoop = 0; ulLoop < ulNumInterfaces; ulLoop++)
+    for(ui32Loop = 0; ui32Loop < ui32NumInterfaces; ui32Loop++)
     {
         //
-        // Get the next interface descriptor in the config descriptor.
+        // Get the next interface descriptor in the configuration descriptor.
         //
-        psInterface = USBDCDConfigGetInterface(psConfig, ulLoop, USB_DESC_ANY,
-                                               &ulSection);
+        psInterface = USBDCDConfigGetInterface(psConfig, ui32Loop,
+                                               USB_DESC_ANY, &ui32Section);
 
         //
         // Is this the default interface (bAlternateSetting set to 0)?
         //
         if(psInterface &&
-           (psInterface->bInterfaceNumber == ucInterfaceNum) &&
-           (psInterface->bAlternateSetting == ucAlternateSetting))
+           (psInterface->bInterfaceNumber == ui8InterfaceNum) &&
+           (psInterface->bAlternateSetting == ui8AlternateSetting))
         {
             //
             // This is an interface we are interested in and the descriptor
@@ -570,12 +499,12 @@ USBDeviceConfigAlternate(tDeviceInstance *psDevInst, const tConfigHeader *psConf
             //
             // How many endpoints does this interface have?
             //
-            ulNumEndpoints = (unsigned long)psInterface->bNumEndpoints;
+            ui32NumEndpoints = (uint32_t)psInterface->bNumEndpoints;
 
             //
             // Walk through each endpoint in turn.
             //
-            for(ulCount = 0; ulCount < ulNumEndpoints; ulCount++)
+            for(ui32Count = 0; ui32Count < ui32NumEndpoints; ui32Count++)
             {
                 //
                 // Get a pointer to the endpoint descriptor.
@@ -583,7 +512,7 @@ USBDeviceConfigAlternate(tDeviceInstance *psDevInst, const tConfigHeader *psConf
                 psEndpoint = USBDCDConfigGetInterfaceEndpoint(psConfig,
                                               psInterface->bInterfaceNumber,
                                               psInterface->bAlternateSetting,
-                                              ulCount);
+                                              ui32Count);
 
                 //
                 // Make sure we got a good pointer.
@@ -594,44 +523,23 @@ USBDeviceConfigAlternate(tDeviceInstance *psDevInst, const tConfigHeader *psConf
                     // Determine maximum packet size and flags from the
                     // endpoint descriptor.
                     //
-                    GetEPDescriptorType(psEndpoint, &ulEpIndex, &ulMaxPkt,
-                                        &ulFlags);
+                    GetEPDescriptorType(psEndpoint, &ui32EpIndex, &ui32MaxPkt,
+                                        &ui32Flags);
 
                     //
                     // Make sure no-one is trying to configure endpoint 0.
                     //
-                    if(!ulEpIndex)
+                    if(!ui32EpIndex)
                     {
                         return(false);
-                    }
-
-                    //
-                    // Include any additional flags that the user wants.
-                    //
-                    if((ulFlags & (USB_EP_DEV_IN | USB_EP_DEV_OUT)) ==
-                        USB_EP_DEV_IN)
-                    {
-                        //
-                        // This is an IN endpoint.
-                        //
-                        ulFlags |= (unsigned long)(
-                                psFIFOConfig->sIn[ulEpIndex - 1].usEPFlags);
-                    }
-                    else
-                    {
-                        //
-                        // This is an OUT endpoint.
-                        //
-                        ulFlags |= (unsigned long)(
-                                psFIFOConfig->sOut[ulEpIndex - 1].usEPFlags);
                     }
 
                     //
                     // Set the endpoint configuration.
                     //
                     USBDevEndpointConfigSet(USB0_BASE,
-                                            INDEX_TO_USB_EP(ulEpIndex),
-                                            ulMaxPkt, ulFlags);
+                                            IndexToUSBEP(ui32EpIndex),
+                                            ui32MaxPkt, ui32Flags);
                 }
             }
 

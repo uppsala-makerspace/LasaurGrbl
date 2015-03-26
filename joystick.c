@@ -17,6 +17,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <inc/hw_ints.h>
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
@@ -91,7 +92,7 @@ static void y_handler(void) {
 }
 
 static void button_handler(void) {
-	GPIOPinIntClear(JOY_PORT, JOY_MASK);
+	GPIOIntClear(JOY_PORT, JOY_MASK);
 
 	if (GPIOPinRead(JOY_PORT, JOY_MASK) > 0)
 	{
@@ -171,8 +172,8 @@ void joystick_init(void) {
 	GPIOPinTypeGPIOInput(JOY_PORT, JOY_MASK);
 	GPIOPadConfigSet(JOY_PORT, JOY_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
 	GPIOIntTypeSet(JOY_PORT, JOY_MASK, GPIO_BOTH_EDGES);
-	GPIOPortIntRegister(JOY_PORT, button_handler);
-	GPIOPinIntEnable(JOY_PORT, JOY_MASK);
+	GPIOIntRegister(JOY_PORT, button_handler);
+	GPIOIntEnable(JOY_PORT, JOY_MASK);
 
     //
     // The ADC0 peripheral must be enabled for use.
@@ -220,14 +221,14 @@ void joystick_init(void) {
 }
 
 void joystick_enable(void){
-	GPIOPinIntEnable(JOY_PORT, JOY_MASK);
+	GPIOIntEnable(JOY_PORT, JOY_MASK);
     ADCIntEnable(ADC0_BASE, 0);
     ADCIntEnable(ADC0_BASE, 1);
 }
 
 void joystick_disable(void){
 	enabled = 0;
-	GPIOPinIntDisable(JOY_PORT, JOY_MASK);
+	GPIOIntDisable(JOY_PORT, JOY_MASK);
     ADCIntDisable(ADC0_BASE, 0);
     ADCIntDisable(ADC0_BASE, 1);
 	GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);

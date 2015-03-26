@@ -2,7 +2,7 @@
 //
 // usbringbuf.c - USB library ring buffer management utilities.
 //
-// Copyright (c) 2008-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2008-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,10 +18,12 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "inc/hw_types.h"
 #include "driverlib/debug.h"
 #include "driverlib/interrupt.h"
@@ -47,9 +49,9 @@
 //
 // Change the value of a variable atomically.
 //
-// \param pulVal points to the index whose value is to be modified.
-// \param ulDelta is the number of bytes to increment the index by.
-// \param ulSize is the size of the buffer the index refers to.
+// \param pui32Val points to the index whose value is to be modified.
+// \param ui32Delta is the number of bytes to increment the index by.
+// \param ui32Size is the size of the buffer the index refers to.
 //
 // This function is used to increment a read or write buffer index that may be
 // written in various different contexts.  It ensures that the
@@ -60,10 +62,10 @@
 //
 //*****************************************************************************
 static void
-UpdateIndexAtomic(volatile unsigned long *pulVal, unsigned long ulDelta,
-                  unsigned long ulSize)
+UpdateIndexAtomic(volatile uint32_t *pui32Val, uint32_t ui32Delta,
+                  uint32_t ui32Size)
 {
-    tBoolean bIntsOff;
+    bool bIntsOff;
 
     //
     // Turn interrupts off temporarily.
@@ -73,16 +75,17 @@ UpdateIndexAtomic(volatile unsigned long *pulVal, unsigned long ulDelta,
     //
     // Update the variable value.
     //
-    *pulVal += ulDelta;
+    *pui32Val += ui32Delta;
 
     //
     // Correct for wrap.  We use a loop here since we don't want to use a
     // modulus operation with interrupts off but we don't want to fail in
-    // case ulDelta is greater than ulSize (which is extremely unlikely but...)
+    // case ui32Delta is greater than ui32Size (which is extremely unlikely
+    // but...)
     //
-    while(*pulVal >= ulSize)
+    while(*pui32Val >= ui32Size)
     {
-        *pulVal -= ulSize;
+        *pui32Val -= ui32Size;
     }
 
     //
@@ -98,7 +101,7 @@ UpdateIndexAtomic(volatile unsigned long *pulVal, unsigned long ulDelta,
 //
 //! Determines whether a ring buffer is full or not.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to empty.
+//! \param psUSBRingBuf is the ring buffer object to empty.
 //!
 //! This function is used to determine whether or not a given ring buffer is
 //! full.  The structure is specifically to ensure that we do not see
@@ -108,34 +111,35 @@ UpdateIndexAtomic(volatile unsigned long *pulVal, unsigned long ulDelta,
 //! \return Returns \b true if the buffer is full or \b false otherwise.
 //
 //*****************************************************************************
-tBoolean
-USBRingBufFull(tUSBRingBufObject *ptUSBRingBuf)
+bool
+USBRingBufFull(tUSBRingBufObject *psUSBRingBuf)
 {
-    unsigned long ulWrite;
-    unsigned long ulRead;
+    uint32_t ui32Write;
+    uint32_t ui32Read;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Copy the Read/Write indices for calculation.
     //
-    ulWrite = ptUSBRingBuf->ulWriteIndex;
-    ulRead = ptUSBRingBuf->ulReadIndex;
+    ui32Write = psUSBRingBuf->ui32WriteIndex;
+    ui32Read = psUSBRingBuf->ui32ReadIndex;
 
     //
     // Return the full status of the buffer.
     //
-    return((((ulWrite + 1) % ptUSBRingBuf->ulSize) == ulRead) ? true : false);
+    return((((ui32Write + 1) % psUSBRingBuf->ui32Size) == ui32Read) ? true :
+                                                                      false);
 }
 
 //*****************************************************************************
 //
 //! Determines whether a ring buffer is empty or not.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to empty.
+//! \param psUSBRingBuf is the ring buffer object to empty.
 //!
 //! This function is used to determine whether or not a given ring buffer is
 //! empty.  The structure is specifically to ensure that we do not see
@@ -145,34 +149,34 @@ USBRingBufFull(tUSBRingBufObject *ptUSBRingBuf)
 //! \return Returns \b true if the buffer is empty or \b false otherwise.
 //
 //*****************************************************************************
-tBoolean
-USBRingBufEmpty(tUSBRingBufObject *ptUSBRingBuf)
+bool
+USBRingBufEmpty(tUSBRingBufObject *psUSBRingBuf)
 {
-    unsigned long ulWrite;
-    unsigned long ulRead;
+    uint32_t ui32Write;
+    uint32_t ui32Read;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Copy the Read/Write indices for calculation.
     //
-    ulWrite = ptUSBRingBuf->ulWriteIndex;
-    ulRead = ptUSBRingBuf->ulReadIndex;
+    ui32Write = psUSBRingBuf->ui32WriteIndex;
+    ui32Read = psUSBRingBuf->ui32ReadIndex;
 
     //
     // Return the empty status of the buffer.
     //
-    return((ulWrite == ulRead) ? true : false);
+    return((ui32Write == ui32Read) ? true : false);
 }
 
 //*****************************************************************************
 //
 //! Empties the ring buffer.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to empty.
+//! \param psUSBRingBuf is the ring buffer object to empty.
 //!
 //! Discards all data from the ring buffer.
 //!
@@ -180,21 +184,21 @@ USBRingBufEmpty(tUSBRingBufObject *ptUSBRingBuf)
 //
 //*****************************************************************************
 void
-USBRingBufFlush(tUSBRingBufObject *ptUSBRingBuf)
+USBRingBufFlush(tUSBRingBufObject *psUSBRingBuf)
 {
-    tBoolean bIntsOff;
+    bool bIntsOff;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Set the Read/Write pointers to be the same.  Do this with interrupts
     // disabled to prevent the possibility of corruption of the read index.
     //
     bIntsOff = IntMasterDisable();
-    ptUSBRingBuf->ulReadIndex = ptUSBRingBuf->ulWriteIndex;
+    psUSBRingBuf->ui32ReadIndex = psUSBRingBuf->ui32WriteIndex;
     if(!bIntsOff)
     {
         IntMasterEnable();
@@ -205,60 +209,60 @@ USBRingBufFlush(tUSBRingBufObject *ptUSBRingBuf)
 //
 //! Returns number of bytes stored in ring buffer.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to check.
+//! \param psUSBRingBuf is the ring buffer object to check.
 //!
 //! This function returns the number of bytes stored in the ring buffer.
 //!
 //! \return Returns the number of bytes stored in the ring buffer.
 //
 //*****************************************************************************
-unsigned long
-USBRingBufUsed(tUSBRingBufObject *ptUSBRingBuf)
+uint32_t
+USBRingBufUsed(tUSBRingBufObject *psUSBRingBuf)
 {
-    unsigned long ulWrite;
-    unsigned long ulRead;
+    uint32_t ui32Write;
+    uint32_t ui32Read;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Copy the Read/Write indices for calculation.
     //
-    ulWrite = ptUSBRingBuf->ulWriteIndex;
-    ulRead = ptUSBRingBuf->ulReadIndex;
+    ui32Write = psUSBRingBuf->ui32WriteIndex;
+    ui32Read = psUSBRingBuf->ui32ReadIndex;
 
     //
     // Return the number of bytes contained in the ring buffer.
     //
-    return((ulWrite >= ulRead) ? (ulWrite - ulRead) :
-           (ptUSBRingBuf->ulSize - (ulRead - ulWrite)));
+    return((ui32Write >= ui32Read) ? (ui32Write - ui32Read) :
+           (psUSBRingBuf->ui32Size - (ui32Read - ui32Write)));
 }
 
 //*****************************************************************************
 //
 //! Returns number of bytes available in a ring buffer.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to check.
+//! \param psUSBRingBuf is the ring buffer object to check.
 //!
 //! This function returns the number of bytes available in the ring buffer.
 //!
 //! \return Returns the number of bytes available in the ring buffer.
 //
 //*****************************************************************************
-unsigned long
-USBRingBufFree(tUSBRingBufObject *ptUSBRingBuf)
+uint32_t
+USBRingBufFree(tUSBRingBufObject *psUSBRingBuf)
 {
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Return the number of bytes available in the ring buffer.
     //
-    return((ptUSBRingBuf->ulSize - 1) - USBRingBufUsed(ptUSBRingBuf));
+    return((psUSBRingBuf->ui32Size - 1) - USBRingBufUsed(psUSBRingBuf));
 }
 
 //*****************************************************************************
@@ -266,7 +270,7 @@ USBRingBufFree(tUSBRingBufObject *ptUSBRingBuf)
 //! Returns number of contiguous bytes of data stored in ring buffer ahead of
 //! the current read pointer.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to check.
+//! \param psUSBRingBuf is the ring buffer object to check.
 //!
 //! This function returns the number of contiguous bytes of data available in
 //! the ring buffer ahead of the current read pointer.  This represents the
@@ -275,35 +279,35 @@ USBRingBufFree(tUSBRingBufObject *ptUSBRingBuf)
 //! \return Returns the number of contiguous bytes available.
 //
 //*****************************************************************************
-unsigned long
-USBRingBufContigUsed(tUSBRingBufObject *ptUSBRingBuf)
+uint32_t
+USBRingBufContigUsed(tUSBRingBufObject *psUSBRingBuf)
 {
-    unsigned long ulWrite;
-    unsigned long ulRead;
+    uint32_t ui32Write;
+    uint32_t ui32Read;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Copy the Read/Write indices for calculation.
     //
-    ulWrite = ptUSBRingBuf->ulWriteIndex;
-    ulRead = ptUSBRingBuf->ulReadIndex;
+    ui32Write = psUSBRingBuf->ui32WriteIndex;
+    ui32Read = psUSBRingBuf->ui32ReadIndex;
 
     //
     // Return the number of contiguous bytes available.
     //
-    return((ulWrite >= ulRead) ? (ulWrite - ulRead) :
-           (ptUSBRingBuf->ulSize - ulRead));
+    return((ui32Write >= ui32Read) ? (ui32Write - ui32Read) :
+           (psUSBRingBuf->ui32Size - ui32Read));
 }
 
 //*****************************************************************************
 //
 //! Returns number of contiguous free bytes available in a ring buffer.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to check.
+//! \param psUSBRingBuf is the ring buffer object to check.
 //!
 //! This function returns the number of contiguous free bytes ahead of the
 //! current write pointer in the ring buffer.
@@ -312,34 +316,34 @@ USBRingBufContigUsed(tUSBRingBufObject *ptUSBRingBuf)
 //! buffer.
 //
 //*****************************************************************************
-unsigned long
-USBRingBufContigFree(tUSBRingBufObject *ptUSBRingBuf)
+uint32_t
+USBRingBufContigFree(tUSBRingBufObject *psUSBRingBuf)
 {
-    unsigned long ulWrite;
-    unsigned long ulRead;
+    uint32_t ui32Write;
+    uint32_t ui32Read;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Copy the Read/Write indices for calculation.
     //
-    ulWrite = ptUSBRingBuf->ulWriteIndex;
-    ulRead = ptUSBRingBuf->ulReadIndex;
+    ui32Write = psUSBRingBuf->ui32WriteIndex;
+    ui32Read = psUSBRingBuf->ui32ReadIndex;
 
     //
     // Return the number of contiguous bytes available.
     //
-    if(ulRead > ulWrite)
+    if(ui32Read > ui32Write)
     {
         //
         // The read pointer is above the write pointer so the amount of free
         // space is the difference between the two indices minus 1 to account
         // for the buffer full condition (write index one behind read index).
         //
-        return((ulRead - ulWrite) - 1);
+        return((ui32Read - ui32Write) - 1);
     }
     else
     {
@@ -350,7 +354,7 @@ USBRingBufContigFree(tUSBRingBufObject *ptUSBRingBuf)
         // to leave 1 byte empty to ensure we can tell the difference between
         // the buffer being full and empty.
         //
-        return(ptUSBRingBuf->ulSize - ulWrite - ((ulRead == 0) ? 1 : 0));
+        return(psUSBRingBuf->ui32Size - ui32Write - ((ui32Read == 0) ? 1 : 0));
     }
 }
 
@@ -358,76 +362,76 @@ USBRingBufContigFree(tUSBRingBufObject *ptUSBRingBuf)
 //
 //! Returns the size in bytes of a ring buffer.
 //!
-//! \param ptUSBRingBuf is the ring buffer object to check.
+//! \param psUSBRingBuf is the ring buffer object to check.
 //!
 //! This function returns the size of the ring buffer.
 //!
 //! \return Returns the size in bytes of the ring buffer.
 //
 //*****************************************************************************
-unsigned long
-USBRingBufSize(tUSBRingBufObject *ptUSBRingBuf)
+uint32_t
+USBRingBufSize(tUSBRingBufObject *psUSBRingBuf)
 {
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Return the number of bytes available in the ring buffer.
     //
-    return(ptUSBRingBuf->ulSize);
+    return(psUSBRingBuf->ui32Size);
 }
 
 //*****************************************************************************
 //
 //! Reads a single byte of data from a ring buffer.
 //!
-//! \param ptUSBRingBuf points to the ring buffer to be written to.
+//! \param psUSBRingBuf points to the ring buffer to be written to.
 //!
 //! This function reads a single byte of data from a ring buffer.
 //!
 //! \return The byte read from the ring buffer.
 //
 //*****************************************************************************
-unsigned char
-USBRingBufReadOne(tUSBRingBufObject *ptUSBRingBuf)
+uint8_t
+USBRingBufReadOne(tUSBRingBufObject *psUSBRingBuf)
 {
-    unsigned char ucTemp;
+    uint8_t ui8Temp;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Verify that space is available in the buffer.
     //
-    ASSERT(USBRingBufUsed(ptUSBRingBuf) != 0);
+    ASSERT(USBRingBufUsed(psUSBRingBuf) != 0);
 
     //
     // Write the data byte.
     //
-    ucTemp = ptUSBRingBuf->pucBuf[ptUSBRingBuf->ulReadIndex];
+    ui8Temp = psUSBRingBuf->pui8Buf[psUSBRingBuf->ui32ReadIndex];
 
     //
     // Increment the read index.
     //
-    UpdateIndexAtomic(&ptUSBRingBuf->ulReadIndex, 1, ptUSBRingBuf->ulSize);
+    UpdateIndexAtomic(&psUSBRingBuf->ui32ReadIndex, 1, psUSBRingBuf->ui32Size);
 
     //
     // Return the character read.
     //
-    return(ucTemp);
+    return(ui8Temp);
 }
 
 //*****************************************************************************
 //
 //! Reads data from a ring buffer.
 //!
-//! \param ptUSBRingBuf points to the ring buffer to be read from.
-//! \param pucData points to where the data should be stored.
-//! \param ulLength is the number of bytes to be read.
+//! \param psUSBRingBuf points to the ring buffer to be read from.
+//! \param pui8Data points to where the data should be stored.
+//! \param ui32Length is the number of bytes to be read.
 //!
 //! This function reads a sequence of bytes from a ring buffer.
 //!
@@ -435,29 +439,29 @@ USBRingBufReadOne(tUSBRingBufObject *ptUSBRingBuf)
 //
 //*****************************************************************************
 void
-USBRingBufRead(tUSBRingBufObject *ptUSBRingBuf, unsigned char *pucData,
-               unsigned long ulLength)
+USBRingBufRead(tUSBRingBufObject *psUSBRingBuf, uint8_t *pui8Data,
+               uint32_t ui32Length)
 {
-    unsigned long ulTemp;
+    uint32_t ui32Temp;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
-    ASSERT(pucData != NULL);
-    ASSERT(ulLength != 0);
+    ASSERT(psUSBRingBuf != NULL);
+    ASSERT(pui8Data != NULL);
+    ASSERT(ui32Length != 0);
 
     //
     // Verify that data is available in the buffer.
     //
-    ASSERT(ulLength <= USBRingBufUsed(ptUSBRingBuf));
+    ASSERT(ui32Length <= USBRingBufUsed(psUSBRingBuf));
 
     //
     // Read the data from the ring buffer.
     //
-    for(ulTemp = 0; ulTemp < ulLength; ulTemp++)
+    for(ui32Temp = 0; ui32Temp < ui32Length; ui32Temp++)
     {
-        pucData[ulTemp] = USBRingBufReadOne(ptUSBRingBuf);
+        pui8Data[ui32Temp] = USBRingBufReadOne(psUSBRingBuf);
     }
 }
 
@@ -465,57 +469,56 @@ USBRingBufRead(tUSBRingBufObject *ptUSBRingBuf, unsigned char *pucData,
 //
 //! Removes bytes from the ring buffer by advancing the read index.
 //!
-//! \param ptUSBRingBuf points to the ring buffer from which bytes are to be
+//! \param psUSBRingBuf points to the ring buffer from which bytes are to be
 //! removed.
-//! \param ulNumBytes is the number of bytes to be removed from the buffer.
+//! \param ui32NumBytes is the number of bytes to be removed from the buffer.
 //!
 //! This function advances the ring buffer read index by a given number of
-//! bytes, removing that number of bytes of data from the buffer.  If \e
-//! ulNumBytes is larger than the number of bytes currently in the buffer, the
-//! buffer is emptied.
+//! bytes, removing that number of bytes of data from the buffer.  If
+//! \e ui32NumBytes is larger than the number of bytes currently in the buffer,
+//! the buffer is emptied.
 //!
 //! \return None.
 //
 //*****************************************************************************
 void
-USBRingBufAdvanceRead(tUSBRingBufObject *ptUSBRingBuf,
-                      unsigned long ulNumBytes)
+USBRingBufAdvanceRead(tUSBRingBufObject *psUSBRingBuf, uint32_t ui32NumBytes)
 {
-    unsigned long ulCount;
+    uint32_t ui32Count;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Make sure that we are not being asked to remove more data than is
     // there to be removed.
     //
-    ulCount = USBRingBufUsed(ptUSBRingBuf);
-    ulCount =  (ulCount < ulNumBytes) ? ulCount : ulNumBytes;
+    ui32Count = USBRingBufUsed(psUSBRingBuf);
+    ui32Count =  (ui32Count < ui32NumBytes) ? ui32Count : ui32NumBytes;
 
     //
     // Advance the buffer read index by the required number of bytes.
     //
-    UpdateIndexAtomic(&ptUSBRingBuf->ulReadIndex, ulCount,
-                      ptUSBRingBuf->ulSize);
+    UpdateIndexAtomic(&psUSBRingBuf->ui32ReadIndex, ui32Count,
+                      psUSBRingBuf->ui32Size);
 }
 
 //*****************************************************************************
 //
 //! Adds bytes to the ring buffer by advancing the write index.
 //!
-//! \param ptUSBRingBuf points to the ring buffer to which bytes have been
+//! \param psUSBRingBuf points to the ring buffer to which bytes have been
 //! added.
-//! \param ulNumBytes is the number of bytes added to the buffer.
+//! \param ui32NumBytes is the number of bytes added to the buffer.
 //!
 //! This function should be used by clients who wish to add data to the buffer
 //! directly rather than via calls to USBRingBufWrite() or
 //! USBRingBufWriteOne().  It advances the write index by a given number of
 //! bytes.
 //!
-//! \note It is considered an error if the \e ulNumBytes parameter is larger
+//! \note It is considered an error if the \e ui32NumBytes parameter is larger
 //! than the amount of free space in the buffer and a debug build of this
 //! function will fail (ASSERT) if this condition is detected.  In a release
 //! build, the buffer read pointer will be advanced if too much data is written
@@ -528,25 +531,24 @@ USBRingBufAdvanceRead(tUSBRingBufObject *ptUSBRingBuf,
 //
 //*****************************************************************************
 void
-USBRingBufAdvanceWrite(tUSBRingBufObject *ptUSBRingBuf,
-                       unsigned long ulNumBytes)
+USBRingBufAdvanceWrite(tUSBRingBufObject *psUSBRingBuf, uint32_t ui32NumBytes)
 {
-    unsigned long ulCount;
+    uint32_t ui32Count;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Make sure we were not asked to add a silly number of bytes.
     //
-    ASSERT(ulNumBytes <= ptUSBRingBuf->ulSize);
+    ASSERT(ui32NumBytes <= psUSBRingBuf->ui32Size);
 
     //
     // Determine how much free space we currently think the buffer has.
     //
-    ulCount = USBRingBufFree(ptUSBRingBuf);
+    ui32Count = USBRingBufFree(psUSBRingBuf);
 
     //
     // Check that the client has not added more data to the buffer than there
@@ -554,19 +556,19 @@ USBRingBufAdvanceWrite(tUSBRingBufObject *ptUSBRingBuf,
     // buffer may have been read under interrupt context while the writer was
     // busy trashing the area around the read pointer.
     //
-    ASSERT(ulCount >= ulNumBytes);
+    ASSERT(ui32Count >= ui32NumBytes);
 
     //
     // Update the write pointer.
     //
-    ptUSBRingBuf->ulWriteIndex += ulNumBytes;
+    psUSBRingBuf->ui32WriteIndex += ui32NumBytes;
 
     //
     // Check and correct for wrap.
     //
-    if(ptUSBRingBuf->ulWriteIndex >= ptUSBRingBuf->ulSize)
+    if(psUSBRingBuf->ui32WriteIndex >= psUSBRingBuf->ui32Size)
     {
-        ptUSBRingBuf->ulWriteIndex -= ptUSBRingBuf->ulSize;
+        psUSBRingBuf->ui32WriteIndex -= psUSBRingBuf->ui32Size;
     }
 
     //
@@ -577,20 +579,20 @@ USBRingBufAdvanceWrite(tUSBRingBufObject *ptUSBRingBuf,
     // ASSERT above catches this in debug builds but, in release builds, we
     // go ahead and try to fix up the read pointer appropriately.
     //
-    if(ulCount < ulNumBytes)
+    if(ui32Count < ui32NumBytes)
     {
         //
         // Yes - we need to advance the read pointer to ahead of the write
         // pointer to discard some of the oldest data.
         //
-        ptUSBRingBuf->ulReadIndex = ptUSBRingBuf->ulWriteIndex + 1;
+        psUSBRingBuf->ui32ReadIndex = psUSBRingBuf->ui32WriteIndex + 1;
 
         //
         // Correct for buffer wrap if necessary.
         //
-        if(ptUSBRingBuf->ulReadIndex >= ptUSBRingBuf->ulSize)
+        if(psUSBRingBuf->ui32ReadIndex >= psUSBRingBuf->ui32Size)
         {
-            ptUSBRingBuf->ulReadIndex -= ptUSBRingBuf->ulSize;
+            psUSBRingBuf->ui32ReadIndex -= psUSBRingBuf->ui32Size;
         }
     }
 
@@ -600,8 +602,8 @@ USBRingBufAdvanceWrite(tUSBRingBufObject *ptUSBRingBuf,
 //
 //! Writes a single byte of data to a ring buffer.
 //!
-//! \param ptUSBRingBuf points to the ring buffer to be written to.
-//! \param ucData is the byte to be written.
+//! \param psUSBRingBuf points to the ring buffer to be written to.
+//! \param ui8Data is the byte to be written.
 //!
 //! This function writes a single byte of data into a ring buffer.
 //!
@@ -609,36 +611,37 @@ USBRingBufAdvanceWrite(tUSBRingBufObject *ptUSBRingBuf,
 //
 //*****************************************************************************
 void
-USBRingBufWriteOne(tUSBRingBufObject *ptUSBRingBuf, unsigned char ucData)
+USBRingBufWriteOne(tUSBRingBufObject *psUSBRingBuf, uint8_t ui8Data)
 {
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
+    ASSERT(psUSBRingBuf != NULL);
 
     //
     // Verify that space is available in the buffer.
     //
-    ASSERT(USBRingBufFree(ptUSBRingBuf) != 0);
+    ASSERT(USBRingBufFree(psUSBRingBuf) != 0);
 
     //
     // Write the data byte.
     //
-    ptUSBRingBuf->pucBuf[ptUSBRingBuf->ulWriteIndex] = ucData;
+    psUSBRingBuf->pui8Buf[psUSBRingBuf->ui32WriteIndex] = ui8Data;
 
     //
     // Increment the write index.
     //
-    UpdateIndexAtomic(&ptUSBRingBuf->ulWriteIndex, 1, ptUSBRingBuf->ulSize);
+    UpdateIndexAtomic(&psUSBRingBuf->ui32WriteIndex, 1,
+                      psUSBRingBuf->ui32Size);
 }
 
 //*****************************************************************************
 //
 //! Writes data to a ring buffer.
 //!
-//! \param ptUSBRingBuf points to the ring buffer to be written to.
-//! \param pucData points to the data to be written.
-//! \param ulLength is the number of bytes to be written.
+//! \param psUSBRingBuf points to the ring buffer to be written to.
+//! \param pui8Data points to the data to be written.
+//! \param ui32Length is the number of bytes to be written.
 //!
 //! This function write a sequence of bytes into a ring buffer.
 //!
@@ -646,29 +649,29 @@ USBRingBufWriteOne(tUSBRingBufObject *ptUSBRingBuf, unsigned char ucData)
 //
 //*****************************************************************************
 void
-USBRingBufWrite(tUSBRingBufObject *ptUSBRingBuf, const unsigned char *pucData,
-                unsigned long ulLength)
+USBRingBufWrite(tUSBRingBufObject *psUSBRingBuf, const uint8_t *pui8Data,
+                uint32_t ui32Length)
 {
-    unsigned long ulTemp;
+    uint32_t ui32Temp;
 
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
-    ASSERT(pucData != NULL);
-    ASSERT(ulLength != 0);
+    ASSERT(psUSBRingBuf != NULL);
+    ASSERT(pui8Data != NULL);
+    ASSERT(ui32Length != 0);
 
     //
     // Verify that space is available in the buffer.
     //
-    ASSERT(ulLength <= USBRingBufFree(ptUSBRingBuf));
+    ASSERT(ui32Length <= USBRingBufFree(psUSBRingBuf));
 
     //
     // Write the data into the ring buffer.
     //
-    for(ulTemp = 0; ulTemp < ulLength; ulTemp++)
+    for(ui32Temp = 0; ui32Temp < ui32Length; ui32Temp++)
     {
-        USBRingBufWriteOne(ptUSBRingBuf, pucData[ulTemp]);
+        USBRingBufWriteOne(psUSBRingBuf, pui8Data[ui32Temp]);
     }
 }
 
@@ -676,9 +679,9 @@ USBRingBufWrite(tUSBRingBufObject *ptUSBRingBuf, const unsigned char *pucData,
 //
 //! Initializes a ring buffer object.
 //!
-//! \param ptUSBRingBuf points to the ring buffer to be initialized.
-//! \param pucBuf points to the data buffer to be used for the ring buffer.
-//! \param ulSize is the size of the buffer in bytes.
+//! \param psUSBRingBuf points to the ring buffer to be initialized.
+//! \param pui8Buf points to the data buffer to be used for the ring buffer.
+//! \param ui32Size is the size of the buffer in bytes.
 //!
 //! This function initializes a ring buffer object, preparing it to store data.
 //!
@@ -686,22 +689,22 @@ USBRingBufWrite(tUSBRingBufObject *ptUSBRingBuf, const unsigned char *pucData,
 //
 //*****************************************************************************
 void
-USBRingBufInit(tUSBRingBufObject *ptUSBRingBuf, unsigned char *pucBuf,
-               unsigned long ulSize)
+USBRingBufInit(tUSBRingBufObject *psUSBRingBuf, uint8_t *pui8Buf,
+               uint32_t ui32Size)
 {
     //
     // Check the arguments.
     //
-    ASSERT(ptUSBRingBuf != NULL);
-    ASSERT(pucBuf != NULL);
-    ASSERT(ulSize != 0);
+    ASSERT(psUSBRingBuf != NULL);
+    ASSERT(pui8Buf != NULL);
+    ASSERT(ui32Size != 0);
 
     //
     // Initialize the ring buffer object.
     //
-    ptUSBRingBuf->ulSize = ulSize;
-    ptUSBRingBuf->pucBuf = pucBuf;
-    ptUSBRingBuf->ulWriteIndex = ptUSBRingBuf->ulReadIndex = 0;
+    psUSBRingBuf->ui32Size = ui32Size;
+    psUSBRingBuf->pui8Buf = pui8Buf;
+    psUSBRingBuf->ui32WriteIndex = psUSBRingBuf->ui32ReadIndex = 0;
 }
 
 //*****************************************************************************

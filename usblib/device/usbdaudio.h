@@ -2,7 +2,7 @@
 //
 // usbdaudio.h - USB audio device class driver.
 //
-// Copyright (c) 2009-2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2009-2013 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 // 
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 // 
-// This is part of revision 9453 of the Stellaris USB Library.
+// This is part of revision 1.1 of the Tiva USB Library.
 //
 //*****************************************************************************
 
@@ -43,8 +43,8 @@ extern "C"
 //
 //*****************************************************************************
 
-typedef void (* tUSBAudioBufferCallback)(void *pvBuffer, unsigned long ulParam,
-                                         unsigned long ulEvent);
+typedef void (* tUSBAudioBufferCallback)(void *pvBuffer, uint32_t ui32Param,
+                                         uint32_t ui32Event);
 
 //*****************************************************************************
 //
@@ -52,31 +52,37 @@ typedef void (* tUSBAudioBufferCallback)(void *pvBuffer, unsigned long ulParam,
 //
 // This structure defines the private instance data and state variables for the
 // audio device class.  The memory for this structure is pointed to by
-// the psPrivateData field in the tUSBDAudioDevice structure passed on
+// the pi16PrivateData field in the tUSBDAudioDevice structure passed on
 // USBDAudioInit() and should not be modified by any code outside of the audio
 // device.
 //
 //*****************************************************************************
 typedef struct
 {
-    unsigned long ulUSBBase;
-    tDeviceInfo *psDevInfo;
-    tConfigDescriptor *psConfDescriptor;
+    //
+    // Base address for the USB controller.
+    //
+    uint32_t ui32USBBase;
+
+    //
+    // The device info to interact with the lower level DCD code.
+    //
+    tDeviceInfo sDevInfo;
 
     //
     // The maximum volume expressed as an 8.8 signed value.
     //
-    short sVolumeMax;
+    int16_t i16VolumeMax;
 
     //
     // The minimum volume expressed as an 8.8 signed value.
     //
-    short sVolumeMin;
+    int16_t i16VolumeMin;
 
     //
     // The minimum volume step expressed as an 8.8 signed value.
     //
-    short sVolumeStep;
+    int16_t i16VolumeStep;
 
     struct
     {
@@ -88,77 +94,97 @@ typedef struct
         //
         // Size of the data area provided in pvData in bytes.
         //
-        unsigned long ulSize;
+        uint32_t ui32Size;
 
         //
         // Number of valid bytes copied into the pvData area.
         //
-        unsigned long ulNumBytes;
+        uint32_t ui32NumBytes;
 
         //
         // The buffer callback for this function.
         //
         tUSBAudioBufferCallback pfnCallback;
-    } sBuffer;
+    }
+    sBuffer;
 
     //
     // Pending request type.
     //
-    unsigned short usRequestType;
+    uint16_t ui16RequestType;
 
     //
     // Pending request.
     //
-    unsigned char ucRequest;
+    uint8_t ui8Request;
 
     //
     // Pending update value.
     //
-    unsigned short usUpdate;
+    uint16_t ui16Update;
 
     //
     // Current Volume setting.
     //
-    short sVolume;
+    int16_t i16Volume;
 
     //
     // Current Mute setting.
     //
-    unsigned char ucMute;
+    uint8_t ui8Mute;
 
     //
     // Current Sample rate, this is not writable but the host will try.
     //
-    unsigned long ulSampleRate;
+    uint32_t ui32SampleRate;
 
     //
     // The OUT endpoint in use by this instance.
     //
-    unsigned char ucOUTEndpoint;
+    uint8_t ui8OUTEndpoint;
 
     //
     // The OUT endpoint DMA channel in use by this instance.
     //
-    unsigned char ucOUTDMA;
+    uint8_t ui8OUTDMA;
 
     //
     // The control interface number associated with this instance.
     //
-    unsigned char ucInterfaceControl;
+    uint8_t ui8InterfaceControl;
 
     //
     // The audio interface number associated with this instance.
     //
-    unsigned char ucInterfaceAudio;
+    uint8_t ui8InterfaceAudio;
+
+    //
+    // A copy of the DMA instance data used with calls to USBLibDMA functions.
+    //
+    tUSBDMAInstance *psDMAInstance;
 }
 tAudioInstance;
 
 //*****************************************************************************
 //
-//! This is the size in bytes of the private data for the device audio class.
+// This is the size of the g_pui8IADAudioDescriptor array in bytes.
 //
 //*****************************************************************************
-#define USB_AUDIO_INSTANCE_SIZE sizeof(tAudioInstance);
+#define AUDIODESCRIPTOR_SIZE    (8)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8AudioControlInterface array in bytes.
+//
+//*****************************************************************************
+#define CONTROLINTERFACE_SIZE   (52)
+
+//*****************************************************************************
+//
+// This is the size of the g_pui8AudioStreamInterface array in bytes.
+//
+//*****************************************************************************
+#define STREAMINTERFACE_SIZE    (52)
 
 //*****************************************************************************
 //
@@ -167,12 +193,9 @@ tAudioInstance;
 //! This does not include the configuration descriptor which is automatically
 //! ignored by the composite device class.
 //
-// This value must be at least sizeof(g_pIADAudioDescriptor) +
-// sizeof(g_pAudioControlInterface) +
-// sizeof(g_sAudioStreamInterfaceSection)
-//
 //*****************************************************************************
-#define COMPOSITE_DAUDIO_SIZE   (8 + 52 + 52)
+#define COMPOSITE_DAUDIO_SIZE   (AUDIODESCRIPTOR_SIZE +                       \
+                                 CONTROLINTERFACE_SIZE + STREAMINTERFACE_SIZE)
 
 //*****************************************************************************
 //
@@ -185,46 +208,46 @@ typedef struct
     //
     //! The vendor ID that this device is to present in the device descriptor.
     //
-    unsigned short usVID;
+    const uint16_t ui16VID;
 
     //
     //! The product ID that this device is to present in the device descriptor.
     //
-    unsigned short usPID;
+    const uint16_t ui16PID;
 
     //
     //! 8 byte vendor string.
     //
-    unsigned char pucVendor[8];
+    const char pcVendor[8];
 
     //
     //! 16 byte vendor string.
     //
-    unsigned char pucProduct[16];
+    const char pcProduct[16];
 
     //
     //! 4 byte vendor string.
     //
-    unsigned char pucVersion[4];
+    const char pcVersion[4];
 
     //
     //! The maximum power consumption of the device, expressed in mA.
     //
-    unsigned short usMaxPowermA;
+    const uint16_t ui16MaxPowermA;
 
     //
     //! Indicates whether the device is self or bus-powered and whether or not
     //! it supports remote wake up.  Valid values are USB_CONF_ATTR_SELF_PWR or
     //! USB_CONF_ATTR_BUS_PWR, optionally ORed with USB_CONF_ATTR_RWAKE.
     //
-    unsigned char ucPwrAttributes;
+    const uint8_t ui8PwrAttributes;
 
     //
     //! A pointer to the callback function which will be called to notify
     //! the application of events relating to the operation of the audio
     //! device.
     //
-    tUSBCallback pfnCallback;
+    const tUSBCallback pfnCallback;
 
     //
     //! A pointer to the string descriptor array for this device.  This array
@@ -239,36 +262,34 @@ typedef struct
     //! language descriptor.
     //!
     //
-    const unsigned char * const *ppStringDescriptors;
+    const uint8_t * const *ppui8StringDescriptors;
 
     //
     //! The number of descriptors provided in the ppStringDescriptors
     //! array.  This must be 1 + ((5 + (number of strings)) *
     //!                           (number of languages)).
     //
-    unsigned long ulNumStringDescriptors;
+    const uint32_t ui32NumStringDescriptors;
 
     //
     //! The maximum volume expressed as an 8.8 signed value.
     //
-    short sVolumeMax;
+    const int16_t i16VolumeMax;
 
     //
     //! The minimum volume expressed as an 8.8 signed value.
     //
-    short sVolumeMin;
+    const int16_t i16VolumeMin;
 
     //
     //! The minimum volume step expressed as an 8.8 signed value.
     //
-    short sVolumeStep;
+    const int16_t i16VolumeStep;
 
     //
-    //! A pointer to private instance data for the audio device.  This memory
-    //! must remain accessible for as long as the audio device is in use and
-    //! must not be modified by any code outside the audio class driver.
+    //! The private instance data for the audio device.
     //
-    tAudioInstance *psPrivateData;
+    tAudioInstance sPrivateData;
 }
 tUSBDAudioDevice;
 
@@ -299,7 +320,7 @@ tUSBDAudioDevice;
 //! provided by the USBAudioBufferOut() function back to the application with
 //! valid audio data received from the USB host controller. The \e pvBuffer
 //! parameter holds the pointer to the buffer with the new audio data and
-//! the \e ulParam value holds the amount of valid data in bytes that are
+//! the \e ui32Param value holds the amount of valid data in bytes that are
 //! contained in the \e pvBuffer parameter.
 //
 //*****************************************************************************
@@ -307,8 +328,8 @@ tUSBDAudioDevice;
 
 //*****************************************************************************
 //
-//! This USB audio event indicates that a volume change has occured.  The
-//! \e ulParam value contains a signed 8.8 fixed point value that represents
+//! This USB audio event indicates that a volume change has occurred.  The
+//! \e ui32Param value contains a signed 8.8 fixed point value that represents
 //! the current volume gain/attenuation in decibels(dB).  The provided message
 //! handler should be prepared to handle negative and positive values with the
 //! value 0x8000 indicating maximum attenuation.  The \e pvBuffer parameter
@@ -319,28 +340,27 @@ tUSBDAudioDevice;
 
 //*****************************************************************************
 //
-//! This USB audio event indicates that a mute request has occured.  The
-//! \e ulParam value will either be a 1 to indicate that the audio is now
+//! This USB audio event indicates that a mute request has occurred.  The
+//! \e ui32Param value will either be a 1 to indicate that the audio is now
 //! muted, and a value of 0 indicates that the audio has been unmuted.
 //
 //*****************************************************************************
 #define USBD_AUDIO_EVENT_MUTE   (USBD_AUDIO_EVENT_BASE + 5)
-
-extern tDeviceInfo g_sAudioDeviceInfo;
 
 //*****************************************************************************
 //
 // API Function Prototypes
 //
 //*****************************************************************************
-extern void *USBDAudioInit(unsigned long ulIndex,
-                           const tUSBDAudioDevice *psAudioDevice);
-extern void *USBDAudioCompositeInit(unsigned long ulIndex,
-                                    const tUSBDAudioDevice *psAudioDevice);
-extern void USBDAudioTerm(void *pvInstance);
-extern long USBAudioBufferOut(void *pvInstance, void *pvBuffer,
-                              unsigned long ulSize,
-                              tUSBAudioBufferCallback pfnCallback);
+extern void *USBDAudioInit(uint32_t ui32Index,
+                           tUSBDAudioDevice *psAudioDevice);
+extern void *USBDAudioCompositeInit(uint32_t ui32Index,
+                                    tUSBDAudioDevice *psAudioDevice,
+                                    tCompositeEntry *psCompEntry);
+extern void USBDAudioTerm(void *pvAudioDevice);
+extern int32_t USBAudioBufferOut(void *pvAudioDevice, void *pvBuffer,
+                                 uint32_t ui32Size,
+                                 tUSBAudioBufferCallback pfnCallback);
 
 //*****************************************************************************
 //
