@@ -177,15 +177,14 @@ caddr_t _sbrk(int incr) {
 
   static char *heap_end;
   char *prev_heap_end;
-  //extern char _estack;
-  extern char _sstack;
+  extern char g_pui32Stack;
 
   if (heap_end == NULL) {
     heap_end = &_end;
   }
   prev_heap_end = heap_end;
   if((((uint32_t)heap_end) + ((uint32_t)incr))
-      > ((uint32_t)&_sstack)) // stack protection
+      > ((uint32_t)&g_pui32Stack)) // stack protection
   {
     errno = ENOMEM;
     return (void*) -1;

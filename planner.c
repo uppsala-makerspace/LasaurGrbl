@@ -257,6 +257,7 @@ void planner_raster(double x, double y, double z,
 		            raster_t *raster) {
 	double raster_len = 0;
 	double head = 0;
+	double blank_feedrate = max(CONFIG_DEFAULT_RATE, feed_rate);
 
 	uint8_t *ptr = raster->buffer;
 	uint32_t count = raster->length;
@@ -284,19 +285,19 @@ void planner_raster(double x, double y, double z,
 	// Move to the starting point. (Assumes we have space before the limits are hit)
 	if (raster->x_off > 0) {
 		x += head;
-		planner_movement(x - raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x - raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
 	} else if (raster->x_off < 0) {
 		x += head;
-		planner_movement(x + raster_len - raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x + raster_len - raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
 		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, NULL);
 	} else if (raster->y_off > 0) {
 		y += head;
-		planner_movement(x, y - raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x, y - raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
 	} else if (raster->y_off < 0) {
 		y += head;
-		planner_movement(x, y + raster_len - raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster_len - raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
 		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, NULL);
 	}
 
@@ -319,17 +320,17 @@ void planner_raster(double x, double y, double z,
 
 	if (raster->x_off > 0) {
 		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x + raster_len + raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x + raster_len + raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
 	} else if (raster->x_off < 0) {
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x + raster->x_off, y, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x + raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
 	} else if (raster->y_off > 0) {
 		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x, y + raster_len + raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster_len + raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
 	} else if (raster->y_off < 0) {
 		y += head;
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x, y + raster->y_off, z, CONFIG_DEFAULT_RATE, acceleration, 0, 0, NULL);
+		planner_movement(x, y + raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
 	}
 }
 

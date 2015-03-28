@@ -177,10 +177,8 @@ void stepper_init() {
 	// The stepper interrupt gets started when blocks are being added.
 	stepper_go_idle();
 
-#ifndef DEBUG_IGNORE_SENSORS
 	// Go Home
 	gcode_do_home();
-#endif
 }
 
 
@@ -215,6 +213,8 @@ void stepper_go_idle() {
   // Disable stepper driver interrupt
   TimerDisable(STEPPING_TIMER, TIMER_A);
   control_laser(0, 0);
+
+  GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
 }
 
 // stop event handling
@@ -324,6 +324,8 @@ void stepper_isr (void) {
     }
   #endif
   
+    GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, GPIO_PIN_2);
+
 	// pulse steppers
 	GPIOPinWrite(STEP_DIR_PORT, STEP_DIR_MASK, out_dir_bits);
 	GPIOPinWrite(STEP_PORT, STEP_MASK, out_step_bits);
@@ -680,6 +682,7 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool reverse_dir
 }
 
 void stepper_homing_cycle() {
+#ifndef DEBUG_IGNORE_SENSORS
 	stepper_synchronize();
 	// home the x and y axis
 
@@ -690,6 +693,7 @@ void stepper_homing_cycle() {
 	// Perform a slow (accurate) home.
 	homing_cycle(true, true, false, false, 1000);
 	homing_cycle(true, true, false, true, 1000);
+#endif
 }
 
 

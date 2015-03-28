@@ -43,6 +43,7 @@ static void IntDefaultHandler(void);
 //*****************************************************************************
 extern void USB0DeviceIntHandler(void);
 
+
 //*****************************************************************************
 //
 // The entry point for the application.
@@ -55,7 +56,7 @@ extern int main(void);
 // Reserve space for the system stack.
 //
 //*****************************************************************************
-static uint32_t pui32Stack[256];
+uint32_t g_pui32Stack[512];
 
 //*****************************************************************************
 //
@@ -66,7 +67,7 @@ static uint32_t pui32Stack[256];
 __attribute__ ((section(".isr_vector")))
 void (* const g_pfnVectors[])(void) =
 {
-    (void (*)(void))((uint32_t)pui32Stack + sizeof(pui32Stack)),
+    (void (*)(void))((uint32_t)g_pui32Stack + sizeof(g_pui32Stack)),
                                             // The initial stack pointer
     ResetISR,                               // The reset handler
     NmiSR,                                  // The NMI handler
