@@ -445,7 +445,7 @@ void stepper_isr (void) {
 
     	  if (travelled >= current_block->laser_mmpp) {
     		  // Send a laser pulse
-    		  control_laser(1, CONFIG_LASER_PPI_PULSE_MS);
+    		  control_laser(1, CONFIG_LASER_PPI_PULSE_US);
 
     		  // Reset distance travelled.
     		  ppi_mm_x = 0;

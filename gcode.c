@@ -62,6 +62,7 @@ enum {
 	NEXT_ACTION_AUX1_ASSIST_DISABLE,
 	NEXT_ACTION_SET_ACCELERATION,
 	NEXT_ACTION_SET_PPI,
+	NEXT_ACTION_SET_PARAMETERS,
 };
 
 #define OFFSET_G54 0
@@ -93,6 +94,7 @@ typedef struct {
 	uint16_t laser_ppi;					// Laser PPI (Pulses Per Inch)
 	double acceleration;			   	// mm/min/min
 	raster_t raster;					// Raster State
+	uint32_t pulse_duration;			// Duration of a laser pulse in us
 } parser_state_t;
 static parser_state_t gc;
 
@@ -146,7 +148,7 @@ static double limit_feedrate_vector(double feedrate, uint16_t ppi) {
 
 static double limit_feedrate_raster(double feedrate, uint16_t ppi) {
 	if (ppi > 0) {
-		double max_feedrate = 60000.0 / CONFIG_LASER_PPI_PULSE_MS * MM_PER_INCH / ppi;
+		double max_feedrate = 60000000.0 / CONFIG_LASER_PPI_PULSE_US * MM_PER_INCH / ppi;
 
 		// Set the Feedrate to the maximum it can be for this PPI.
 		if (max_feedrate < feedrate) {
@@ -403,9 +405,12 @@ uint8_t gcode_execute_line(char *line) {
 	double offset[3];
 	double vector[3] = {0.0};
 	int l = 0;
+	int d = 0;
+	int b = 0;
 	double n = -1.0;
 	double p = 0.0;
 	double r = 0.0;
+	double s = 0.0;
 	int cs = 0;
 	bool got_actual_line_command = false;  // as opposed to just e.g. G1 F1200
 
@@ -434,6 +439,9 @@ uint8_t gcode_execute_line(char *line) {
 				break;
 			case 4:
 				next_action = NEXT_ACTION_DWELL;
+				break;
+			case 7:
+				next_action = NEXT_ACTION_RASTER;
 				break;
 			case 8:
 				// Special case to append raster data
@@ -541,6 +549,9 @@ uint8_t gcode_execute_line(char *line) {
 			case 204:
 				next_action = NEXT_ACTION_SET_ACCELERATION;
 				break;
+			case 649:
+				next_action = NEXT_ACTION_SET_PARAMETERS;
+				break;
 			default:
 				FAIL(GCODE_STATUS_UNSUPPORTED_STATEMENT);
 				break;
@@ -575,23 +586,14 @@ uint8_t gcode_execute_line(char *line) {
 				break;
 			case 'I': case 'J': case 'K': offset[letter-'I'] = to_millimeters(value); break;
 			case 'L': l = trunc(value); break;
+			case 'D': d = trunc(value); break;
+			case 'B': b = trunc(value); break;
 			case 'N': n = value; break;
-			case 'P':  // dwelling seconds or CS selector
-				if (next_action == NEXT_ACTION_SET_COORDINATE_OFFSET) {
-					cs = trunc(value);
-				} else {
-					p = value;
-				}
-				break;
+			case 'P': p = value; break;
 			case 'R': r = to_millimeters(value); break;
 			case 'S':
-				if (next_action == NEXT_ACTION_SET_ACCELERATION) {
-					gc.acceleration = value * 3600;
-				}
-				else if (next_action == NEXT_ACTION_SET_PPI) {
-					gc.laser_ppi = value;
-				}
-				else {
+				s = value;
+				if (next_action == NEXT_ACTION_NONE) {
 					gc.laser_pwm = value;
 					control_laser_intensity(gc.laser_pwm);
 				}
@@ -620,6 +622,12 @@ uint8_t gcode_execute_line(char *line) {
 
 	//// Perform any physical actions
 	switch (next_action) {
+	case NEXT_ACTION_SET_ACCELERATION:
+		gc.acceleration = s * 3600;
+		break;
+	case NEXT_ACTION_SET_PPI:
+		gc.laser_ppi = s;
+		break;
 	case NEXT_ACTION_SEEK:
 		if (got_actual_line_command) {
 			planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
@@ -792,6 +800,8 @@ uint8_t gcode_execute_line(char *line) {
 		gcode_do_home();
 		break;
 	case NEXT_ACTION_SET_COORDINATE_OFFSET:
+		// dwelling seconds or CS selector
+		cs = trunc(p);
 		if (cs == OFFSET_G54 || cs == OFFSET_G55) {
 			if (l == 2) {
 				//set offset to target, eg: G10 L2 P1 X15 Y15 Z0
@@ -834,6 +844,11 @@ uint8_t gcode_execute_line(char *line) {
 		break;
 	case NEXT_ACTION_AUX1_ASSIST_DISABLE:
 		planner_control_aux1_assist_disable();
+		break;
+	case NEXT_ACTION_SET_PARAMETERS:
+		gc.laser_ppi = p / MM_PER_INCH;
+		gc.pulse_duration = l;
+		gc.laser_pwm = s;
 		break;
 	}
 

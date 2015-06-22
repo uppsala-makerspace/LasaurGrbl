@@ -86,7 +86,7 @@ void control_init() {
 	// PPI = PWMfreq/(feedrate/MM_PER_INCH/60)
 
 	// Set PPI Pulse timer
-	ppi_cycles = SysCtlClockGet() / 1000 * CONFIG_LASER_PPI_PULSE_MS;
+	ppi_cycles = SysCtlClockGet() / CONFIG_LASER_PPI_PULSE_US;
 	ppi_divider = ppi_cycles >> 16;
 	ppi_cycles /= (ppi_divider + 1);
 	TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
@@ -136,10 +136,16 @@ uint8_t control_get_intensity(void) {
 	return laser_intensity;
 }
 
-void control_laser(uint8_t on_off, uint8_t pulse_length) {
+void control_laser(uint8_t on_off, uint32_t pulse_length) {
 
 	// If required, (re)set the PPI timer.
 	if (pulse_length > 0) {
+		ppi_cycles = SysCtlClockGet() / pulse_length;
+		ppi_divider = ppi_cycles >> 16;
+		ppi_cycles /= (ppi_divider + 1);
+		TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
+		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
+
 		// Schedule a timer to turn off the laser
 		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
 		// Clear any interrupts to avoid a race.
