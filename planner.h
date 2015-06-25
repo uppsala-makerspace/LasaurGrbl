@@ -49,8 +49,6 @@ typedef struct _raster {
 	double dot_size;
 	double x;
 	double y;
-	double x_off;
-	double y_off;
 } raster_t;
 
 #define planner_control_air_assist_enable() planner_command(BLOCK_TYPE_AIR_ASSIST_ENABLE)
@@ -92,8 +90,6 @@ void planner_init();
 
 // Process a raster.
 // Rasters can be +/- in the x or y directions (not z).
-// The sign of x_off/y_off specifies the raster direction.
-// The value of x_off/y_off specifies the offset (acceleration margin) before the actual raster.
 // raster and raster_len contain the pointer and length of buffer containing 0-255 PWM values for each dot.
 void planner_raster(double x, double y, double z,
 		            double feed_rate, double acceleration,
@@ -101,7 +97,7 @@ void planner_raster(double x, double y, double z,
 		            raster_t *raster);
 
 // Add a new linear movement to the buffer.
-// x, y and z is the signed, absolute target position in millimaters.
+// x, y and z is the signed, absolute target position in millimeters.
 // Feed rate specifies the speed of the motion.
 void planner_line(double x, double y, double z,
 		          double feed_rate, double acceleration,

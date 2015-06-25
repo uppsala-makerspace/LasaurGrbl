@@ -247,17 +247,17 @@ void planner_init() {
   previous_nominal_speed = 0.0;
 }
 
+int8_t last_raster = 0;
+
 // Process a raster.
 // Rasters can be +/- in the x or y directions (not z).
-// The sign of x_off/y_off specify the raster direction.
-// The value of x_off/y_off specify the offset (acceleration margin) before the actual raster.
 void planner_raster(double x, double y, double z,
 		            double feed_rate, double acceleration,
 		            uint8_t nominal_laser_intensity,
 		            raster_t *raster) {
 	double raster_len = 0;
 	double head = 0;
-	double blank_feedrate = max(CONFIG_DEFAULT_RATE, feed_rate);
+	double ramp = pow(feed_rate, 2) / (2 * acceleration);
 
 	uint8_t *ptr = raster->buffer;
 	uint32_t count = raster->length;
@@ -276,29 +276,23 @@ void planner_raster(double x, double y, double z,
 	raster->length = count;
 
 	// Blank line
-	if (count == 0)
+	if (raster->length == 0)
 		return;
 
 	raster_len = raster->dot_size * raster->length;
 
-	// Work out the starting point. A negative offset will flip/mirror the raster in that direction.
-	// Move to the starting point. (Assumes we have space before the limits are hit)
-	if (raster->x_off > 0) {
-		x += head;
-		planner_movement(x - raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
+	x += head;
+
+	// Work out the starting point.
+	if (last_raster <= 0)
+	{
+		// We need to go forwards.
+		planner_movement(x - ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
-	} else if (raster->x_off < 0) {
-		x += head;
-		planner_movement(x + raster_len - raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
+	} else {
+		// We need to go backwards.
+		planner_movement(x + raster_len + ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
 		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, NULL);
-	} else if (raster->y_off > 0) {
-		y += head;
-		planner_movement(x, y - raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
-		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
-	} else if (raster->y_off < 0) {
-		y += head;
-		planner_movement(x, y + raster_len - raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
-		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, NULL);
 	}
 
 	// Copy the data into our buffer
@@ -306,7 +300,17 @@ void planner_raster(double x, double y, double z,
 	while (1) {
 		if (raster_buffer_count < NUM_RASTERS) {
 			raster_buffer_count++;
-			memcpy(raster_buffer[raster_buffer_next], raster->buffer, raster->length);
+			if (last_raster <= 0) {
+				memcpy(raster_buffer[raster_buffer_next], raster->buffer, raster->length);
+			} else {
+				uint32_t i;
+				uint8_t *dst = raster_buffer[raster_buffer_next] + raster->length;
+				uint8_t *src = raster->buffer;
+				for (i=0; i<raster->length; ++i)
+				{
+					*dst-- = *src++;
+				}
+			}
 			raster->buffer = raster_buffer[raster_buffer_next];
 			raster_buffer_next++;
 			if (raster_buffer_next == NUM_RASTERS)
@@ -318,19 +322,19 @@ void planner_raster(double x, double y, double z,
 	// Etch contiguous dots of the same value.
 	raster->intensity = nominal_laser_intensity;
 
-	if (raster->x_off > 0) {
+	if (last_raster <= 0)
+	{
+		// We need to go forwards.
 		planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x + raster_len + raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
-	} else if (raster->x_off < 0) {
+		planner_movement(x + raster_len + ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
+
+		last_raster = 1;
+	} else {
+		// We need to go backwards.
 		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x + raster->x_off, y, z, blank_feedrate, acceleration, 0, 0, NULL);
-	} else if (raster->y_off > 0) {
-		planner_movement(x, y + raster_len, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x, y + raster_len + raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
-	} else if (raster->y_off < 0) {
-		y += head;
-		planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-		planner_movement(x, y + raster->y_off, z, blank_feedrate, acceleration, 0, 0, NULL);
+		planner_movement(x - ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
+
+		last_raster = -1;
 	}
 }
 
@@ -339,6 +343,7 @@ void planner_raster(double x, double y, double z,
 void planner_line(double x, double y, double z,
 		          double feed_rate, double acceleration,
 		          uint8_t laser_pwm, uint16_t ppi) {
+	last_raster = 0;
 	planner_movement(x, y, z, feed_rate, acceleration, laser_pwm, ppi, NULL);
 }
 

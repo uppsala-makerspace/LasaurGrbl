@@ -760,8 +760,6 @@ uint8_t gcode_execute_line(char *line) {
 		break;
 	case NEXT_ACTION_RASTER:
 		if (got_actual_line_command) {
-			gc.raster.x_off = vector[X_AXIS];
-			gc.raster.y_off = vector[Y_AXIS];
 			if (vector[Z_AXIS] < 0) {
 				gc.raster.invert = 1;
 			} else {
@@ -782,10 +780,7 @@ uint8_t gcode_execute_line(char *line) {
 			}
 
 			// Always increment (no point sending blank lines)
-			if (gc.raster.x_off != 0.0)
-				target[Y_AXIS] += gc.raster.dot_size;
-			else if (gc.raster.y_off != 0.0)
-				target[X_AXIS] -= gc.raster.dot_size;
+			target[Y_AXIS] += gc.raster.dot_size;
 
 			// Reset the buffer.
 			gc.raster.length = 0;
