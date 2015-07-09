@@ -28,6 +28,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+extern volatile double x_steps_per_mm;
+extern volatile double y_steps_per_mm;
+
 
 void stepper_isr(void);
 

@@ -87,8 +87,8 @@ static void planner_movement(double x, double y, double z,
   z=min(z, CONFIG_Z_MAX);
 #endif
 
-  target[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
-  target[Y_AXIS] = lround(y*CONFIG_Y_STEPS_PER_MM);
+  target[X_AXIS] = lround(x*x_steps_per_mm);
+  target[Y_AXIS] = lround(y*y_steps_per_mm);
   target[Z_AXIS] = lround(z*CONFIG_Z_STEPS_PER_MM); 
 
   // calculate the buffer head and check for space
@@ -140,8 +140,8 @@ static void planner_movement(double x, double y, double z,
   
   // compute path vector in terms of absolute step target and current positions
   double delta_mm[3];
-  delta_mm[X_AXIS] = (target[X_AXIS]-position[X_AXIS])/CONFIG_X_STEPS_PER_MM;
-  delta_mm[Y_AXIS] = (target[Y_AXIS]-position[Y_AXIS])/CONFIG_Y_STEPS_PER_MM;
+  delta_mm[X_AXIS] = (target[X_AXIS]-position[X_AXIS])/x_steps_per_mm;
+  delta_mm[Y_AXIS] = (target[Y_AXIS]-position[Y_AXIS])/y_steps_per_mm;
   delta_mm[Z_AXIS] = (target[Z_AXIS]-position[Z_AXIS])/CONFIG_Z_STEPS_PER_MM;
   block->millimeters = sqrt( (delta_mm[X_AXIS]*delta_mm[X_AXIS]) + 
                              (delta_mm[Y_AXIS]*delta_mm[Y_AXIS]) + 
@@ -437,8 +437,8 @@ void planner_reset_block_buffer() {
 
 // Reset the planner position vector and planner speed
 void planner_set_position(double x, double y, double z) {
-  position[X_AXIS] = lround(x*CONFIG_X_STEPS_PER_MM);
-  position[Y_AXIS] = lround(y*CONFIG_Y_STEPS_PER_MM);
+  position[X_AXIS] = lround(x*x_steps_per_mm);
+  position[Y_AXIS] = lround(y*y_steps_per_mm);
   position[Z_AXIS] = lround(z*CONFIG_Z_STEPS_PER_MM);    
   previous_nominal_speed = 0.0; // resets planner junction speeds
   clear_vector_double(previous_unit_vec);

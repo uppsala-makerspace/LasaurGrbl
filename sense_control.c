@@ -109,7 +109,7 @@ void control_init() {
 	laser_intensity = 0;
 
 	// Set default value
-	control_laser_intensity(0);
+	control_laser_intensity(255);
 	control_laser(0, 0);
 
 	TimerEnable(LASER_TIMER, TIMER_A);
@@ -144,7 +144,6 @@ void control_laser(uint8_t on_off, uint32_t pulse_length) {
 		ppi_divider = ppi_cycles >> 16;
 		ppi_cycles /= (ppi_divider + 1);
 		TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
-		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
 
 		// Schedule a timer to turn off the laser
 		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);

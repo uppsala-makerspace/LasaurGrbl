@@ -135,12 +135,12 @@ static void joystick_isr(void) {
 		if (fabs(y_off) < 0.5)
 			y_off /= 50.0;
 		else// if (fabs(y_off) < 1.0)
-			y_off /= 10.0;
+			y_off /= 5.0;
 
 		if (fabs(x_off) < 0.5)
 			x_off /= 50.0;
 		else// if (fabs(x_off) < 1.0)
-			x_off /= 10.0;
+			x_off /= 5.0;
 
 #ifdef JOY_INVERT_Y
 		task_data.x_offset = -y_off;

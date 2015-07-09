@@ -117,6 +117,9 @@ static bool acceleration_tick();
 static void adjust_speed( uint32_t steps_per_minute );
 static uint32_t config_step_timer(uint32_t cycles);
 
+volatile double x_steps_per_mm = CONFIG_X_STEPS_PER_MM;
+volatile double y_steps_per_mm = CONFIG_Y_STEPS_PER_MM;
+
 #ifdef CONFIG_STEPPER_USE_PULSE_TIMER
 void pulse_isr(void);
 #endif
@@ -130,6 +133,10 @@ void stepper_init() {
 	GPIOPinTypeGPIOOutput(STEP_DIR_PORT, STEP_DIR_MASK);
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
 	GPIOPinTypeGPIOOutput(STEP_PORT, STEP_MASK);
+
+	// Step compensation
+	GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, (1 << 0));
+	GPIOPadConfigSet(GPIO_PORTD_BASE, (1 << 0), GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
 
 	GPIOPadConfigSet(STEP_PORT, STEP_MASK, GPIO_STRENGTH_8MA_SC, GPIO_PIN_TYPE_STD);
 	GPIOPadConfigSet(STEP_DIR_PORT, STEP_DIR_MASK, GPIO_STRENGTH_8MA_SC, GPIO_PIN_TYPE_STD);
@@ -172,7 +179,14 @@ void stepper_init() {
 	stop_requested = false;
 	stop_status = GCODE_STATUS_OK;
 	busy = false;
-  
+
+	// Use the PWM output (PB6) to determine whether we are on a
+	// 32-step driver or not. (Remove R9 for purple drivers!)
+	if (GPIOPinRead(GPIO_PORTD_BASE, (1 << 0)) != 0) {
+		x_steps_per_mm = CONFIG_X_STEPS_PER_MM * 2.0;
+		y_steps_per_mm = CONFIG_Y_STEPS_PER_MM * 2.0;
+	}
+
 	// start in the idle state
 	// The stepper interrupt gets started when blocks are being added.
 	stepper_go_idle();
@@ -242,18 +256,18 @@ void stepper_stop_resume() {
 
 
 double stepper_get_position_x() {
-  return stepper_position[X_AXIS]/CONFIG_X_STEPS_PER_MM;
+  return stepper_position[X_AXIS]/x_steps_per_mm;
 }
 double stepper_get_position_y() {
-  return stepper_position[Y_AXIS]/CONFIG_Y_STEPS_PER_MM;
+  return stepper_position[Y_AXIS]/y_steps_per_mm;
 }
 double stepper_get_position_z() {
   return stepper_position[Z_AXIS]/CONFIG_Z_STEPS_PER_MM;
 }
 void stepper_set_position(double x, double y, double z) {
   stepper_synchronize();  // wait until processing is done
-  stepper_position[X_AXIS] = floor(x*CONFIG_X_STEPS_PER_MM + 0.5);
-  stepper_position[Y_AXIS] = floor(y*CONFIG_Y_STEPS_PER_MM + 0.5);
+  stepper_position[X_AXIS] = floor(x*x_steps_per_mm + 0.5);
+  stepper_position[Y_AXIS] = floor(y*y_steps_per_mm + 0.5);
   stepper_position[Z_AXIS] = floor(z*CONFIG_Z_STEPS_PER_MM + 0.5);  
 }
 
@@ -393,10 +407,10 @@ void stepper_isr (void) {
         // also keep track of absolute position
         if ((out_dir_bits >> STEP_X_DIR) & 1 ) {
           stepper_position[X_AXIS] -= 1;
-          ppi_mm_x -= (1 / CONFIG_X_STEPS_PER_MM);
+          ppi_mm_x -= (1 / x_steps_per_mm);
         } else {
           stepper_position[X_AXIS] += 1;
-          ppi_mm_x += (1 / CONFIG_X_STEPS_PER_MM);
+          ppi_mm_x += (1 / x_steps_per_mm);
         }        
       }
       counter_y += current_block->steps_y;
@@ -406,10 +420,10 @@ void stepper_isr (void) {
         // also keep track of absolute position
         if ((out_dir_bits >> STEP_Y_DIR) & 1 ) {
           stepper_position[Y_AXIS] -= 1;
-          ppi_mm_y -= (1 / CONFIG_Y_STEPS_PER_MM);
+          ppi_mm_y -= (1 / y_steps_per_mm);
         } else {
           stepper_position[Y_AXIS] += 1;
-          ppi_mm_y += (1 / CONFIG_Y_STEPS_PER_MM);
+          ppi_mm_y += (1 / y_steps_per_mm);
         }        
       }
 #ifdef STEP_Z_DIR
