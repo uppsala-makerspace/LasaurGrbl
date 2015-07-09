@@ -595,7 +595,8 @@ uint8_t gcode_execute_line(char *line) {
 				s = value;
 				if (next_action == NEXT_ACTION_NONE) {
 					gc.laser_pwm = value;
-					control_laser_intensity(gc.laser_pwm);
+					if (!stepper_active())
+						control_laser_intensity(gc.laser_pwm);
 				}
 				break;
 			case 'X':
