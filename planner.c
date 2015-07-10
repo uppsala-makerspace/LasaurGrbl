@@ -150,14 +150,12 @@ static void planner_movement(double x, double y, double z,
   
   // calculate nominal_speed (mm/min) and nominal_rate (step/min)
   // minimum stepper speed is limited by MINIMUM_STEPS_PER_MINUTE in stepper.c
-  double inverse_minute = feed_rate * inverse_millimeters;
-  block->nominal_speed = block->millimeters * inverse_minute; // always > 0
-  block->nominal_rate = ceil(block->step_event_count * inverse_minute); // always > 0
+  block->nominal_speed = feed_rate; // always > 0
+  block->nominal_rate = ceil(feed_rate * x_steps_per_mm); // always > 0
 
   block->acceleration = acceleration;
-  // compute the acceleration rate for this block. (step/min/acceleration_tick)
-  block->rate_delta = ceil( block->step_event_count * inverse_millimeters 
-                            * block->acceleration / (60 * ACCELERATION_TICKS_PER_SECOND) );
+  // compute the acceleration rate for this block. (steps/min/min / ticks/min)
+  block->rate_delta = ceil( block->acceleration * CONFIG_X_STEPS_PER_MM / (ACCELERATION_TICKS_PER_SECOND * 60));
 
   // Calculate the ppi steps
   block->laser_mmpp = 0;

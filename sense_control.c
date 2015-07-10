@@ -109,7 +109,7 @@ void control_init() {
 	laser_intensity = 0;
 
 	// Set default value
-	control_laser_intensity(255);
+	control_laser_intensity(255);	// Used to detect R9 presence.
 	control_laser(0, 0);
 
 	TimerEnable(LASER_TIMER, TIMER_A);

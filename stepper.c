@@ -580,7 +580,7 @@ static uint32_t config_step_timer(uint32_t cycles) {
 	while (prescaled_cycles > 65535)
 	{
 		timer_prescaler++;
-		prescaled_cycles /= 2;
+		prescaled_cycles = cycles / (1 + timer_prescaler);
 	}
 
 	timer_preload = prescaled_cycles;
