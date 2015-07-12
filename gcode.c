@@ -230,6 +230,10 @@ void gcode_process_line(char *buffer, int length) {
 		stepper_request_stop(GCODE_STATUS_SERIAL_STOP_REQUEST);
 		stepper_synchronize();
 
+		// Reset the raster buffer.
+		gc.raster.length = 0;
+		gc.raster.buffer = raster_buffer;
+
 	} else if (buffer[0] == '~') {
 		// Resume the machine (we probably need a home cycle).
 		stepper_stop_resume();
