@@ -875,7 +875,7 @@ void gcode_manual_move(double x, double y, double rate) {
 	planner_line(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS],
 				 target[Y_AXIS] + gc.offsets[3 * gc.offselect + Y_AXIS],
 				 target[Z_AXIS] + gc.offsets[3 * gc.offselect + Z_AXIS],
-				 rate, gc.acceleration, 0, 0);
+				 rate, 800000, 0, 0);
 
 	//target[X_AXIS] = max(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS], CONFIG_X_MIN);
 	//target[X_AXIS] = min(target[X_AXIS] + gc.offsets[3 * gc.offselect + X_AXIS], CONFIG_X_MAX);
