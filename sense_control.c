@@ -39,6 +39,8 @@
 #include "stepper.h"
 #include "planner.h"
 
+uint8_t sense_ignore = 0;
+
 static uint32_t laser_cycles;
 static uint32_t laser_divider;
 
@@ -49,21 +51,21 @@ static uint8_t laser_intensity = 0;
 
 // Laser pulse one-shot timer.
 static void laser_isr(void) {
-	TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
+    TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
 
-	// Turn off the Laser
-	GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
+    // Turn off the Laser
+    GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
 }
 
 
 void sense_init() {
-	//// chiller, door, (power)
-	GPIOPinTypeGPIOInput(SENSE_PORT, SENSE_MASK);
-	GPIOPadConfigSet(SENSE_PORT, SENSE_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
+    //// chiller, door, (power)
+    GPIOPinTypeGPIOInput(SENSE_PORT, SENSE_MASK);
+    GPIOPadConfigSet(SENSE_PORT, SENSE_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
 
-	//// x1_lmit, x2_limit, y1_limit, y2_limit, z1_limit, z2_limit
-	GPIOPinTypeGPIOInput(LIMIT_PORT, LIMIT_MASK);
-	GPIOPadConfigSet(LIMIT_PORT, LIMIT_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
+    //// x1_lmit, x2_limit, y1_limit, y2_limit, z1_limit, z2_limit
+    GPIOPinTypeGPIOInput(LIMIT_PORT, LIMIT_MASK);
+    GPIOPadConfigSet(LIMIT_PORT, LIMIT_MASK, GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_STD_WPU);
 }
 
 void control_init() {
@@ -75,88 +77,88 @@ void control_init() {
   // OCR0A sets the duty cycle 0-255 corresponding to 0-100%
   // also see: http://arduino.cc/en/Tutorial/SecretsOfArduinoPWM
 
-	GPIOPinTypeGPIOOutput(LASER_EN_PORT, LASER_EN_MASK);
-	GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
+    GPIOPinTypeGPIOOutput(LASER_EN_PORT, LASER_EN_MASK);
+    GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
 
-	// Configure timer
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-	TimerConfigure(LASER_TIMER, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_PWM|TIMER_CFG_B_ONE_SHOT);
-	TimerControlLevel(LASER_TIMER, TIMER_A, 1);
+    // Configure timer
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+    TimerConfigure(LASER_TIMER, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_PWM|TIMER_CFG_B_ONE_SHOT);
+    TimerControlLevel(LASER_TIMER, TIMER_A, 1);
 
-	// PPI = PWMfreq/(feedrate/MM_PER_INCH/60)
+    // PPI = PWMfreq/(feedrate/MM_PER_INCH/60)
 
-	// Set PPI Pulse timer
-	ppi_cycles = SysCtlClockGet() / CONFIG_LASER_PPI_PULSE_US;
-	ppi_divider = ppi_cycles >> 16;
-	ppi_cycles /= (ppi_divider + 1);
-	TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
-	TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
+    // Set PPI Pulse timer
+    ppi_cycles = SysCtlClockGet() / CONFIG_LASER_PPI_PULSE_US;
+    ppi_divider = ppi_cycles >> 16;
+    ppi_cycles /= (ppi_divider + 1);
+    TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
+    TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
 
-	// Setup ISR
-	TimerIntRegister(LASER_TIMER, TIMER_B, laser_isr);
-	TimerIntEnable(LASER_TIMER, TIMER_TIMB_TIMEOUT);
+    // Setup ISR
+    TimerIntRegister(LASER_TIMER, TIMER_B, laser_isr);
+    TimerIntEnable(LASER_TIMER, TIMER_TIMB_TIMEOUT);
     IntPrioritySet(INT_TIMER0B, CONFIG_LASER_PRIORITY);
 
-	// Set PWM refresh rate
-	laser_cycles = SysCtlClockGet() / CONFIG_LASER_PWM_FREQ; /*Hz*/
-	laser_divider = laser_cycles >> 16;
-	laser_cycles /= (laser_divider + 1);
+    // Set PWM refresh rate
+    laser_cycles = SysCtlClockGet() / CONFIG_LASER_PWM_FREQ; /*Hz*/
+    laser_divider = laser_cycles >> 16;
+    laser_cycles /= (laser_divider + 1);
 
-	// Setup Laser PWM Timer
-	TimerPrescaleSet(LASER_TIMER, TIMER_A, laser_divider);
-	TimerLoadSet(LASER_TIMER, TIMER_A, laser_cycles);
-	TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
-	laser_intensity = 0;
+    // Setup Laser PWM Timer
+    TimerPrescaleSet(LASER_TIMER, TIMER_A, laser_divider);
+    TimerLoadSet(LASER_TIMER, TIMER_A, laser_cycles);
+    TimerPrescaleMatchSet(LASER_TIMER, TIMER_A, laser_divider);
+    laser_intensity = 0;
 
-	// Set default value
-	control_laser_intensity(255);	// Used to detect R9 presence.
-	control_laser(0, 0);
+    // Set default value
+    control_laser_intensity(255);   // Used to detect R9 presence.
+    control_laser(0, 0);
 
-	TimerEnable(LASER_TIMER, TIMER_A);
+    TimerEnable(LASER_TIMER, TIMER_A);
 
-	// ToDo: Map the timer ccp pin sensibly
-	GPIOPinConfigure(GPIO_PB6_T0CCP0);
-	GPIOPinTypeTimer(LASER_PORT, (1 << LASER_BIT));
+    // ToDo: Map the timer ccp pin sensibly
+    GPIOPinConfigure(GPIO_PB6_T0CCP0);
+    GPIOPinTypeTimer(LASER_PORT, (1 << LASER_BIT));
 
-	//// air and aux assist control
-	GPIOPinTypeGPIOOutput(ASSIST_PORT, ASSIST_MASK);
-	control_air_assist(false);
-	control_aux1_assist(false);
+    //// air and aux assist control
+    GPIOPinTypeGPIOOutput(ASSIST_PORT, ASSIST_MASK);
+    control_air_assist(false);
+    control_aux1_assist(false);
 }
 
 void control_laser_intensity(uint8_t intensity) {
-	laser_intensity = intensity;
-	if (intensity == 0) intensity = 1;
+    laser_intensity = intensity;
+    if (intensity == 0) intensity = 1;
 
-	// Set the PWM (Intensity).
-	TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles - (laser_cycles * intensity / 255));
+    // Set the PWM (Intensity).
+    TimerMatchSet(LASER_TIMER, TIMER_A, laser_cycles - (laser_cycles * intensity / 255));
 }
 
 uint8_t control_get_intensity(void) {
-	return laser_intensity;
+    return laser_intensity;
 }
 
 void control_laser(uint8_t on_off, uint32_t pulse_length) {
 
-	// If required, (re)set the PPI timer.
-	if (pulse_length > 0) {
-		ppi_cycles = SysCtlClockGet() / pulse_length;
-		ppi_divider = ppi_cycles >> 16;
-		ppi_cycles /= (ppi_divider + 1);
-		TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
+    // If required, (re)set the PPI timer.
+    if (pulse_length > 0) {
+        ppi_cycles = SysCtlClockGet() / pulse_length;
+        ppi_divider = ppi_cycles >> 16;
+        ppi_cycles /= (ppi_divider + 1);
+        TimerPrescaleSet(LASER_TIMER, TIMER_B, ppi_divider);
 
-		// Schedule a timer to turn off the laser
-		TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
-		// Clear any interrupts to avoid a race.
-		// This function is called from a higher priority ISR.
-		TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
-	}
+        // Schedule a timer to turn off the laser
+        TimerLoadSet(LASER_TIMER, TIMER_B, ppi_cycles);
+        // Clear any interrupts to avoid a race.
+        // This function is called from a higher priority ISR.
+        TimerIntClear(LASER_TIMER, TIMER_TIMB_TIMEOUT);
+    }
 
-	// Control the beam enable.
-	if (on_off == 0)
-		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
-	else
-		GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
+    // Control the beam enable.
+    if (on_off == 0)
+        GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_INVERT);
+    else
+        GPIOPinWrite(LASER_EN_PORT, LASER_EN_MASK, LASER_EN_MASK ^ LASER_EN_INVERT);
 }
 
 

@@ -60,7 +60,7 @@ double stepper_get_position_z(void);
 void stepper_set_position(double x, double y, double z);
 
 // perform the homing cycle
-void stepper_homing_cycle(void);
+int stepper_homing_cycle(void);
 
 uint8_t stepper_active(void);
 

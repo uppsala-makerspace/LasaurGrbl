@@ -31,7 +31,7 @@
 //#define ENABLE_LCD
 
 // This defines the maximum number of dots in a raster.
-#define RASTER_BUFFER_SIZE	2048
+#define RASTER_BUFFER_SIZE  2048
 
 #define CONFIG_X_STEPS_PER_MM 157.48 //microsteps/mm
 #define CONFIG_Y_STEPS_PER_MM 157.48 //microsteps/mm
@@ -56,11 +56,11 @@
 #define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
 #define CONFIG_INVERT_Z_AXIS 0  // 0 is regular, 1 inverts the y direction
 
-#define CONFIG_LASER_PWM_FREQ			40000
+#define CONFIG_LASER_PWM_FREQ           40000
 
-#define CONFIG_LASER_PPI_PULSE_US		3000
-#define CONFIG_LASER_PPI_SPACE_US		500
-#define CONFIG_LASER_PPI_MAX_PPM		(60000000.0 / (CONFIG_LASER_PPI_PULSE_US + CONFIG_LASER_PPI_SPACE_US))
+#define CONFIG_LASER_PPI_PULSE_US       3000
+#define CONFIG_LASER_PPI_SPACE_US       500
+#define CONFIG_LASER_PPI_MAX_PPM        (60000000.0 / (CONFIG_LASER_PPI_PULSE_US + CONFIG_LASER_PPI_SPACE_US))
 
 
 // This will use a timer to guarantee a step pulse length.
@@ -70,80 +70,82 @@
 //#define CONFIG_STEPPER_USE_PULSE_TIMER
 
 // Interrupt Priorities (0 highest)
-#define	CONFIG_STEPPER_PRIORITY		(0 << 5)
-#define	CONFIG_LASER_PRIORITY		(1 << 5)
-#define	CONFIG_USB_PRIORITY			(2 << 5)
-#define	CONFIG_SENSE_PRIORITY		(3 << 5)
-#define	CONFIG_JOY_PRIORITY			(4 << 5)
-#define	CONFIG_GPTIMER_PRIORITY		(7 << 5)
+#define CONFIG_STEPPER_PRIORITY     (0 << 5)
+#define CONFIG_LASER_PRIORITY       (1 << 5)
+#define CONFIG_USB_PRIORITY         (2 << 5)
+#define CONFIG_SENSE_PRIORITY       (3 << 5)
+#define CONFIG_JOY_PRIORITY         (4 << 5)
+#define CONFIG_GPTIMER_PRIORITY     (7 << 5)
 
-#define JOY_PORT              	GPIO_PORTF_BASE
-#define JOY_BIT                	0
-#define JOY_MASK 				(1<<JOY_BIT)
-#define JOY_TIMER				TIMER3_BASE
+#define JOY_PORT                GPIO_PORTF_BASE
+#define JOY_BIT                 0
+#define JOY_MASK                (1<<JOY_BIT)
+#define JOY_TIMER               TIMER3_BASE
 
 //#define JOY_INVERT_Y
 //#define JOY_INVERT_X
 
 #define SENSE_PORT              GPIO_PORTE_BASE
 #define DOOR_BIT                1
-#define SENSE_MASK 				(1<<DOOR_BIT)
+#define SENSE_MASK              (1<<DOOR_BIT)
 
-#define SENSE_TIMER				TIMER2_BASE
+#define SENSE_TIMER             TIMER2_BASE
 
-#define GP_TIMER				TIMER4_BASE
+#define GP_TIMER                TIMER4_BASE
 
-#define OW_PORT					GPIO_PORTE_BASE
-#define OW_BIT             		5
+#define OW_PORT                 GPIO_PORTE_BASE
+#define OW_BIT                  5
 
-#define ASSIST_PORT           	GPIO_PORTD_BASE
-#define AIR_ASSIST_BIT        	2
-#define AUX1_ASSIST_BIT       	6
-#define ASSIST_MASK				(1 << AIR_ASSIST_BIT) | (1<< AUX1_ASSIST_BIT)
+#define ASSIST_PORT             GPIO_PORTD_BASE
+#define AIR_ASSIST_BIT          2
+#define AUX1_ASSIST_BIT         6
+#define ASSIST_MASK             (1 << AIR_ASSIST_BIT) | (1<< AUX1_ASSIST_BIT)
   
 #define LIMIT_PORT              GPIO_PORTC_BASE
 #define X_LIMIT_BIT             4
 #define Y_LIMIT_BIT             5
 #define Z_LIMIT_BIT             6
 #define E_LIMIT_BIT             7
-#define LIMIT_MASK 				((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<E_LIMIT_BIT))
+#define LIMIT_MASK              ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<E_LIMIT_BIT))
 
 
-#define STEPPING_TIMER			TIMER1_BASE
+#define STEPPING_TIMER          TIMER1_BASE
 
-#define STEP_EN_PORT         	GPIO_PORTB_BASE
-#define STEP_EN          		0
-#define STEP_EN_MASK			(1 << STEP_EN)
-#define STEP_EN_INVERT			(1 << STEP_EN)
+#define STEP_EN_PORT            GPIO_PORTB_BASE
+#define STEP_EN                 0
+#define STEP_EN_MASK            (1 << STEP_EN)
+#define STEP_EN_INVERT          (1 << STEP_EN)
 
-#define STEP_DIR_PORT         	GPIO_PORTB_BASE
-#define STEP_X_DIR           	3
-#define STEP_Y_DIR           	4
-//#define STEP_Z_DIR           	5
-#define STEP_DIR_MASK			((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) /*| (1 << STEP_Z_DIR)*/)
-#define STEP_DIR_INVERT			((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)/*|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR)*/)
+#define STEP_DIR_PORT           GPIO_PORTB_BASE
+#define STEP_X_DIR              3
+#define STEP_Y_DIR              4
+//#define STEP_Z_DIR            5
+#define STEP_DIR_MASK           ((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) /*| (1 << STEP_Z_DIR)*/)
+#define STEP_DIR_INVERT         ((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)/*|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR)*/)
+
+#define STEP_HOME_TIMEOUT       (3000)  /* How long to wait whilst homing before we assume the limit switch(es) are broken */
 
 #define MOTOR_Z
 #ifdef MOTOR_Z
-#define	STEP_Z_MASK				((1 << 5) | (1 << 7))
-#define	STEP_Z_UP				(1 << 7)
-#define	STEP_Z_DOWN				(1 << 5)
+#define STEP_Z_MASK             ((1 << 5) | (1 << 7))
+#define STEP_Z_UP               (1 << 7)
+#define STEP_Z_DOWN             (1 << 5)
 #endif
 
-#define STEP_PORT           	GPIO_PORTE_BASE
+#define STEP_PORT               GPIO_PORTE_BASE
 #define STEP_X_BIT              2
 #define STEP_Y_BIT              3
 #define STEP_Z_BIT              4
-#define STEP_MASK				((1 << STEP_X_BIT) | (1 << STEP_Y_BIT) | (1 << STEP_Z_BIT))
+#define STEP_MASK               ((1 << STEP_X_BIT) | (1 << STEP_Y_BIT) | (1 << STEP_Z_BIT))
 
-#define LASER_PORT           	GPIO_PORTB_BASE
-#define LASER_BIT        		6
-#define LASER_TIMER				TIMER0_BASE
+#define LASER_PORT              GPIO_PORTB_BASE
+#define LASER_BIT               6
+#define LASER_TIMER             TIMER0_BASE
 
-#define LASER_EN_PORT         	GPIO_PORTB_BASE
-#define LASER_EN_BIT       		1
-#define LASER_EN_MASK			(1 << LASER_EN_BIT)
-#define LASER_EN_INVERT			0
+#define LASER_EN_PORT           GPIO_PORTB_BASE
+#define LASER_EN_BIT            1
+#define LASER_EN_MASK           (1 << LASER_EN_BIT)
+#define LASER_EN_INVERT         0
 
 // The temporal resolution of the acceleration management subsystem. Higher number give smoother
 // acceleration but may impact performance.

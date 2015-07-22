@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include "config.h"
 
+extern uint8_t sense_ignore;
 
 void sense_init();
 #define SENSE_X_LIMIT (GPIOPinRead(LIMIT_PORT, (1 << X_LIMIT_BIT)) != 0)
@@ -31,7 +32,7 @@ void sense_init();
 #define SENSE_CHILLER_OFF (temperature_read(0) > (20 * 16))
 // invert door, remove power, add z_limits
 //#define SENSE_LIMITS (SENSE_X_LIMIT || SENSE_Y_LIMIT || SENSE_Z_LIMIT || SENSE_E_LIMIT)
-#define SENSE_LIMITS (SENSE_X_LIMIT || SENSE_Y_LIMIT)
+#define SENSE_LIMITS ((sense_ignore == 0) && (SENSE_X_LIMIT || SENSE_Y_LIMIT))
 #define SENSE_SAFETY (/*SENSE_CHILLER_OFF ||*/ SENSE_DOOR_OPEN)
 
 void control_init();
