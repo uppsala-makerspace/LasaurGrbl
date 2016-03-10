@@ -78,6 +78,8 @@ static char *rx_line_cursor;
 
 static uint8_t line_checksum_ok_already;
 
+static uint8_t display_version = 1;
+
 #define FAIL(status) gc.status_code = status;
 
 typedef struct {
@@ -385,6 +387,10 @@ void gcode_process_line(char *buffer, int length) {
 
 	//
 	if (print_extended_status) {
+		if (display_version) {
+			display_version = 0;
+			printString("# LasaurGrbl " LASAURGRBL_VERSION"\n");
+		}
 		// position
 		printString("X");
 		printFloat(stepper_get_position_x());
@@ -770,11 +776,16 @@ uint8_t gcode_execute_line(char *line) {
 			} else {
 				gc.raster.invert = 0;
 			}
-
 		}
+
 		if (p > 0.0) {
 			gc.raster.dot_size = p;
 		}
+
+		if (r != 0.0) {
+			gc.raster.bidirectional = r;
+		}
+
 		if (n >= 0.0) {
 			// Here we go...
 			if (gc.raster.length > 0) {

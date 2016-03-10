@@ -58,10 +58,9 @@
 
 #define CONFIG_LASER_PWM_FREQ           40000
 
-#define CONFIG_LASER_PPI_PULSE_US       3000
-#define CONFIG_LASER_PPI_SPACE_US       500
+#define CONFIG_LASER_PPI_PULSE_US       2500.0
+#define CONFIG_LASER_PPI_SPACE_US       500.0
 #define CONFIG_LASER_PPI_MAX_PPM        (60000000.0 / (CONFIG_LASER_PPI_PULSE_US + CONFIG_LASER_PPI_SPACE_US))
-
 
 // This will use a timer to guarantee a step pulse length.
 // However the maximum seek rate will be limited (approx. 15000mm/min)

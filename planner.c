@@ -259,6 +259,10 @@ void planner_raster(double x, double y, double z,
     double raster_len = 0;
     double head = 0;
     double ramp = pow(feed_rate, 2) / (2 * acceleration);
+    uint8_t bidirectional = (raster->bidirectional > 0)?1:0;
+
+    // Calculate how much to offset each raster by to compensate for laser lag
+    double offset = (feed_rate * raster->bidirectional / 60.0 / 1000000.0 / 2.0);
 
     uint8_t *ptr = raster->buffer;
     uint32_t count = raster->length;
@@ -288,12 +292,12 @@ void planner_raster(double x, double y, double z,
     if (last_raster <= 0)
     {
         // We need to go forwards.
-        planner_movement(x - ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
-        planner_movement(x, y, z, feed_rate, acceleration, 0, 0, NULL);
+        planner_movement(x - ramp - offset, y, z, feed_rate, acceleration, 0, 0, NULL);
+        planner_movement(x - offset, y, z, feed_rate, acceleration, 0, 0, NULL);
     } else {
         // We need to go backwards.
-        planner_movement(x + raster_len + ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
-        planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, NULL);
+        planner_movement(x + raster_len + ramp + offset, y, z, feed_rate, acceleration, 0, 0, NULL);
+        planner_movement(x + raster_len + offset, y, z, feed_rate, acceleration, 0, 0, NULL);
     }
 
     // Copy the data into our buffer
@@ -326,16 +330,20 @@ void planner_raster(double x, double y, double z,
     if (last_raster <= 0)
     {
         // We need to go forwards.
-        planner_movement(x + raster_len, y, z, feed_rate, acceleration, 0, 0, raster);
-        planner_movement(x + raster_len + ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
+        planner_movement(x + raster_len - offset, y, z, feed_rate, acceleration, 0, 0, raster);
+        planner_movement(x + raster_len + ramp - offset, y, z, feed_rate, acceleration, 0, 0, NULL);
 
-        last_raster = 1;
+        if (bidirectional != 0) {
+        	last_raster = 1;
+        }
     } else {
         // We need to go backwards.
-        planner_movement(x, y, z, feed_rate, acceleration, 0, 0, raster);
-        planner_movement(x - ramp, y, z, feed_rate, acceleration, 0, 0, NULL);
+        planner_movement(x + offset, y, z, feed_rate, acceleration, 0, 0, raster);
+        planner_movement(x - ramp + offset, y, z, feed_rate, acceleration, 0, 0, NULL);
 
-        last_raster = -1;
+        if (bidirectional != 0) {
+        	last_raster = -1;
+        }
     }
 }
 
