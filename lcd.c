@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <inc/hw_ints.h>
 #include <inc/hw_ssi.h>
 
+#include <driverlib/pin_map.h>
 #include <driverlib/gpio.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/timer.h>

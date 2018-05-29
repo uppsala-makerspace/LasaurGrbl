@@ -24,11 +24,11 @@
 
 // Version number
 // (must not contain capital letters)
-#define LASAURGRBL_VERSION "13.04"
+#define LASAURGRBL_VERSION "13.04.ums"
 //#define DEBUG_IGNORE_SENSORS  // set for debugging
 
 // Whether or not to drive an LCD.
-//#define ENABLE_LCD
+// #define ENABLE_LCD
 
 // This defines the maximum number of dots in a raster.
 #define RASTER_BUFFER_SIZE  2048
@@ -46,11 +46,11 @@
 #define CONFIG_Y_ORIGIN_OFFSET 0.0  // mm, y-offset of table origin from physical home
 #define CONFIG_Z_ORIGIN_OFFSET 0.0   // mm, z-offset of table origin from physical home
 #define CONFIG_X_MIN 0.0
-//#define CONFIG_X_MAX 325.0
+#define CONFIG_X_MAX 325.0
 #define CONFIG_Y_MIN 0.0
-//#define CONFIG_Y_MAX 215.0
-//#define CONFIG_Z_MIN 0.0
-//#define CONFIG_Z_MAX 50.0
+#define CONFIG_Y_MAX 215.0
+#define CONFIG_Z_MIN 0.0
+#define CONFIG_Z_MAX 50.0
 
 #define CONFIG_INVERT_X_AXIS 1  // 0 is regular, 1 inverts the x direction
 #define CONFIG_INVERT_Y_AXIS 1  // 0 is regular, 1 inverts the y direction
@@ -81,7 +81,7 @@
 #define JOY_MASK                (1<<JOY_BIT)
 #define JOY_TIMER               TIMER3_BASE
 
-//#define JOY_INVERT_Y
+#define JOY_INVERT_Y
 //#define JOY_INVERT_X
 
 #define SENSE_PORT              GPIO_PORTE_BASE
@@ -155,7 +155,7 @@
 // round-off can be great enough to cause problems and/or it's too fast for the Arduino. The correct
 // value for this parameter is machine dependent, so it's advised to set this only as high as needed.
 // Approximate successful values can range from 30L to 100L or more.
-#define ACCELERATION_TICKS_PER_SECOND 1000L
+#define ACCELERATION_TICKS_PER_SECOND 400L
 
 // Minimum planner junction speed. Sets the default minimum speed the planner plans for at the end
 // of the buffer and all stops. This should not be much greater than zero and should only be changed
