@@ -94,16 +94,17 @@ static void y_handler(void) {
 static void button_handler(void) {
 	GPIOIntClear(JOY_PORT, JOY_MASK);
 
+
+
 	if (GPIOPinRead(JOY_PORT, JOY_MASK) > 0)
 	{
-		enabled = 0;
-		GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), 0);
-		task_enable(TASK_SET_OFFSET, 0);
-	}
-	else
-	{
-		enabled = 1;
-		GPIOPinWrite(ASSIST_PORT,  (1<< AUX1_ASSIST_BIT), (1<< AUX1_ASSIST_BIT));
+		if (enabled == 1) {
+			enabled = 0;
+			task_enable(TASK_SET_OFFSET, 0);
+		}
+		else {
+			enabled = 1;
+		}
 	}
 }
 

@@ -44,6 +44,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "glcdfont.h"
 #include "tasks.h"
 
+// Whether or not to drive an LCD.
+
 #ifdef ENABLE_LCD
 
 #define LCD_RST_PORT	GPIO_PORTB_BASE
@@ -105,7 +107,7 @@ void lcd_init(void)
 	cursor_x = cursor_y = 0;
 	textsize = 1;
 	textcolor = BLACK;
-	contrast = 55;
+	contrast = 40;
 
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_SSI0);
 

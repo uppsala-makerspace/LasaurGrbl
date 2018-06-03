@@ -28,7 +28,9 @@
 //#define DEBUG_IGNORE_SENSORS  // set for debugging
 
 // Whether or not to drive an LCD.
-// #define ENABLE_LCD
+// #define ENABLE_LCD 	// NOTE: 	Eclipse seem weird, can't #define stuff in headers?
+					// 			Need to add them to the build configuration.
+
 
 // This defines the maximum number of dots in a raster.
 #define RASTER_BUFFER_SIZE  2048
@@ -81,7 +83,7 @@
 #define JOY_MASK                (1<<JOY_BIT)
 #define JOY_TIMER               TIMER3_BASE
 
-#define JOY_INVERT_Y
+//#define JOY_INVERT_Y
 //#define JOY_INVERT_X
 
 #define SENSE_PORT              GPIO_PORTE_BASE
