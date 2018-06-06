@@ -86,6 +86,11 @@
 //#define JOY_INVERT_Y
 //#define JOY_INVERT_X
 
+#define JOG_Z_PORT              GPIO_PORTA_BASE
+#define JOG_Z_UP_BIT            6
+#define JOG_Z_DOWN_BIT 			7
+#define JOG_Z_MASK 				(1<<JOG_Z_UP_BIT) | (1<<JOG_Z_DOWN_BIT)
+
 #define SENSE_PORT              GPIO_PORTE_BASE
 #define DOOR_BIT                1
 #define SENSE_MASK              (1<<DOOR_BIT)
@@ -117,21 +122,35 @@
 #define STEP_EN_MASK            (1 << STEP_EN)
 #define STEP_EN_INVERT          (1 << STEP_EN)
 
-#define STEP_DIR_PORT           GPIO_PORTB_BASE
-#define STEP_X_DIR              3
-#define STEP_Y_DIR              4
-//#define STEP_Z_DIR            5
-#define STEP_DIR_MASK           ((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) /*| (1 << STEP_Z_DIR)*/)
-#define STEP_DIR_INVERT         ((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)/*|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR)*/)
-
-#define STEP_HOME_TIMEOUT       (3000)  /* How long to wait whilst homing before we assume the limit switch(es) are broken */
-
-#define MOTOR_Z
+//#define MOTOR_Z
 #ifdef MOTOR_Z
 #define STEP_Z_MASK             ((1 << 5) | (1 << 7))
 #define STEP_Z_UP               (1 << 7)
 #define STEP_Z_DOWN             (1 << 5)
 #endif
+
+#define STEP_DIR_PORT           GPIO_PORTB_BASE
+#define STEP_X_DIR              3
+#define STEP_Y_DIR              4
+
+#ifndef MOTOR_Z
+#define STEP_Z_DIR           	5
+#define STEP_DIR_MASK			((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) | (1 << STEP_Z_DIR))
+#define STEP_DIR_INVERT			((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR))
+#else
+#define STEP_DIR_MASK			((1 << STEP_X_DIR) | (1 << STEP_Y_DIR) /*| (1 << STEP_Z_DIR)*/)
+#define STEP_DIR_INVERT			((CONFIG_INVERT_X_AXIS<<STEP_X_DIR)|(CONFIG_INVERT_Y_AXIS<<STEP_Y_DIR)/*|(CONFIG_INVERT_Z_AXIS<<STEP_Z_DIR)*/)
+#define	STEP_Z_MASK				((1 << 5) | (1 << 7))
+#define	STEP_Z_UP				(1 << 7)
+#define	STEP_Z_DOWN				(1 << 5)
+#endif
+
+
+
+
+#define STEP_HOME_TIMEOUT       (3000)  /* How long to wait whilst homing before we assume the limit switch(es) are broken */
+
+
 
 #define STEP_PORT               GPIO_PORTE_BASE
 #define STEP_X_BIT              2

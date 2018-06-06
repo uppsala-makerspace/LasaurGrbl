@@ -91,6 +91,8 @@ void tasks_loop(void) {
 	double last_x = 0;
 	double last_y = 0;
 	double last_z = 0;
+
+	bool last_joystick = false;
 #endif
 
 	// Main task loop, does not return
@@ -126,7 +128,7 @@ void tasks_loop(void) {
     	if (task_running(TASK_MANUAL_MOVE)) {
     		struct task_manual_move_data *move = task_data[TASK_MANUAL_MOVE];
     		if (planner_blocks_available() >= PLANNER_FIFO_READY_THRESHOLD) {
-    			gcode_manual_move(move->x_offset, move->y_offset, move->rate);
+    			gcode_manual_move(move->x_offset, move->y_offset, move->z_offset, move->rate);
     			task_disable(TASK_MANUAL_MOVE);
     		}
     	}
@@ -155,13 +157,20 @@ void tasks_loop(void) {
     			double y = stepper_get_position_y();
     			double z = stepper_get_position_z();
 
-    			if (x != last_x || y != last_y || z != last_z) {
+    			double *offsets = gcode_get_offsets();
+
+
+    			bool joystick = joystick_is_enabled();
+
+    			if (x != last_x || y != last_y || z != last_z || joystick != last_joystick) {
     				uint32_t power = control_get_intensity();
     				block_t *block = planner_get_current_block();
     				uint32_t ppi = 0;
     				last_x = x;
     				last_y = y;
     				last_z = z;
+
+    				last_joystick = joystick;
 
     				if (block) {
     					power = block->laser_pwm * 100 / 255;
@@ -170,7 +179,13 @@ void tasks_loop(void) {
 
     				lcd_clear();
         			lcd_setCursor(0, 0);
-        	    	lcd_drawstring("  LaserGRBL   ");
+        			lcd_drawstring ("Joy: ");
+        			if (joystick == true)
+        				lcd_drawstring ("ON\n");
+        			else
+        				lcd_drawstring ("OFF\n");
+
+        	    	//lcd_drawstring("  LaserGRBL   ");
         	    	lcd_drawstring("Power: ");
         	    	lcd_drawint(power);
         	    	lcd_drawstring("%\n");
@@ -178,13 +193,19 @@ void tasks_loop(void) {
         	    	lcd_drawint(ppi);
         	    	lcd_drawstring("\n");
         	    	lcd_drawstring("X: ");
-        	    	lcd_drawfloat(x);
+        	    	lcd_drawfloat(x - offsets [X_AXIS]);
+        	    	lcd_drawstring(" + ");
+        	    	lcd_drawfloat (offsets [X_AXIS]);
         	    	lcd_drawstring("\n");
         	    	lcd_drawstring("Y: ");
-        	    	lcd_drawfloat(y);
+        	    	lcd_drawfloat(y - offsets [Y_AXIS]);
+        	    	lcd_drawstring(" + ");
+        	    	lcd_drawfloat (offsets [Y_AXIS]);
         	    	lcd_drawstring("\n");
         	    	lcd_drawstring("Z: ");
-        	    	lcd_drawfloat(z);
+        	    	lcd_drawfloat(z - offsets [Z_AXIS]);
+        	    	lcd_drawstring(" + ");
+        	    	lcd_drawfloat (offsets [Z_AXIS]);
         	    	lcd_drawstring("\n");
         	    	lcd_display();
     			}

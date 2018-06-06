@@ -59,11 +59,13 @@ uint8_t gcode_execute_line(char *line);
 void gcode_request_position_update();
 
 // Manually moves the machine by these offsets
-void gcode_manual_move(double x, double y, double rate);
+void gcode_manual_move(double x, double y, double z, double rate);
 
 // Set the offsets to the current location
 void gcode_set_offset_to_current_position(void);
 
 void gcode_do_home(void);
+
+double* gcode_get_offsets (void);
 
 #endif

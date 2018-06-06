@@ -18,9 +18,13 @@
 #ifndef _joystick_h
 #define	_joystick_h
 
+
+
 void joystick_init(void);
 void joystick_enable(void);
 void joystick_disable(void);
+
+bool joystick_is_enabled(void);
 
 
 #endif // _joystick_h
